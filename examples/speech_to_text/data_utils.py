@@ -133,12 +133,13 @@ def gen_config_yaml(
     audio_root: str = "",
     cmvn_type: str = "utterance",
     gcmvn_path: Optional[Path] = None,
+    input_feat_per_channel: int = 80,
 ):
     manifest_root = manifest_root.absolute()
     writer = S2TDataConfigWriter(manifest_root / yaml_filename)
     writer.set_vocab_filename(spm_filename.replace(".model", ".txt"))
     writer.set_input_channels(1)
-    writer.set_input_feat_per_channel(80)
+    writer.set_input_feat_per_channel(input_feat_per_channel)
     specaugment_setters = {
         "lb": writer.set_specaugment_lb_policy,
         "ld": writer.set_specaugment_ld_policy,
