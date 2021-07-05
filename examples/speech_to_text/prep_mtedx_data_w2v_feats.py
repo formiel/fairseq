@@ -38,7 +38,8 @@ import fairseq
 log = logging.getLogger(__name__)
 
 
-MANIFEST_COLUMNS = ["id", "audio", "n_frames", "tgt_text", "speaker", "tgt_lang"]
+MANIFEST_COLUMNS = ["id", "audio", "n_frames", "tgt_text", "speaker", "tgt_lang",
+                    "src_text", "src_lang"]
 
 
 class mTEDx(Dataset):
@@ -113,6 +114,7 @@ class mTEDx(Dataset):
                         segment[tgt],
                         segment["speaker_id"],
                         tgt,
+                        src,
                         _id,
                     )
                 )
@@ -154,12 +156,12 @@ def process(args):
                             normalize_signal=args.normalize_signal)
             print("Extracting log mel filter bank or wav2vec features...")
             if not args.use_w2v_feats:
-                for waveform, _, sample_rate, _, _, _, _, utt_id in tqdm(dataset):
+                for waveform, _, sample_rate, _, _, _, _, _, utt_id in tqdm(dataset):
                     extract_fbank_features(
                         waveform, sample_rate, feature_root / f"{utt_id}.npy"
                     )
             else:
-                for _, features, sample_rate, _, _, _, _, utt_id in tqdm(dataset):
+                for _, features, sample_rate, _, _, _, _, _, utt_id in tqdm(dataset):
                     output_path = feature_root / f"{utt_id}.npy"
                     np.save(output_path.as_posix(), features)
         # Pack features into ZIP
@@ -179,7 +181,7 @@ def process(args):
                             w2v_path=args.w2v_path,
                             use_gpu=args.use_gpu,
                             normalize_signal=args.normalize_signal)
-            for wav, _, sr, src_utt, tgt_utt, speaker_id, tgt_lang, utt_id in tqdm(dataset):
+            for wav, _, sr, src_utt, tgt_utt, speaker_id, tgt_lang, src_lang, utt_id in tqdm(dataset):
                 manifest["id"].append(utt_id)
                 manifest["audio"].append(zip_manifest[utt_id])
                 duration_ms = int(wav.size(1) / sr * 1000)
@@ -187,6 +189,8 @@ def process(args):
                 manifest["tgt_text"].append(src_utt if args.task == "asr" else tgt_utt)
                 manifest["speaker"].append(speaker_id)
                 manifest["tgt_lang"].append(tgt_lang)
+                manifest["src_text"].append(src_utt)
+                manifest["src_lang"].append(src_lang)
             if is_train_split:
                 train_text.extend(manifest["tgt_text"])
             df = pd.DataFrame.from_dict(manifest)
@@ -247,7 +251,6 @@ def process_joint(args):
         cur_root,
         spm_filename_prefix + ".model",
         yaml_filename=f"config_{args.task}.yaml",
-        specaugment_policy="ld",
         prepend_tgt_lang_tag=(args.joint),
     )
     # Make symbolic links to manifests

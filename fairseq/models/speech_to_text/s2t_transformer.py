@@ -207,6 +207,11 @@ class S2TTransformerModel(FairseqEncoderDecoderModel):
             metavar='N',
             help='freeze encoder for first N updates'
         )
+        parser.add_argument(
+            "--use-linear-before-cnn",
+            action="store_true",
+            help="if True, add one linear layer before CNN.",
+        )
 
     @classmethod
     def build_encoder(cls, args):
@@ -289,12 +294,26 @@ class S2TTransformerEncoder(FairseqEncoder):
             self.embed_scale = 1.0
         self.padding_idx = 1
 
-        self.subsample = Conv1dSubsampler(
-            args.input_feat_per_channel * args.input_channels,
-            args.conv_channels,
-            args.encoder_embed_dim,
-            [int(k) for k in args.conv_kernel_sizes.split(",")],
-        )
+        self.use_linear_before_cnn = getattr(args, "use_linear_before_cnn", False)
+        if not self.use_linear_before_cnn:
+            self.subsample = Conv1dSubsampler(
+                args.input_feat_per_channel * args.input_channels,
+                args.conv_channels,
+                args.encoder_embed_dim,
+                [int(k) for k in args.conv_kernel_sizes.split(",")],
+            )
+        else:
+            output_linear_dim = getattr(args, "output_linear_dim", 80)
+            self.in_linear =  nn.Sequential(
+                    nn.Linear(args.input_feat_per_channel, output_linear_dim),
+                    nn.ReLU(),
+                )
+            self.subsample = Conv1dSubsampler(
+                output_linear_dim * args.input_channels,
+                args.conv_channels,
+                args.encoder_embed_dim,
+                [int(k) for k in args.conv_kernel_sizes.split(",")],
+            )
 
         self.embed_positions = PositionalEmbedding(
             args.max_source_positions, args.encoder_embed_dim, self.padding_idx
@@ -309,7 +328,11 @@ class S2TTransformerEncoder(FairseqEncoder):
             self.layer_norm = None
 
     def _forward(self, src_tokens, src_lengths):
-        x, input_lengths = self.subsample(src_tokens, src_lengths)
+        if not self.use_linear_before_cnn:
+            x, input_lengths = self.subsample(src_tokens, src_lengths)
+        else:
+            x = self.in_linear(src_tokens)
+            x, input_lengths = self.subsample(x, src_lengths)
         x = self.embed_scale * x
 
         encoder_padding_mask = lengths_to_padding_mask(input_lengths)
