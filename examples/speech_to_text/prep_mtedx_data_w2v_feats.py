@@ -89,7 +89,6 @@ class mTEDx(Dataset):
         for _lang in [src, tgt]:
             with open(txt_root / f"{split}.{_lang}") as f:
                 utterances = [r.strip() for r in f]
-            print(f'len(segments)={len(segments)}, len(utterances)={len(utterances)}')
             assert len(segments) == len(utterances)
             for i, u in enumerate(utterances):
                 segments[i][_lang] = u
@@ -120,7 +119,7 @@ class mTEDx(Dataset):
                 )
 
     def __getitem__(self, n: int) -> Tuple[Tensor, int, str, str, str, str, str]:
-        wav_path, offset, n_frames, sr, src_utt, tgt_utt, spk_id, tgt_lang, utt_id = self.data[n]
+        wav_path, offset, n_frames, sr, src_utt, tgt_utt, spk_id, tgt_lang, src_lang, utt_id = self.data[n]
         waveform, _ = get_waveform(wav_path, frames=n_frames, start=offset) # 1 x T
         waveform = torch.from_numpy(waveform)
         feats = None
@@ -131,7 +130,7 @@ class mTEDx(Dataset):
                     waveform = F.layer_norm(waveform, waveform.shape)
                 feats = self.w2v_model(waveform, mask=False, features_only=True)["x"] # 1 x T x D_w2v
                 feats = feats.squeeze(0).cpu().numpy()
-        return waveform, feats, sr, src_utt, tgt_utt, spk_id, tgt_lang, utt_id
+        return waveform, feats, sr, src_utt, tgt_utt, spk_id, tgt_lang, src_lang, utt_id
 
     def __len__(self) -> int:
         return len(self.data)

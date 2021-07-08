@@ -24,14 +24,13 @@ def main():
     split = os.path.basename(args.tsv_path).replace(".tsv", "").split("_")[0]
     df = load_df_from_tsv(args.tsv_path)
 
-    ids_arr = [f"{n.split('_')[0]}_{str(n.split('_')[-1]).zfill(4)}" for n in df["id"].values]
+    ids_arr = [f"{'_'.join(n.split('_')[:-1])}_{str(n.split('_')[-1]).zfill(4)}.wav" for n in df["id"].values]
     nframes_arr = df["n_frames"].values
     assert len(ids_arr) == len(nframes_arr)
 
     # tsv file
     with open(os.path.join(args.dest, f"{split}.tsv"), "w") as f:
-        # print(os.path.join(os.path.dirname(args.tsv_path), "data", split, "wav_split"), file=f)
-        print(f"/gpfsscratch/rech/dbn/umz16dj/Data/fairspeech/mtedx_neurips/log_mel_fbank/fr-en/data/{split}/wav_split", file=f)
+        print(os.path.join(os.path.dirname(args.tsv_path), "data", split, "wav_split"), file=f)
         for i, id in enumerate(ids_arr):
             print(
                 f"{id}\t{nframes_arr[i]}", file=f
