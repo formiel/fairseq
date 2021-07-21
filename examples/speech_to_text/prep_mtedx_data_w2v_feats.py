@@ -61,6 +61,7 @@ class mTEDx(Dataset):
                 w2v_path: str = None,
                 use_gpu: bool = True,
                 normalize_signal: bool = False,
+                w2v_ctc: bool = False,
                 ) -> None:
         assert split in self.SPLITS and lang in self.LANGPAIRS
         _root = Path(root) / f"{lang}" / "data" / split
@@ -69,6 +70,7 @@ class mTEDx(Dataset):
         self.use_w2v_feats = use_w2v_feats
         self.gpu = torch.cuda.current_device() if use_gpu else None
         self.normalize_signal = normalize_signal
+        self.w2v_ctc = w2v_ctc
         if self.use_w2v_feats:
             assert os.path.isfile(w2v_path), f"{w2v_path} does not exist."
             print(f'Loading model from {w2v_path}...')
@@ -128,7 +130,11 @@ class mTEDx(Dataset):
             with torch.no_grad():
                 if self.normalize_signal:
                     waveform = F.layer_norm(waveform, waveform.shape)
-                feats = self.w2v_model(waveform, mask=False, features_only=True)["x"] # 1 x T x D_w2v
+                if not self.w2v_ctc:
+                    feats = self.w2v_model(waveform, mask=False, features_only=True)["x"] # 1 x T x D_w2v
+                else:
+                    feats = self.w2v_model.w2v_encoder.w2v_model.extract_features(
+                                            source=waveform, padding_mask=None)["x"]
                 feats = feats.squeeze(0).cpu().numpy()
         return waveform, feats, sr, src_utt, tgt_utt, spk_id, tgt_lang, src_lang, utt_id
 
@@ -152,7 +158,8 @@ def process(args):
                             use_w2v_feats=args.use_w2v_feats,
                             w2v_path=args.w2v_path,
                             use_gpu=args.use_gpu,
-                            normalize_signal=args.normalize_signal)
+                            normalize_signal=args.normalize_signal,
+                            w2v_ctc=args.w2v_ctc)
             print("Extracting log mel filter bank or wav2vec features...")
             if not args.use_w2v_feats:
                 for waveform, _, sample_rate, _, _, _, _, _, utt_id in tqdm(dataset):
@@ -179,7 +186,8 @@ def process(args):
                             use_w2v_feats=args.use_w2v_feats,
                             w2v_path=args.w2v_path,
                             use_gpu=args.use_gpu,
-                            normalize_signal=args.normalize_signal)
+                            normalize_signal=args.normalize_signal,
+                            w2v_ctc=args.w2v_ctc)
             for wav, _, sr, src_utt, tgt_utt, speaker_id, tgt_lang, src_lang, utt_id in tqdm(dataset):
                 manifest["id"].append(utt_id)
                 manifest["audio"].append(zip_manifest[utt_id])
@@ -278,6 +286,7 @@ def main():
     parser.add_argument("--w2v-path", type=str)
     parser.add_argument("--use-gpu", action="store_true")
     parser.add_argument("--normalize-signal", action="store_true")
+    parser.add_argument("--w2v-ctc", action="store_true")
     args = parser.parse_args()
 
     if args.joint:
