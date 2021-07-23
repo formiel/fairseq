@@ -224,6 +224,7 @@ def process(args):
             cur_root,
             spm_filename_prefix + ".model",
             yaml_filename=f"config_{args.task}.yaml",
+            specaugment_policy=None,
             input_feat_per_channel=input_feat_per_channel,
         )
         # Clean up
