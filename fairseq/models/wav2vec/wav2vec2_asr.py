@@ -6,6 +6,7 @@
 from argparse import Namespace
 import contextlib
 import copy
+import logging
 import math
 import numpy as np
 import torch
@@ -333,6 +334,7 @@ class Wav2VecEncoder(FairseqEncoder):
         }
 
         if cfg.w2v_args is None:
+            logging.info(f"Loading {cfg.w2v_path}...")
             state = checkpoint_utils.load_checkpoint_to_cpu(cfg.w2v_path, arg_overrides)
             w2v_args = state.get("cfg", None)
             if w2v_args is None:

@@ -13,9 +13,12 @@ from examples.speech_to_text.data_utils import load_df_from_tsv
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--tsv-path", type=str, 
-                                help="Path to input tsv file.")
+                                help="Path to input tsv file, which is the output of prep_dataset_data.py")
     parser.add_argument("--dest", type=str, 
                                 help="Path to directory where outputs are saved.")
+    parser.add_argument("--do-lower", action="store_true",
+                                help="Do lower-case if true. Otherwise, do upper-case.")
+
     args = parser.parse_args()
 
     os.makedirs(args.dest, exist_ok=True)
@@ -45,7 +48,10 @@ def main():
             line = line.strip().split('\t')
             id = line[0]
             if id not in translations:
-                texts = line[6].upper() # src_text
+                if args.do_lower:
+                    texts = line[6].lower() # src_text
+                else:
+                    texts = line[6].upper()
                 translations[id] = texts
             print(translations[id], file=wrd_out)
             print(
