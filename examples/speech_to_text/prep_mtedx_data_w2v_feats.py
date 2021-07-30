@@ -49,11 +49,10 @@ class mTEDx(Dataset):
     target utterance, speaker_id, utterance_id
     """
 
-    SPLITS    = ["train", "valid", "test"] #, "iwslt2021"]
-    # LANGPAIRS = ["es-es","fr-fr","pt-pt","it-it","ru-ru","el-el","ar-ar","de-de",
-    #              "es-en","es-fr","es-pt","es-it","fr-en","fr-es","fr-pt",
-    #              "pt-en","pt-es","it-en","it-es","ru-en","el-en"]
-    LANGPAIRS = ["fr-en", "fr-es", "fr-pt", "fr-fr"]
+    SPLITS    = ["train", "valid", "test"]
+    LANGPAIRS = ["es-es","fr-fr","pt-pt","it-it","ru-ru","el-el","ar-ar","de-de",
+                 "es-en","es-fr","es-pt","es-it","fr-en","fr-es","fr-pt",
+                 "pt-en","pt-es","it-en","it-es","ru-en","el-en"]
 
 
     def __init__(self, root: str, lang: str, split: str,
@@ -144,7 +143,28 @@ class mTEDx(Dataset):
 
 def process(args):
     root = Path(args.data_root).absolute()
-    for lang in mTEDx.LANGPAIRS:
+    lang_pairs = mTEDx.LANGPAIRS
+    # Get wanted language pairs
+    if args.src is not None:
+        _pairs = []
+        src_lgs = args.src.split(",")
+        all_srcs = [p.split("-")[0] for p in lang_pairs]
+        all_tgts = [p.split("-")[-1] for p in lang_pairs]
+        for i, s in enumerate(all_srcs):
+            if s in src_lgs:
+                _pairs.append(f"{s}-{all_tgts[i]}")
+        lang_pairs = _pairs
+    if args.tgt is not None:
+        _pairs = []
+        tgt_lgs = args.tgt.split(",")
+        all_srcs = [p.split("-")[0] for p in lang_pairs]
+        all_tgts = [p.split("-")[-1] for p in lang_pairs]
+        for i, t in enumerate(all_tgts):
+            if t in tgt_lgs:
+                _pairs.append(f"{all_srcs[i]}-{t}")
+        lang_pairs = _pairs
+
+    for lang in lang_pairs:
         cur_root = root / f"{lang}"
         if not cur_root.is_dir():
             print(f"{cur_root.as_posix()} does not exist. Skipped.")
@@ -288,6 +308,14 @@ def main():
     parser.add_argument("--use-gpu", action="store_true")
     parser.add_argument("--normalize-signal", action="store_true")
     parser.add_argument("--w2v-ctc", action="store_true")
+    parser.add_argument("--src", type=str, default=None, 
+                        help="Preprocess only language pairs including this\
+                            language as a source. To include multiple languages\
+                            seperated by comma.")
+    parser.add_argument("--tgt", type=str, default=None, 
+                        help="Preprocess only language pairs including this\
+                            language as a target. To include multiple languages\
+                            seperated by comma.")
     args = parser.parse_args()
 
     if args.joint:
