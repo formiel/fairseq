@@ -162,7 +162,10 @@ def gen_config_yaml(
     if cmvn_type not in ["global", "utterance"]:
         raise NotImplementedError
 
-    writer.set_feature_transforms("_train", [f"{cmvn_type}_cmvn", "specaugment"])
+    if specaugment_setter is not None:
+        writer.set_feature_transforms("_train", [f"{cmvn_type}_cmvn", "specaugment"])
+    else:
+        writer.set_feature_transforms("_train", [f"{cmvn_type}_cmvn"])
     writer.set_feature_transforms("*", [f"{cmvn_type}_cmvn"])
 
     if cmvn_type == "global":
