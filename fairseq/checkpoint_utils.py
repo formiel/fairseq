@@ -7,15 +7,16 @@ import ast
 import collections
 import contextlib
 import logging
+import numpy as np
 import os
 import re
 import time
 import traceback
 from collections import OrderedDict
 from typing import Any, Dict, Optional, Union
-from random import randint
 
 import torch
+from fairseq.data import data_utils
 from fairseq.dataclass.configs import CheckpointConfig
 from fairseq.dataclass.utils import (
     convert_namespace_to_omegaconf,
@@ -82,18 +83,23 @@ def save_checkpoint(cfg: CheckpointConfig, trainer, epoch_itr, val_loss):
         worst_best = getattr(save_checkpoint, "best", None)
         chkpts = checkpoint_paths(
             cfg.save_dir,
-            pattern=r"checkpoint\.best_{}_(\d+\.?\d*)\.pt".format(
-                cfg.best_checkpoint_metric
+            pattern=r"checkpoint\.best_{}_(\d+\.?\d*){}\.pt".format(
+                cfg.best_checkpoint_metric, suffix
             ),
         )
         if len(chkpts) > 0:
             p = chkpts[-1] if cfg.maximize_best_checkpoint_metric else chkpts[0]
-            worst_best = float(p.rsplit("_")[-1].replace(".pt", ""))
+            worst_best = float(p.rsplit("_")[-1].replace("{}.pt".format(suffix), ""))
         # add random digits to resolve ties
-        rand_sfx = randint(0, cfg.keep_best_checkpoints)
+        with data_utils.numpy_seed(epoch, updates, val_loss):
+            rand_sfx = np.random.randint(0, cfg.keep_best_checkpoints)
+
         checkpoint_conds[
-            "checkpoint.best_{}_{:.3f}{}.pt".format(
-                cfg.best_checkpoint_metric, val_loss, rand_sfx
+            "checkpoint.best_{}_{:.3f}{}{}.pt".format(
+                cfg.best_checkpoint_metric,
+                val_loss,
+                rand_sfx,
+                suffix
             )
         ] = worst_best is None or is_better(val_loss, worst_best)
     checkpoint_conds[
@@ -161,6 +167,8 @@ def save_checkpoint(cfg: CheckpointConfig, trainer, epoch_itr, val_loss):
         for old_chk in checkpoints[cfg.keep_last_epochs :]:
             if os.path.lexists(old_chk):
                 os.remove(old_chk)
+            elif PathManager.exists(old_chk):
+                PathManager.rm(old_chk)
 
     if cfg.keep_best_checkpoints > 0:
         # only keep the best N checkpoints according to validation metric
@@ -175,6 +183,8 @@ def save_checkpoint(cfg: CheckpointConfig, trainer, epoch_itr, val_loss):
         for old_chk in checkpoints[cfg.keep_best_checkpoints :]:
             if os.path.lexists(old_chk):
                 os.remove(old_chk)
+            elif PathManager.exists(old_chk):
+                PathManager.rm(old_chk)
 
 
 def load_checkpoint(cfg: CheckpointConfig, trainer, **passthrough_args):
@@ -643,7 +653,7 @@ def _upgrade_state_dict(state):
             ):
                 cfg.task.eval_wer_config.print_alignment = "hard"
             if "generation" in cfg and isinstance(cfg.generation.print_alignment, bool):
-                cfg.generation.print_alignment = "hard"
+                cfg.generation.print_alignment = "hard" if cfg.generation.print_alignment else None
             if (
                 "model" in cfg
                 and "w2v_args" in cfg.model
