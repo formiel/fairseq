@@ -134,8 +134,4 @@ experimental/*
 
 # Weights and Biases logs
 wandb/
-*_configs_*
-*_lig*
-*_slurm*
-*_tools*
-*_*.md*
+_*
