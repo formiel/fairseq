@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # Split wav files based on pre-specified segments
-INPUT_DIR=$1 # /gpfswork/rech/dbn/umz16dj/Data/fairspeech/mtedx_neurips/fr-en/data/train/wav
-OUTPUT_DIR=$2 # /gpfswork/rech/dbn/umz16dj/Data/fairspeech/mtedx_neurips/fr-en/data/train/wav_split
-SEGMENT_FILE=$3 # /gpfswork/rech/dbn/umz16dj/Data/fairspeech/mtedx_neurips/fr-en/data/train/txt/segments
+INPUT_DIR=$1 # ~/mtedx/fr-en/data/train/wav
+OUTPUT_DIR=$2 # ~/mtedx/fr-en/data/train/wav_split
+SEGMENT_FILE=$3 # ~/mtedx/fr-en/data/train/txt/segments
 
 mkdir -p $OUTPUT_DIR
 count=0
