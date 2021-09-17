@@ -7,6 +7,7 @@ inputs for fine-tuning with wav2vec 2.0
 
 import argparse
 import os
+import soundfile as sf
 from examples.speech_to_text.data_utils import load_df_from_tsv
 
 
@@ -30,12 +31,13 @@ def main():
     df = load_df_from_tsv(args.tsv_path)
 
     ids_arr = [f"{'_'.join(n.split('_')[:-1])}_{str(n.split('_')[-1]).zfill(4)}.wav" for n in df["id"].values]
-    nframes_arr = df["n_frames"].values
-    assert len(ids_arr) == len(nframes_arr)
+    nframes_arr = []
+    for idx in ids_arr:
+        fname = os.path.join(os.path.join(args.audio_root), idx)
+        nframes_arr.append(sf.info(fname).frames)
 
     # tsv file
     with open(os.path.join(args.dest, f"{split}.tsv"), "w") as f:
-        # print(os.path.join(os.path.dirname(args.tsv_path), "data", split, "wav_split"), file=f)
         print(args.audio_root, file=f)
         for i, id in enumerate(ids_arr):
             print(

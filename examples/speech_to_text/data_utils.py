@@ -206,13 +206,20 @@ def save_df_to_tsv(dataframe, path: Union[str, Path]):
 
 
 def filter_manifest_df(
-    df, is_train_split=False, extra_filters=None, min_n_frames=5, max_n_frames=3000
+    df, is_train_split=False, extra_filters=None, min_n_frames=5, max_n_frames=3000,
+    no_audio=False,
 ):
     filters = {
         "no speech": df["audio"] == "",
         f"short speech (<{min_n_frames} frames)": df["n_frames"] < min_n_frames,
         "empty sentence": df["tgt_text"] == "",
     }
+    if no_audio:
+        filters = {
+        f"short speech (<{min_n_frames} frames)": df["n_frames"] < min_n_frames,
+        "empty sentence": df["tgt_text"] == "",
+    }
+
     if is_train_split:
         filters[f"long speech (>{max_n_frames} frames)"] = df["n_frames"] > max_n_frames
     if extra_filters is not None:

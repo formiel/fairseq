@@ -172,30 +172,32 @@ def process(args):
         # Extract features
         feature_root = cur_root / "fbank80" if not args.use_w2v_feats else cur_root / "w2v2_feats"
         feature_root.mkdir(exist_ok=True)
-        for split in mTEDx.SPLITS:
-            print(f"Fetching split {split}...")
-            dataset = mTEDx(root.as_posix(), lang, split,
-                            use_w2v_feats=args.use_w2v_feats,
-                            w2v_path=args.w2v_path,
-                            use_gpu=args.use_gpu,
-                            normalize_signal=args.normalize_signal,
-                            w2v_ctc=args.w2v_ctc)
-            print("Extracting log mel filter bank or wav2vec features...")
-            if not args.use_w2v_feats:
-                for waveform, _, sample_rate, _, _, _, _, _, utt_id in tqdm(dataset):
-                    extract_fbank_features(
-                        waveform, sample_rate, feature_root / f"{utt_id}.npy"
-                    )
-            else:
-                for _, features, sample_rate, _, _, _, _, _, utt_id in tqdm(dataset):
-                    output_path = feature_root / f"{utt_id}.npy"
-                    np.save(output_path.as_posix(), features)
+        if not args.get_manifest_only:
+            for split in mTEDx.SPLITS:
+                print(f"Fetching split {split}...")
+                dataset = mTEDx(root.as_posix(), lang, split,
+                                use_w2v_feats=args.use_w2v_feats,
+                                w2v_path=args.w2v_path,
+                                use_gpu=args.use_gpu,
+                                normalize_signal=args.normalize_signal,
+                                w2v_ctc=args.w2v_ctc)
+                print("Extracting log mel filter bank or wav2vec features...")
+                if not args.use_w2v_feats:
+                    for waveform, _, sample_rate, _, _, _, _, _, utt_id in tqdm(dataset):
+                        extract_fbank_features(
+                            waveform, sample_rate, feature_root / f"{utt_id}.npy"
+                        )
+                else:
+                    for _, features, sample_rate, _, _, _, _, _, utt_id in tqdm(dataset):
+                        output_path = feature_root / f"{utt_id}.npy"
+                        np.save(output_path.as_posix(), features)
         # Pack features into ZIP
         zip_path = cur_root / "fbank80.zip" if not args.use_w2v_feats else cur_root / "w2v2_feats.zip"
-        print("ZIPing features...")
-        create_zip(feature_root, zip_path)
-        print("Fetching ZIP manifest...")
-        zip_manifest = get_zip_manifest(zip_path)
+        if not args.get_manifest_only:
+            print("ZIPing features...")
+            create_zip(feature_root, zip_path)
+            print("Fetching ZIP manifest...")
+            zip_manifest = get_zip_manifest(zip_path)
         # Generate TSV manifest
         print("Generating manifest...")
         train_text = []
@@ -210,7 +212,10 @@ def process(args):
                             w2v_ctc=args.w2v_ctc)
             for wav, _, sr, src_utt, tgt_utt, speaker_id, tgt_lang, src_lang, utt_id in tqdm(dataset):
                 manifest["id"].append(utt_id)
-                manifest["audio"].append(zip_manifest[utt_id])
+                if not args.get_manifest_only:
+                    manifest["audio"].append(zip_manifest[utt_id])
+                else:
+                    manifest["audio"].append("")
                 duration_ms = int(wav.size(1) / sr * 1000)
                 manifest["n_frames"].append(int(1 + (duration_ms - 25) / 10))
                 manifest["tgt_text"].append(src_utt if args.task == "asr" else tgt_utt)
@@ -221,32 +226,36 @@ def process(args):
             if is_train_split:
                 train_text.extend(manifest["tgt_text"])
             df = pd.DataFrame.from_dict(manifest)
-            df = filter_manifest_df(df, is_train_split=is_train_split)
+            df = filter_manifest_df(df, 
+                                    is_train_split=is_train_split, 
+                                    no_audio=args.get_manifest_only)
             save_df_to_tsv(df, cur_root / f"{split}_{args.task}.tsv")
-        # Generate vocab
-        v_size_str = "" if args.vocab_type == "char" else str(args.vocab_size)
-        spm_filename_prefix = f"spm_{args.vocab_type}{v_size_str}_{args.task}"
-        with NamedTemporaryFile(mode="w") as f:
-            for t in train_text:
-                f.write(t + "\n")
-            gen_vocab(
-                Path(f.name),
-                cur_root / spm_filename_prefix,
-                args.vocab_type,
-                args.vocab_size,
+
+        if not args.get_manifest_only:
+            # Generate vocab
+            v_size_str = "" if args.vocab_type == "char" else str(args.vocab_size)
+            spm_filename_prefix = f"spm_{args.vocab_type}{v_size_str}_{args.task}"
+            with NamedTemporaryFile(mode="w") as f:
+                for t in train_text:
+                    f.write(t + "\n")
+                gen_vocab(
+                    Path(f.name),
+                    cur_root / spm_filename_prefix,
+                    args.vocab_type,
+                    args.vocab_size,
+                )
+            # Generate config YAML
+            input_feat_per_channel = 80
+            if args.use_w2v_feats:
+                input_feat_per_channel = np.load(os.path.join(feature_root,
+                                                    os.listdir(feature_root)[0])).shape[1]
+            gen_config_yaml(
+                cur_root,
+                spm_filename_prefix + ".model",
+                yaml_filename=f"config_{args.task}.yaml",
+                specaugment_policy=None,
+                input_feat_per_channel=input_feat_per_channel,
             )
-        # Generate config YAML
-        input_feat_per_channel = 80
-        if args.use_w2v_feats:
-            input_feat_per_channel = np.load(os.path.join(feature_root,
-                                                os.listdir(feature_root)[0])).shape[1]
-        gen_config_yaml(
-            cur_root,
-            spm_filename_prefix + ".model",
-            yaml_filename=f"config_{args.task}.yaml",
-            specaugment_policy=None,
-            input_feat_per_channel=input_feat_per_channel,
-        )
         # Clean up
         shutil.rmtree(feature_root)
 
@@ -316,6 +325,8 @@ def main():
                         help="Preprocess only language pairs including this\
                             language as a target. To include multiple languages\
                             seperated by comma.")
+    parser.add_argument("--get-manifest-only", action="store_true",
+                        help="Extracting the manifest only.")
     args = parser.parse_args()
 
     if args.joint:
