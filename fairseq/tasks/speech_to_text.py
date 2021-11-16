@@ -31,20 +31,20 @@ class SpeechToTextTask(LegacyFairseqTask):
             default="config.yaml",
             help="Configuration YAML filename (under manifest root)",
         )
-        parser.add_argument(
-            "--max-source-positions",
-            default=6000,
-            type=int,
-            metavar="N",
-            help="max number of tokens in the source sequence",
-        )
-        parser.add_argument(
-            "--max-target-positions",
-            default=1024,
-            type=int,
-            metavar="N",
-            help="max number of tokens in the target sequence",
-        )
+        # parser.add_argument(
+        #     "--max-source-positions",
+        #     default=6000,
+        #     type=int,
+        #     metavar="N",
+        #     help="max number of tokens in the source sequence",
+        # )
+        # parser.add_argument(
+        #     "--max-target-positions",
+        #     default=1024,
+        #     type=int,
+        #     metavar="N",
+        #     help="max number of tokens in the target sequence",
+        # )
 
     def __init__(self, args, tgt_dict):
         super().__init__(args)

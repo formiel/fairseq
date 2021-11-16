@@ -265,7 +265,9 @@ class DualInputEncoder(FairseqEncoder):
                 spch_encoder.transformer_layers[-args.encoder_shared_layers :]
             ):
                 ly_id = i + args.text_encoder_layers - args.encoder_shared_layers
-                assert isinstance(text_encoder.layers[ly_id], type(ly))
+                # logging.info(f"text_encoder.layers[ly_id]: {type(text_encoder.layers[ly_id])}")
+                # logging.info(f"type(ly): {type(ly)}")
+                # assert isinstance(text_encoder.layers[ly_id], type(ly))
                 text_encoder.layers[ly_id] = cls.set_shared_layer(
                     args.encoder_shared_layer_level,
                     text_encoder.layers[ly_id],
@@ -743,6 +745,13 @@ class DualInputS2TTransformerModel(FairseqEncoderDecoderModel):
             help=""" path to the pretrained speech encoder """,
         )
         parser.add_argument(
+            "--load-pretrain-speech-encoder-from-siamese",
+            type=str,
+            default="",
+            metavar="EXPR",
+            help=""" path to the pretrained speech encoder """,
+        )
+        parser.add_argument(
             "--load-pretrain-text-encoder",
             type=str,
             default="",
@@ -758,6 +767,13 @@ class DualInputS2TTransformerModel(FairseqEncoderDecoderModel):
         )
         parser.add_argument(
             "--load-pretrain-decoder",
+            type=str,
+            metavar="EXPR",
+            default="",
+            help=""" path to the pretrained encoder """,
+        )
+        parser.add_argument(
+            "--load-pretrain-decoder-from-multi-decoder",
             type=str,
             metavar="EXPR",
             default="",
@@ -810,6 +826,25 @@ class DualInputS2TTransformerModel(FairseqEncoderDecoderModel):
                 checkpoint_utils.load_pretrained_component_from_model(
                     spch_encoder, args.load_pretrain_speech_encoder
                 )
+            logging.info(f"Loaded pretrained speech encoder from {args.load_pretrain_speech_encoder}")
+
+        if getattr(args, "load_pretrain_speech_encoder_from_siamese", "") != "":
+            state = checkpoint_utils.load_checkpoint_to_cpu(
+                args.load_pretrain_speech_encoder_from_siamese
+            )
+            ckpt_component_type = ["encoder.spch_encoder"] \
+                if any([key.startswith("encoder.spch_encoder") for key in state["model"].keys()]) else ["encoder"]
+            logging.info(f"ckpt_component_type: {ckpt_component_type}")
+
+            if hasattr(spch_encoder, "encoder"):
+                checkpoint_utils.load_pretrained_component_from_model_different_keys(
+                    spch_encoder.encoder, state, ckpt_component_types=ckpt_component_type)
+            else:
+                checkpoint_utils.load_pretrained_component_from_model_different_keys(
+                    spch_encoder, state, ckpt_component_types=ckpt_component_type)
+
+            logging.info(f"Loaded pretrained speech encoder from {args.load_pretrain_speech_encoder_from_siamese}")
+
         if (
             args.load_pretrain_text_encoder_last != ""
         ):  # if share encoder, speech encoder parameters will be used.
@@ -817,6 +852,7 @@ class DualInputS2TTransformerModel(FairseqEncoderDecoderModel):
             checkpoint_utils.load_pretrained_component_from_model(
                 text_encoder, args.load_pretrain_text_encoder_last
             )
+            logging.info(f"Loaded pretrained text encoder last from {args.load_pretrain_text_encoder_last}")
 
         if args.load_pretrain_encoder != "":
             checkpoint_utils.load_pretrained_component_from_model(
@@ -897,6 +933,33 @@ class DualInputS2TTransformerModel(FairseqEncoderDecoderModel):
                     checkpoint_utils.load_pretrained_component_from_model(
                         decoder.spch_decoder, args.load_pretrain_decoder
                     )
+            logging.info(f"Loaded pretrained decoder from {args.load_pretrain_decoder}")
+
+        if (
+            getattr(args, "load_pretrain_decoder_from_multi_decoder", "") != ""
+        ):  # if share encoder, speech encoder parameters will be used.
+            # It provides a chance to use pre-trained mt encoder instead
+            state = checkpoint_utils.load_checkpoint_to_cpu(args.load_pretrain_decoder_from_multi_decoder)
+            # check if language pairs in state
+            multi_dec = False
+            lang_pair = None
+            for key in state["model"].keys():
+                multi_dec = True if len(key.split(".")[1].split("-")) == 2 else False
+                lang_pair = key.split(".")[1]
+                if multi_dec:
+                    break
+            
+            ckpt_component_type = [f"models.{lang_pair}.decoder", "models.decoder"] \
+                if multi_dec else ["models.decoder"]
+            logging.info(f"ckpt_component_type: {ckpt_component_type}")
+            try:
+                checkpoint_utils.load_pretrained_component_from_model_different_keys(
+                    decoder, state, ckpt_component_types=ckpt_component_type)
+            except RuntimeError:
+                checkpoint_utils.load_pretrained_component_from_model_different_keys(
+                    decoder.text_decoder, state, ckpt_component_types=ckpt_component_type)
+
+            logging.info(f"Loaded pretrained decoder from multilingual model {args.load_pretrain_decoder_from_multi_decoder}")
 
         return decoder
 

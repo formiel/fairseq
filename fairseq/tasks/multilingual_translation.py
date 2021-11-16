@@ -27,7 +27,8 @@ logger = logging.getLogger(__name__)
 
 
 def _lang_token(lang: str):
-    return "__{}__".format(lang)
+    # return "__{}__".format(lang)
+    return f"<lang:{lang}>"
 
 
 def _lang_token_index(dic: Dictionary, lang: str):
@@ -156,9 +157,9 @@ class MultilingualTranslationTask(LegacyFairseqTask):
                 assert dicts[lang].pad() == dicts[sorted_langs[0]].pad()
                 assert dicts[lang].eos() == dicts[sorted_langs[0]].eos()
                 assert dicts[lang].unk() == dicts[sorted_langs[0]].unk()
-            if args.encoder_langtok is not None or args.decoder_langtok:
-                for lang_to_add in sorted_langs:
-                    dicts[lang].add_symbol(_lang_token(lang_to_add))
+            # if args.encoder_langtok is not None or args.decoder_langtok:
+            #     for lang_to_add in sorted_langs:
+            #         dicts[lang].add_symbol(_lang_token(lang_to_add))
             logger.info("[{}] dictionary: {} types".format(lang, len(dicts[lang])))
         return dicts, training
 
@@ -200,6 +201,7 @@ class MultilingualTranslationTask(LegacyFairseqTask):
         new_tgt_bos = None
         if self.args.decoder_langtok and tgt_eos is not None and tgt_lang is not None:
             new_tgt_bos = self.get_decoder_langtok(tgt_lang)
+            logging.info(f'tgt_lang: {tgt_lang}, idx: {new_tgt_bos}')
         else:
             tgt_eos = None
 

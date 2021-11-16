@@ -110,60 +110,62 @@ def process(args):
             print(f"{cur_root.as_posix()} does not exist. Skipped.")
             continue
         # Extract features
-        feature_root = cur_root / "fbank80"
-        feature_root.mkdir(exist_ok=True)
-        for split in MUSTC.SPLITS:
-            print(f"Fetching split {split}...")
-            dataset = MUSTC(root.as_posix(), lang, split)
-            print("Extracting log mel filter bank features...")
-            if split == 'train' and args.cmvn_type == "global":
-                print("And estimating cepstral mean and variance stats...")
-                gcmvn_feature_list = []
+        # feature_root = cur_root / "fbank80"
+        # feature_root.mkdir(exist_ok=True)
+        # for split in MUSTC.SPLITS:
+        #     print(f"Fetching split {split}...")
+        #     dataset = MUSTC(root.as_posix(), lang, split)
+        #     print("Extracting log mel filter bank features...")
+        #     if split == 'train' and args.cmvn_type == "global":
+        #         print("And estimating cepstral mean and variance stats...")
+        #         gcmvn_feature_list = []
 
-            for waveform, sample_rate, _, _, _, utt_id in tqdm(dataset):
-                features = extract_fbank_features(waveform, sample_rate)
+        #     for waveform, sample_rate, _, _, _, utt_id in tqdm(dataset):
+        #         features = extract_fbank_features(waveform, sample_rate)
 
-                np.save(
-                    (feature_root / f"{utt_id}.npy").as_posix(),
-                    features
-                )
+        #         np.save(
+        #             (feature_root / f"{utt_id}.npy").as_posix(),
+        #             features
+        #         )
 
-                if split == 'train' and args.cmvn_type == "global":
-                    if len(gcmvn_feature_list) < args.gcmvn_max_num:
-                        gcmvn_feature_list.append(features)
+        #         if split == 'train' and args.cmvn_type == "global":
+        #             if len(gcmvn_feature_list) < args.gcmvn_max_num:
+        #                 gcmvn_feature_list.append(features)
 
-            if split == 'train' and args.cmvn_type == "global":
-                # Estimate and save cmv
-                stats = cal_gcmvn_stats(gcmvn_feature_list)
-                with open(cur_root / "gcmvn.npz", "wb") as f:
-                    np.savez(f, mean=stats["mean"], std=stats["std"])
+        #     if split == 'train' and args.cmvn_type == "global":
+        #         # Estimate and save cmv
+        #         stats = cal_gcmvn_stats(gcmvn_feature_list)
+        #         with open(cur_root / "gcmvn.npz", "wb") as f:
+        #             np.savez(f, mean=stats["mean"], std=stats["std"])
 
         # Pack features into ZIP
         zip_path = cur_root / "fbank80.zip"
-        print("ZIPing features...")
-        create_zip(feature_root, zip_path)
+        # print("ZIPing features...")
+        # create_zip(feature_root, zip_path)
         print("Fetching ZIP manifest...")
-        zip_manifest = get_zip_manifest(zip_path)
+        # zip_manifest = get_zip_manifest(zip_path)
         # Generate TSV manifest
         print("Generating manifest...")
         train_text = []
-        for split in MUSTC.SPLITS:
-            is_train_split = split.startswith("train")
-            manifest = {c: [] for c in MANIFEST_COLUMNS}
-            dataset = MUSTC(args.data_root, lang, split)
-            for wav, sr, src_utt, tgt_utt, speaker_id, utt_id in tqdm(dataset):
-                manifest["id"].append(utt_id)
-                manifest["audio"].append(zip_manifest[utt_id])
-                duration_ms = int(wav.size(1) / sr * 1000)
-                manifest["n_frames"].append(int(1 + (duration_ms - 25) / 10))
-                manifest["tgt_text"].append(src_utt if args.task == "asr" else tgt_utt)
-                manifest["speaker"].append(speaker_id)
-            if is_train_split:
-                train_text.extend(manifest["tgt_text"])
-            df = pd.DataFrame.from_dict(manifest)
-            df = filter_manifest_df(df, is_train_split=is_train_split)
-            save_df_to_tsv(df, cur_root / f"{split}_{args.task}.tsv")
+        # for split in MUSTC.SPLITS:
+        #     is_train_split = split.startswith("train")
+        #     manifest = {c: [] for c in MANIFEST_COLUMNS}
+        #     dataset = MUSTC(args.data_root, lang, split)
+        #     for wav, sr, src_utt, tgt_utt, speaker_id, utt_id in tqdm(dataset):
+        #         manifest["id"].append(utt_id)
+        #         manifest["audio"].append(zip_manifest[utt_id])
+        #         duration_ms = int(wav.size(1) / sr * 1000)
+        #         manifest["n_frames"].append(int(1 + (duration_ms - 25) / 10))
+        #         manifest["tgt_text"].append(src_utt if args.task == "asr" else tgt_utt)
+        #         manifest["speaker"].append(speaker_id)
+        #     if is_train_split:
+        #         train_text.extend(manifest["tgt_text"])
+        #     df = pd.DataFrame.from_dict(manifest)
+        #     df = filter_manifest_df(df, is_train_split=is_train_split)
+        #     save_df_to_tsv(df, cur_root / f"{split}_{args.task}.tsv")
         # Generate vocab
+        df = load_df_from_tsv(cur_root / f"train_{args.task}.tsv")
+        train_text = df["tgt_text"].to_list()
         v_size_str = "" if args.vocab_type == "char" else str(args.vocab_size)
         spm_filename_prefix = f"spm_{args.vocab_type}{v_size_str}_{args.task}"
         with NamedTemporaryFile(mode="w") as f:
@@ -176,19 +178,19 @@ def process(args):
                 args.vocab_size,
             )
         # Generate config YAML
-        gen_config_yaml(
-            cur_root,
-            spm_filename_prefix + ".model",
-            yaml_filename=f"config_{args.task}.yaml",
-            specaugment_policy="lb",
-            cmvn_type=args.cmvn_type,
-            gcmvn_path=(
-                cur_root / "gcmvn.npz" if args.cmvn_type == "global"
-                else None
-            ),
-        )
+        # gen_config_yaml(
+        #     cur_root,
+        #     spm_filename_prefix + ".model",
+        #     yaml_filename=f"config_{args.task}_{v_size_str}.yaml",
+        #     specaugment_policy="lb",
+        #     cmvn_type=args.cmvn_type,
+        #     gcmvn_path=(
+        #         cur_root / "gcmvn.npz" if args.cmvn_type == "global"
+        #         else None
+        #     ),
+        # )
         # Clean up
-        shutil.rmtree(feature_root)
+        # shutil.rmtree(feature_root)
 
 
 def process_joint(args):
@@ -215,10 +217,11 @@ def process_joint(args):
             special_symbols=special_symbols
         )
     # Generate config YAML
+    v_size_str = "" if args.vocab_type == "char" else str(args.vocab_size)
     gen_config_yaml(
         cur_root,
         spm_filename_prefix + ".model",
-        yaml_filename=f"config_{args.task}.yaml",
+        yaml_filename=f"config_{args.task}_{v_size_str}.yaml",
         specaugment_policy="ld",
         prepend_tgt_lang_tag=(args.task == "st"),
     )

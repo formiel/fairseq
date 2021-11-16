@@ -796,6 +796,43 @@ def load_pretrained_component_from_model(
     return component
 
 
+def load_pretrained_component_from_model_different_keys(
+    component: Union[FairseqEncoder, FairseqDecoder], 
+    checkpoint: Union[str, dict],
+    ckpt_component_types=["encoder"],
+):
+    """
+    Load a pretrained FairseqEncoder or FairseqDecoder from checkpoint into the
+    provided `component` object. If state_dict fails to load, there may be a
+    mismatch in the architecture of the corresponding `component` found in the
+    `checkpoint` file.
+    """
+    if isinstance(checkpoint, str):
+        if not PathManager.exists(checkpoint):
+            raise IOError("Model file not found: {}".format(checkpoint))
+        state = load_checkpoint_to_cpu(checkpoint)
+    elif isinstance(checkpoint, dict):
+        state = checkpoint
+    else:
+        raise NotImplementedError(f"checkpoint has to be of str or dict type")
+
+    assert isinstance(component, FairseqEncoder) or isinstance(component, FairseqDecoder)
+    component_state_dict = OrderedDict()
+    loaded_components = []
+    for key in state["model"].keys():
+        for ckpt_type in ckpt_component_types:
+            if key.startswith(ckpt_type):
+                # encoder.input_layers.0.0.weight --> input_layers.0.0.weight
+                component_subkey = key[len(ckpt_type) + 1 :]
+                # logging.info(f"component_subkey: {component_subkey}")
+                component_state_dict[component_subkey] = state["model"][key]
+                loaded_components.append(component_subkey)
+    # not_loaded_components = set(component.state_dict()) - set(loaded_components)
+    # logging.info(f"*** not_loaded_components: {not_loaded_components}")
+    component.load_state_dict(component_state_dict, strict=True)
+    return component
+
+
 def verify_checkpoint_directory(save_dir: str) -> None:
     if not os.path.exists(save_dir):
         os.makedirs(save_dir, exist_ok=True)

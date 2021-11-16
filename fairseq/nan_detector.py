@@ -52,7 +52,7 @@ class NanDetector:
         if self.forward:
             self.fhooks.append(module.register_forward_hook(self.fhook_fn))
         if self.backward:
-            self.bhooks.append(module.register_backward_hook(self.bhook_fn))
+            self.bhooks.append(module.register_full_backward_hook(self.bhook_fn))
 
     def reset(self):
         self.has_printed_f = False

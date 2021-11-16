@@ -203,6 +203,7 @@ class TransformerEncoderBase(FairseqEncoder):
         has_pads = src_tokens.device.type == "xla" or encoder_padding_mask.any()
 
         x, encoder_embedding = self.forward_embedding(src_tokens, token_embeddings)
+        embed_src_tokens = x.transpose(0, 1)
 
         # account for padding while computing the representation
         if has_pads:
@@ -240,6 +241,7 @@ class TransformerEncoderBase(FairseqEncoder):
             "encoder_states": encoder_states,  # List[T x B x C]
             "src_tokens": [],
             "src_lengths": [src_lengths],
+            "embed_src_tokens": [embed_src_tokens], # T x B x C
         }
 
     @torch.jit.export

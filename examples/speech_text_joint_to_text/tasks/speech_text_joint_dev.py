@@ -34,8 +34,8 @@ logger = logging.getLogger(__name__)
 LANG_TAG_TEMPLATE = "<lang:{}>"
 
 
-@register_task("speech_text_joint_to_text")
-class SpeechTextJointToTextTask(SpeechToTextTask):
+@register_task("speech_text_joint_to_text_dev")
+class SpeechTextJointToTextDevTask(SpeechToTextTask):
     """
     Task for joint training speech and text to text.
     """
@@ -43,7 +43,7 @@ class SpeechTextJointToTextTask(SpeechToTextTask):
     @classmethod
     def add_args(cls, parser):
         """Add task-specific arguments to the parser."""
-        super(SpeechTextJointToTextTask, cls).add_args(parser)
+        super(SpeechTextJointToTextDevTask, cls).add_args(parser)
         ###
         parser.add_argument(
             "--parallel-text-data",
@@ -117,20 +117,20 @@ class SpeechTextJointToTextTask(SpeechToTextTask):
             metavar="S",
             help="target language for inference",
         )
-        parser.add_argument(
-            "--max-source-positions",
-            default=6000,
-            type=int,
-            metavar="N",
-            help="max number of tokens in the source sequence",
-        )
-        parser.add_argument(
-            "--max-target-positions",
-            default=1024,
-            type=int,
-            metavar="N",
-            help="max number of tokens in the target sequence",
-        )
+        # parser.add_argument(
+        #     "--max-source-positions",
+        #     default=6000,
+        #     type=int,
+        #     metavar="N",
+        #     help="max number of tokens in the source sequence",
+        # )
+        # parser.add_argument(
+        #     "--max-target-positions",
+        #     default=1024,
+        #     type=int,
+        #     metavar="N",
+        #     help="max number of tokens in the target sequence",
+        # )
 
     def __init__(self, args, src_dict, tgt_dict, infer_tgt_lang_id=None):
         super().__init__(args, tgt_dict)
@@ -248,6 +248,8 @@ class SpeechTextJointToTextTask(SpeechToTextTask):
         Args:
             split (str): name of the split (e.g., train, valid, test)
         """
+        src_dict=None if self.speech_only else self.src_dict
+        logging.info(f"src_dict: {src_dict}")
         is_train_split = split.startswith("train")
         pre_tokenizer = self.build_tokenizer(self.args)
         bpe_tokenizer = self.build_bpe(self.args)
@@ -343,7 +345,7 @@ class SpeechTextJointToTextTask(SpeechToTextTask):
     ):
 
         if not isinstance(dataset, MultiModalityDataset):
-            return super(SpeechTextJointToTextTask, self).get_batch_iterator(
+            return super(SpeechTextJointToTextDevTask, self).get_batch_iterator(
                 dataset,
                 max_tokens,
                 max_sentences,

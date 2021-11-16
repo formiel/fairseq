@@ -71,7 +71,15 @@ def do_g2p(g2p, sent, res_wrds, is_first_sent):
     if sent in res_wrds:
         pho_seq = [res_wrds[sent]]
     else:
-        pho_seq = g2p(sent)
+        print(f"- {sent}")
+        try:
+            pho_seq = g2p(sent)
+        except:
+            span = re.search("(([0-9]){3},)+", sent).span()
+            dst = " ".join([d for d in sent[span[0]: span[1]].replace(",", "")])
+            sent = sent.replace(sent[span[0]: span[1]], dst)
+            print(f"modified: {sent}")
+            pho_seq = g2p(sent)
     if not is_first_sent:
         pho_seq = [" "] + pho_seq  # add space to separate
     return pho_seq
@@ -171,7 +179,7 @@ def main():
         # process sentences with parallel computation
         lsize = len(sent_list) // args.parallel_process_num + 1
         executor = submitit.AutoExecutor(folder=args.logdir)
-        executor.update_parameters(timeout_min=1000, cpus_per_task=4)
+        executor.update_parameters(timeout_min=1000, cpus_per_task=4, slurm_partition="cpu_p1")
         jobs = []
         for i in range(args.parallel_process_num):
             job = executor.submit(

@@ -1,0 +1,566 @@
+# All rights reserved.
+#
+# This source code is licensed under the license found in the LICENSE file in
+# the root directory of this source tree. An additional grant of patent rights
+# can be found in the PATENTS file in the same directory.
+
+import math
+import logging
+from dataclasses import dataclass, field
+
+import torch
+import torch.nn.functional as F
+from fairseq import metrics, utils
+from fairseq.criterions import register_criterion
+from fairseq.data.data_utils import post_process
+from fairseq.tasks import FairseqTask
+from fairseq.logging.meters import safe_round
+
+from fairseq.criterions.ctc import CtcCriterion, CtcCriterionConfig
+from fairseq.dataclass.constants import ChoiceEnum
+
+from fairseq.criterions.label_smoothed_cross_entropy import label_smoothed_nll_loss
+
+import optimal_transport as ot
+from geomloss import SamplesLoss
+
+from .soft_dtw_cuda import SoftDTW
+
+WASS_METRIC_CHOICES = ChoiceEnum(["euclidean", "lp", "dot", "dotexp", "cosine", "none"])
+
+@dataclass
+class CtcWassersteinCriterionConfig(CtcCriterionConfig):
+    ctc_weight: float = field(
+        default=0.0,
+        metadata={"help": "loss = ctc_weight * ctc_loss + attn_weight * attn_loss \
+            + (1 - ctc_weight - attn_weight) wass_loss"},
+    )
+    attn_weight: float = field(
+        default=0.0,
+        metadata={"help": "loss = ctc_weight * ctc_loss + attn_weight * attn_loss \
+            + (1 - ctc_weight - attn_weight) wass_loss"},
+    )
+    gamma: float = field(
+        default=0.0,
+        metadata={"help": "lambda for KL divergence, 0 means no label smoothing"},
+    )
+    label_smoothing: float = field(
+        default=0.0,
+        metadata={"help": "epsilon for label smoothing, 0 means no label smoothing"},
+    )
+    copy_mechanism: bool = field(
+        default=False,
+        metadata={"help": "Use copy mechanism"},
+    )
+    do_bs1: bool = field(
+        default=False,
+        metadata={"help": "Compute Wasserstein loss for each example (because of padding)"},
+    )
+    zero_padding_weights: bool = field(
+        default=False,
+        metadata={"help": "Compute Wasserstein loss for each example (because of padding)"},
+    )
+    ignore_prefix_size: int = field(
+        default=0,
+        metadata={"help": "Ignore first N tokens"},
+    )
+    report_accuracy: bool = field(
+        default=False,
+        metadata={"help": "ignore_prefix_size"},
+    )
+    # ctc_zero_epoch: int = field(
+    #     default=0,
+    #     metadata={"help": "keeps ctc_weight constant for this number of epoch, starting from 0"},
+    # )
+    # ctc_warmup_epoch: int = field(
+    #     default=0,
+    #     metadata={"help": "increase ctc_weight linearly to ctc_weight for this number of epoch"},
+    # )
+    use_wass_loss: bool = field(
+        default=False,
+        metadata={"help": "Use Wasserstein loss"},
+    )
+    wass_metric: WASS_METRIC_CHOICES = field(
+        default="none", 
+        metadata={"help": "type of distance measure between X_i and Y_j"}
+    )
+    wass_pos_cost: float = field(
+        default=0.0,
+        metadata={"help": "penalty to enforce alignment"},
+    )
+    wass_pos_epoch: int = field(
+        default=0,
+        metadata={"help": "Epoch at which the position cost decreases to 0"},
+    )
+    use_cross_attentive_loss: bool = field(
+        default=False,
+        metadata={"help": "Use cross-attentive loss"},
+    )
+    use_soft_dtw_loss: bool = field(
+        default=False,
+        metadata={"help": "Use soft DTW loss"},
+    )
+
+
+@register_criterion("wasserstein_augmented_loss", dataclass=CtcWassersteinCriterionConfig)
+class CtcWassersteinCriterion(CtcCriterion):
+    def __init__(self, cfg: CtcWassersteinCriterionConfig, task: FairseqTask):
+        super().__init__(cfg, task)
+        self.ctc_weight = cfg.ctc_weight
+        self.attn_weight = cfg.attn_weight
+        self.eps = cfg.label_smoothing
+        self.gamma = cfg.gamma
+        self.copy_mechanism = cfg.copy_mechanism
+        self.do_bs1 = cfg.do_bs1
+        self.zero_padding_weights = cfg.zero_padding_weights
+        self.ignore_prefix_size = cfg.ignore_prefix_size
+        self.report_accuracy = cfg.report_accuracy
+        # self.ctc_zero_epoch = cfg.ctc_zero_epoch
+        # self.ctc_warmup_epoch = cfg.ctc_warmup_epoch
+        # self.ctc_weight_val = cfg.ctc_weight \
+        #     if self.ctc_zero_epoch == 0 and self.ctc_warmup_epoch == 0 else 0.0
+        self.use_wass_loss = cfg.use_wass_loss
+        self.wass_metric = cfg.wass_metric
+        self.wass_pos_cost = cfg.wass_pos_cost
+        self.wass_pos_epoch = cfg.wass_pos_epoch
+        self.wass_pos_cost_val = cfg.wass_pos_cost
+        self.use_cross_attentive_loss = cfg.use_cross_attentive_loss
+        self.use_soft_dtw_loss = cfg.use_soft_dtw_loss
+        logging.info(f"ctc_weight = {self.ctc_weight}")
+        logging.info(f"attn_weight = {self.attn_weight}")
+        logging.info(f"eps = {self.eps}")
+        logging.info(f"gamma = {self.gamma}")
+
+    def forward(self, model, sample, reduce=True):
+        net_input = sample["net_input"]
+        net_output, encoder_out = model(**net_input, use_encoder_outputs=True)
+        sample_size = net_input["src_tokens"].size(0) if self.sentence_avg else sample["ntokens"]
+        
+        loss = 0.0
+        extra = {"ce_loss": 0.0, "nll_loss": 0.0, "ctc_loss": 0.0, 
+                "wass_loss": 0.0, "dtw_loss": 0.0, "cross_attn_loss": 0.0}
+        if self.attn_weight > 0.0:
+            ce_loss, extra = self.compute_ce_loss(
+                model, net_output, sample, extra, reduce=reduce
+            )
+            loss += self.attn_weight * ce_loss
+        if self.ctc_weight > 0.0:
+            ctc_loss, extra = self.compute_ctc_loss(
+                model, net_output, encoder_out, net_input, extra
+            )
+            loss += self.ctc_weight * ctc_loss
+        if isinstance(encoder_out, tuple):
+            if self.use_wass_loss:
+                wass_loss = self.compute_wass_loss(encoder_out)
+                loss += (1 - self.attn_weight - self.ctc_weight) * wass_loss
+                extra["wass_loss"] = wass_loss
+            if self.use_soft_dtw_loss:
+                sdtw = SoftDTW(use_cuda=True, gamma=0.1)
+                dtw_loss = self.compte_soft_dtw(sdtw, encoder_out)
+                loss += dtw_loss
+                extra["dtw_loss"] = dtw_loss
+            if self.use_cross_attentive_loss:
+                cross_attn_loss = torch.sum(self.cross_attentive_loss(encoder_out))
+                loss += cross_attn_loss
+                extra["cross_attn_loss"] = cross_attn_loss
+
+        logging_output = {
+            "loss": utils.item(loss.data) if loss != 0.0 else 0.0,  # * sample['ntokens'],
+            "ce_loss": utils.item(extra["ce_loss"].data) if extra["ce_loss"] != 0.0 else 0.0,
+            "nll_loss": utils.item(extra["nll_loss"].data) if extra["nll_loss"] != 0.0 else 0.0,
+            "ctc_loss": utils.item(extra["ctc_loss"].data) if extra["ctc_loss"] != 0.0 else 0.0,
+            "wass_loss": utils.item(extra["wass_loss"].data) if extra["wass_loss"] != 0.0 else 0.0,
+            "dtw_loss": utils.item(extra["dtw_loss"].data) if extra["dtw_loss"] != 0.0 else 0.0,
+            "cross_attn_loss": utils.item(extra["cross_attn_loss"].data) if extra["cross_attn_loss"] != 0.0 else 0.0,
+            "ntokens": sample["ntokens"],
+            "nsentences": sample["id"].numel(),
+            "sample_size": net_input["src_tokens"].size(0) if self.sentence_avg else sample["ntokens"],
+            # "wass_pos_cost": self.wass_pos_cost_val,
+            # "ctc_weight": self.ctc_weight,
+            "reduced_speech_output": net_output[-1].get("reduced_speech_output", 0.0),
+        }
+
+        if not model.training and self.ctc_weight > 0.0:
+            logging_output = self.compute_wer(
+                extra["lprobs_ctc"], sample, net_input, extra["input_lengths"], logging_output)
+
+        if self.report_accuracy:
+            n_correct, total = self.compute_accuracy(extra["lprobs_ce"], extra["target"])
+            logging_output["n_correct"] = utils.item(n_correct.data)
+            logging_output["total"] = utils.item(total.data)
+
+        return loss, sample_size, logging_output
+
+    def get_lprobs_and_target(self, model, net_output, sample):
+        lprobs = model.get_normalized_probs(net_output, log_probs=True)
+        target = model.get_targets(sample, net_output)
+        if self.ignore_prefix_size > 0:
+            if getattr(lprobs, "batch_first", False):
+                lprobs = lprobs[:, self.ignore_prefix_size :, :].contiguous()
+                target = target[:, self.ignore_prefix_size :].contiguous()
+            else:
+                lprobs = lprobs[self.ignore_prefix_size :, :, :].contiguous()
+                target = target[self.ignore_prefix_size :, :].contiguous()
+        return lprobs.view(-1, lprobs.size(-1)), target.view(-1)
+
+    def compute_ce_loss(self, model, net_output, sample, extra, reduce=True):
+        lprobs, target = self.get_lprobs_and_target(model, net_output, sample)
+        loss, nll_loss = label_smoothed_nll_loss(
+            lprobs,
+            target,
+            self.eps,
+            ignore_index=self.padding_idx,
+            reduce=reduce,
+        )
+        extra["ce_loss"] = loss
+        extra["nll_loss"] = nll_loss
+        extra["lprobs_ce"] = lprobs
+        extra["target"] = target
+        return loss, extra
+
+    def compute_accuracy(self, lprobs, target):
+        mask = target.ne(self.padding_idx)
+        n_correct = torch.sum(
+            lprobs.argmax(1).masked_select(mask).eq(target.masked_select(mask))
+        )
+        total = torch.sum(mask)
+        return n_correct, total
+
+    def compute_ctc_loss(self, model, net_output, encoder_out, net_input, extra):
+        lprobs = model.get_normalized_probs(
+                net_output, log_probs=True, idx=1,
+            ).contiguous()  # (T, B, C) from the encoder
+        
+        spch_encoder_out = encoder_out[0] if isinstance(encoder_out, tuple) else encoder_out
+        if spch_encoder_out["encoder_padding_mask"]:
+            non_padding_mask = ~spch_encoder_out["encoder_padding_mask"][0]
+            input_lengths = non_padding_mask.long().sum(-1)
+        else:
+            input_lengths = lprobs.new_full(
+                (lprobs.size(1),), lprobs.size(0), dtype=torch.long
+            )
+        pad_mask = (net_input["src_txt_tokens"] != self.pad_idx) & (
+                net_input["src_txt_tokens"] != self.eos_idx)
+        targets_flat = net_input["src_txt_tokens"].masked_select(pad_mask)
+        target_lengths = pad_mask.sum(-1)
+
+        with torch.backends.cudnn.flags(enabled=False):
+            ctc_loss = F.ctc_loss(
+                lprobs,
+                targets_flat,
+                input_lengths,
+                target_lengths,
+                blank=self.blank_idx,
+                reduction="sum",
+                zero_infinity=self.zero_infinity,
+            )
+        # label smoothing
+        kldiv_loss = 0.0
+        if self.eps > 0:
+            kldiv_loss = F.kl_div(
+                lprobs.transpose(0, 1), 
+                torch.full_like(lprobs.transpose(0, 1), 1 / (lprobs.size(-1) - 1)), 
+                reduction="batchmean",
+            )
+        ctc_loss = (1. - self.gamma) * ctc_loss + self.gamma * kldiv_loss
+
+        extra["ctc_loss"] = ctc_loss
+        extra["lprobs_ctc"] = lprobs
+        extra["input_lengths"] = input_lengths
+
+        return ctc_loss, extra
+
+    def compute_wer(self, lprobs, sample, net_input, input_lengths, logging_output):
+        import editdistance
+        with torch.no_grad():
+            lprobs_t = lprobs.transpose(0, 1).float().contiguous().cpu()
+            c_err = 0
+            c_len = 0
+            w_errs = 0
+            w_len = 0
+            wv_errs = 0
+            for lp, t, inp_l in zip(
+                lprobs_t,
+                sample["target_label"]
+                if "target_label" in sample 
+                else net_input["src_txt_tokens"],
+                input_lengths,
+            ):
+                lp = lp[:inp_l].unsqueeze(0)
+                decoded = None
+                if self.w2l_decoder is not None:
+                    decoded = self.w2l_decoder.decode(lp)
+                    if len(decoded) < 1:
+                        decoded = None
+                    else:
+                        decoded = decoded[0]
+                        if len(decoded) < 1:
+                            decoded = None
+                        else:
+                            decoded = decoded[0]
+                
+                p = (t != self.task.source_dictionary.pad()) & (
+                        t != self.task.source_dictionary.eos()
+                    )
+                targ = t[p]
+                targ_units = self.task.source_dictionary.string(targ)
+                targ_units_arr = targ.tolist()
+
+                toks = lp.argmax(dim=-1).unique_consecutive()
+                pred_units_arr = toks[toks != self.blank_idx].tolist()
+
+                c_err += editdistance.eval(pred_units_arr, targ_units_arr)
+                c_len += len(targ_units_arr)
+
+                targ_words = post_process(targ_units, self.post_process).split()
+
+                pred_units = self.task.source_dictionary.string(pred_units_arr)
+                pred_words_raw = post_process(pred_units, self.post_process).split()
+
+                if decoded is not None and "words" in decoded:
+                    pred_words = decoded["words"]
+                    w_errs += editdistance.eval(pred_words, targ_words)
+                    wv_errs += editdistance.eval(pred_words_raw, targ_words)
+                else:
+                    dist = editdistance.eval(pred_words_raw, targ_words)
+                    w_errs += dist
+                    wv_errs += dist
+
+                w_len += len(targ_words)
+            logging_output["wv_errors"] = wv_errs
+            logging_output["w_errors"] = w_errs
+            logging_output["w_total"] = w_len
+            logging_output["c_errors"] = c_err
+            logging_output["c_total"] = c_len
+        return logging_output
+
+    def compute_wass_loss(self, encoder_out):
+        speech_out = encoder_out[0]["encoder_out"][0] # S x B x D
+        text_out = encoder_out[1]["encoder_out"][0] # T x B x D
+        wloss = SamplesLoss(loss="sinkhorn", p=2, blur=.05)
+        if not self.do_bs1:
+            if not self.zero_padding_weights:
+                wass_loss = wloss(
+                    speech_out.float().transpose(0, 1).contiguous(),
+                    text_out.float().transpose(0, 1).contiguous()
+                ).sum()  # use constant weights = 1/number of samples
+            else:
+                B, S, T = speech_out.size()[1], speech_out.size()[0], text_out.size()[0]
+                non_padding_speech = (torch.ones(B, S) > 0).to(device=speech_out.device)
+                non_padding_text = (torch.ones(B, T) > 0).to(device=text_out.device)
+                if encoder_out[0]["encoder_padding_mask"]:
+                    non_padding_speech = ~encoder_out[0]["encoder_padding_mask"][0] # B x S
+                if encoder_out[1]["encoder_padding_mask"]:
+                    non_padding_text = ~encoder_out[1]["encoder_padding_mask"][0] # B x T
+                speech_weights = (
+                    torch.ones_like(non_padding_speech) / 
+                    torch.sum(non_padding_speech, dim=-1).unsqueeze(-1) *
+                    non_padding_speech
+                )
+                text_weights = (
+                    torch.ones_like(non_padding_text) / 
+                    torch.sum(non_padding_text, dim=-1).unsqueeze(-1) *
+                    non_padding_text
+                )
+                wass_loss = wloss(
+                    speech_weights,
+                    speech_out.float().transpose(0, 1).contiguous(),
+                    text_weights,
+                    text_out.float().transpose(0, 1).contiguous()
+                ).sum()
+        else:
+            speech_lens =encoder_out[0]["input_lengths"][0]
+            text_lens = encoder_out[1]["src_lengths"][0].squeeze(-1)
+            # compute Wasserstein loss for each example
+            wass_loss = 0.0
+            for i in range(speech_out.size()[1]):
+                wass_loss += wloss(speech_out[:speech_lens[i], i, :], 
+                                text_out[:text_lens[i], i, :]).sum()
+        if self.copy_mechanism:
+            assert not self.do_bs1 # not implemented for copy mechanism yet
+            x1 = encoder_out[0]["embed_src_tokens"][0]
+            x2 = encoder_out[1]["embed_src_tokens"][0]
+            wass_loss += wloss(x1.float().transpose(0, 1).contiguous(), 
+                        text_out.float().transpose(0, 1).contiguous()
+                        ).sum() + \
+                        wloss(x2.float().transpose(0, 1).contiguous(), 
+                        speech_out.float().transpose(0, 1).contiguous()
+                        ).sum()
+        return wass_loss
+
+    def compute_wass_loss_old(self, pred, target):
+        # pred, target: T x B x D
+        pred = pred.transpose(0, 1).contiguous() # B x T x D
+        target = target.transpose(0, 1).contiguous() # B x T x D
+        loss, Z = ot.wasserstein_dist(pred, target, self.wass_metric, p=1, 
+                                      position_cost=self.wass_pos_cost_val)
+        return loss, Z
+
+    def compte_soft_dtw(self, sdtw, encoder_out):
+        pred = encoder_out[0]["encoder_out"][0].transpose(0, 1).contiguous()
+        target = encoder_out[1]["encoder_out"][0].transpose(0, 1).contiguous()
+        return sdtw(pred, target).sum()
+
+    def cross_attentive_loss(self, encoder_out, 
+        teacher_masking=[], student_masking=[], eps=1e-6,
+        cross_attentive_loss_with_norm=True,
+    ):
+        x = encoder_out[0]["encoder_out"][0].transpose(0, 1)  # from T X B X D to B X T X D
+        y = encoder_out[1]["encoder_out"][0].transpose(0, 1)
+        if cross_attentive_loss_with_norm:
+            x = x / (x.norm(dim=2, keepdim=True) + eps)
+            y = y / (y.norm(dim=2, keepdim=True) + eps)
+        dim = x.size(-1)
+        # lengths: batch X seqLen
+        sim_scores_xy = torch.bmm(x, y.transpose(1, 2))  # batch X lenx X leny ]
+        if y.dtype == torch.float16:
+            sim_scores_xy = sim_scores_xy.float()
+            y = y.float()
+            x = x.float()
+        if teacher_masking != []:
+            assert len(teacher_masking) == 1
+            sim_scores_xy = sim_scores_xy.masked_fill(
+                teacher_masking[0].unsqueeze(-1), float("-inf")
+            )
+        if student_masking != []:
+            sim_scores_xy = sim_scores_xy.masked_fill(
+                student_masking[0].unsqueeze(1), float("-inf")
+            )
+        # do masking
+        y_weights = utils.softmax(sim_scores_xy, dim=-1)
+        if teacher_masking != []:
+            y_weights = y_weights.masked_fill(teacher_masking[0].unsqueeze(-1), 0)
+        x_reconstruct_from_y = torch.bmm(y_weights, y)
+
+        sim_scores_xx = torch.bmm(x, x.transpose(1, 2))  # batch X lenx X lenx ]
+        x_weights = utils.softmax(sim_scores_xx, dim=-1)
+        if teacher_masking != []:
+            x_weights = x_weights.masked_fill(teacher_masking[0].unsqueeze(-1), 0)
+
+        # no gradient for teacher state
+        x_reconstruct_from_x = torch.bmm(x_weights, x).detach()
+        cost = (x_reconstruct_from_x - x_reconstruct_from_y).norm(dim=2)
+        if teacher_masking != []:
+            cost = cost.masked_fill(teacher_masking[0], 0)
+
+        if not cross_attentive_loss_with_norm:
+            cost = cost / dim
+        return cost
+
+    @staticmethod
+    def reduce_metrics(logging_outputs) -> None:
+        """Aggregate logging outputs from data parallel training."""
+
+        loss_sum = utils.item(sum(log.get("loss", 0) for log in logging_outputs))
+        ce_loss_sum = utils.item(sum(log.get("ce_loss", 0) for log in logging_outputs))
+        ctc_loss_sum = utils.item(sum(log.get("ctc_loss", 0) for log in logging_outputs))
+        wass_loss_sum = utils.item(sum(log.get("wass_loss", 0) for log in logging_outputs))
+        dtw_loss_sum = utils.item(sum(log.get("dtw_loss", 0) for log in logging_outputs))
+        cross_attn_loss = utils.item(sum(log.get("cross_attn_loss", 0) for log in logging_outputs))
+        ntokens = utils.item(sum(log.get("ntokens", 0) for log in logging_outputs))
+        wass_pos_cost = sum(log.get("wass_pos_cost", 0) for log in logging_outputs)
+        ctc_weight = logging_outputs[0].get("ctc_weight", 0.0)
+        reduced_speech_output = utils.item(
+            sum(log.get("reduced_speech_output", 0.0) for log in logging_outputs)
+            ) / len(logging_outputs)
+        nsentences = utils.item(
+            sum(log.get("nsentences", 0) for log in logging_outputs)
+        )
+        sample_size = utils.item(
+            sum(log.get("sample_size", 0) for log in logging_outputs)
+        )
+
+        metrics.log_scalar(
+            "loss", loss_sum / sample_size / math.log(2), sample_size, round=3
+        )
+        # metrics.log_scalar("ctc_weight", ctc_weight, 0, round=3)
+        if ce_loss_sum != 0.0:
+            metrics.log_scalar(
+                "ce_loss", ce_loss_sum / sample_size / math.log(2), sample_size, round=3
+            )
+        if ctc_loss_sum != 0.0:
+            metrics.log_scalar(
+                "ctc_loss", ctc_loss_sum / sample_size / math.log(2), sample_size, round=3
+            )
+        if wass_loss_sum != 0:
+            metrics.log_scalar(
+                "wass_loss", wass_loss_sum / sample_size / math.log(2), sample_size, round=3
+            )
+            # metrics.log_scalar("wass_pos_cost", wass_pos_cost / len(logging_outputs), weight=0, round=0)
+        if dtw_loss_sum != 0:
+            metrics.log_scalar(
+                "dtw_loss", dtw_loss_sum / sample_size / math.log(2), sample_size, round=3
+            )
+        if cross_attn_loss != 0:
+            metrics.log_scalar(
+                "cross_attn_loss", cross_attn_loss / sample_size / math.log(2), sample_size, round=3
+            )
+        metrics.log_scalar("reduced_speech_output", reduced_speech_output)
+        metrics.log_scalar("ntokens", ntokens)
+        metrics.log_scalar("nsentences", nsentences)
+        if sample_size != ntokens:
+            metrics.log_scalar(
+                "nll_loss", loss_sum / ntokens / math.log(2), ntokens, round=3
+            )
+        c_errors = sum(log.get("c_errors", 0) for log in logging_outputs)
+        metrics.log_scalar("_c_errors", c_errors)
+        c_total = sum(log.get("c_total", 0) for log in logging_outputs)
+        metrics.log_scalar("_c_total", c_total)
+        w_errors = sum(log.get("w_errors", 0) for log in logging_outputs)
+        metrics.log_scalar("_w_errors", w_errors)
+        wv_errors = sum(log.get("wv_errors", 0) for log in logging_outputs)
+        metrics.log_scalar("_wv_errors", wv_errors)
+        w_total = sum(log.get("w_total", 0) for log in logging_outputs)
+        metrics.log_scalar("_w_total", w_total)
+
+        if c_total > 0:
+            metrics.log_derived(
+                "uer",
+                lambda meters: safe_round(
+                    meters["_c_errors"].sum * 100.0 / meters["_c_total"].sum, 3
+                )
+                if meters["_c_total"].sum > 0
+                else float("nan"),
+            )
+        if w_total > 0:
+            metrics.log_derived(
+                "wer",
+                lambda meters: safe_round(
+                    meters["_w_errors"].sum * 100.0 / meters["_w_total"].sum, 3
+                )
+                if meters["_w_total"].sum > 0
+                else float("nan"),
+            )
+            metrics.log_derived(
+                "raw_wer",
+                lambda meters: safe_round(
+                    meters["_wv_errors"].sum * 100.0 / meters["_w_total"].sum, 3
+                )
+                if meters["_w_total"].sum > 0
+                else float("nan"),
+            )
+
+        total = utils.item(sum(log.get("total", 0) for log in logging_outputs))
+        if total > 0:
+            metrics.log_scalar("total", total)
+            n_correct = utils.item(
+                sum(log.get("n_correct", 0) for log in logging_outputs)
+            )
+            metrics.log_scalar("n_correct", n_correct)
+            metrics.log_derived(
+                "accuracy",
+                lambda meters: round(
+                    meters["n_correct"].sum * 100.0 / meters["total"].sum, 3
+                )
+                if meters["total"].sum > 0
+                else float("nan"),
+            )
+
+    @staticmethod
+    def logging_outputs_can_be_summed() -> bool:
+        """
+        Whether the logging outputs returned by `forward` can be summed
+        across workers prior to calling `reduce_metrics`. Setting this
+        to True will improves distributed training speed.
+        """
+        return True

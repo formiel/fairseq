@@ -184,6 +184,26 @@ def main(cfg: FairseqConfig) -> None:
         # only use first validation loss to update the learning rate
         lr = trainer.lr_step(epoch_itr.epoch, valid_losses[0])
 
+        # Get Wasserstein position cost
+        if hasattr(criterion, "wass_pos_cost"):
+            if getattr(criterion, "wass_pos_epoch", 0) > 0:
+                p = -(criterion.wass_pos_cost / criterion.wass_pos_epoch) * epoch_itr.epoch \
+                    + criterion.wass_pos_cost
+                criterion.wass_pos_cost_val = max(p, 0)
+
+        # # Get CTC weight
+        # if hasattr(criterion, "ctc_zero_epoch"):
+        #     assert hasattr(criterion, "ctc_warmup_epoch")
+        #     s = criterion.ctc_zero_epoch
+        #     t = criterion.ctc_warmup_epoch
+        #     m = criterion.ctc_weight
+        #     if epoch_itr.epoch < s:
+        #         criterion.ctc_weight_val = 0.0
+        #     elif  s <= epoch_itr.epoch <= s + t:
+        #         criterion.ctc_weight_val = (m/t) * epoch_itr.epoch - (m*s/t)
+        #     else:
+        #         criterion.ctc_weight_val = m
+
         epoch_itr = trainer.get_train_iterator(
             epoch_itr.next_epoch_idx,
             # sharded data: get train iterator for next epoch
