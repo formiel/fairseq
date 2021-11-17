@@ -657,8 +657,8 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
     ):
         """Get normalized probabilities (or log probs) from a net's output."""
         assert not isinstance(self.decoder, DummyDecoder)
-        # if isinstance(self.decoder, MultiOutputDecoder):
-        #     net_output = (net_output[0][idx], net_output[1])
+        if isinstance(self.decoder, MultiOutputDecoder):
+            net_output = (net_output[0][idx], net_output[1])
         
         if hasattr(self, "adaptive_softmax") and self.adaptive_softmax is not None:
             if sample is not None:
