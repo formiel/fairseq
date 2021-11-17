@@ -37,7 +37,8 @@ from fairseq.data.audio.audio_utils import get_waveform, convert_waveform
 log = logging.getLogger(__name__)
 
 
-MANIFEST_COLUMNS = ["id", "audio", "n_frames", "tgt_text", "speaker"]
+MANIFEST_COLUMNS = ["id", "audio", "n_frames", "tgt_text", "speaker", 
+                    "src_text", "src_lang", "tgt_lang"]
 
 
 class MUSTC(Dataset):
@@ -89,6 +90,8 @@ class MUSTC(Dataset):
                         segment[lang],
                         segment["speaker_id"],
                         _id,
+                        "en",
+                        lang,
                     )
                 )
 
@@ -96,10 +99,10 @@ class MUSTC(Dataset):
             self, n: int
     ) -> Tuple[torch.Tensor, int, str, str, str, str]:
         wav_path, offset, n_frames, sr, src_utt, tgt_utt, spk_id, \
-            utt_id = self.data[n]
+            utt_id, src_lang, tgt_lang = self.data[n]
         waveform, _ = get_waveform(wav_path, frames=n_frames, start=offset)
         waveform = torch.from_numpy(waveform)
-        return waveform, sr, src_utt, tgt_utt, spk_id, utt_id
+        return waveform, sr, src_utt, tgt_utt, spk_id, utt_id, src_lang, tgt_lang
 
     def __len__(self) -> int:
         return len(self.data)
@@ -107,7 +110,10 @@ class MUSTC(Dataset):
 
 def process(args):
     root = Path(args.data_root).absolute()
-    for lang in MUSTC.LANGUAGES:
+    processed_langs = MUSTC.LANGUAGES
+    if args.langs is not None:
+        processed_langs = args.langs.split(",")
+    for lang in processed_langs:
         cur_root = root / f"en-{lang}"
         if not cur_root.is_dir():
             print(f"{cur_root.as_posix()} does not exist. Skipped.")
@@ -121,7 +127,7 @@ def process(args):
             dataset = MUSTC(root.as_posix(), lang, split)
             if args.use_audio_input:
                 print("Converting audios...")
-                for waveform, sample_rate, _, _, _, utt_id in tqdm(dataset):
+                for waveform, sample_rate, _, _, _, utt_id, _, _ in tqdm(dataset):
                     tgt_sample_rate = 16_000
                     _wavform, _ = convert_waveform(
                         waveform, sample_rate, to_mono=True,
@@ -137,7 +143,7 @@ def process(args):
                 if split == 'train' and args.cmvn_type == "global":
                     print("And estimating cepstral mean and variance stats...")
 
-                for waveform, sample_rate, _, _, _, utt_id in tqdm(dataset):
+                for waveform, sample_rate, _, _, _, utt_id, _, _ in tqdm(dataset):
                     features = extract_fbank_features(
                         waveform, sample_rate, audio_root / f"{utt_id}.npy"
                     )
@@ -164,7 +170,7 @@ def process(args):
             is_train_split = split.startswith("train")
             manifest = {c: [] for c in MANIFEST_COLUMNS}
             dataset = MUSTC(args.data_root, lang, split)
-            for _, _, src_utt, tgt_utt, speaker_id, utt_id in tqdm(dataset):
+            for _, _, src_utt, tgt_utt, speaker_id, utt_id, src_lg, tgt_lg in tqdm(dataset):
                 manifest["id"].append(utt_id)
                 manifest["audio"].append(audio_paths[utt_id])
                 manifest["n_frames"].append(audio_lengths[utt_id])
@@ -172,6 +178,9 @@ def process(args):
                     src_utt if args.task == "asr" else tgt_utt
                 )
                 manifest["speaker"].append(speaker_id)
+                manifest["src_text"].append(src_utt)
+                manifest["src_lang"].append(src_lg)
+                manifest["tgt_lang"].append(tgt_lg)
             if is_train_split:
                 train_text.extend(manifest["tgt_text"])
             df = pd.DataFrame.from_dict(manifest)
@@ -194,7 +203,7 @@ def process(args):
             gen_config_yaml(
                 cur_root,
                 spm_filename=spm_filename_prefix + ".model",
-                yaml_filename=f"config_{args.task}.yaml",
+                yaml_filename=f"config_{args.vocab_type}{v_size_str}_{args.task}.yaml",
                 specaugment_policy=None,
                 extra={"use_audio_input": True}
             )
@@ -202,7 +211,7 @@ def process(args):
             gen_config_yaml(
                 cur_root,
                 spm_filename=spm_filename_prefix + ".model",
-                yaml_filename=f"config_{args.task}.yaml",
+                yaml_filename=f"config_{args.vocab_type}{v_size_str}_{args.task}.yaml",
                 specaugment_policy="lb",
                 cmvn_type=args.cmvn_type,
                 gcmvn_path=(
@@ -221,7 +230,7 @@ def process_joint(args):
     ), "do not have downloaded data available for all 8 languages"
     # Generate vocab
     vocab_size_str = "" if args.vocab_type == "char" else str(args.vocab_size)
-    spm_filename_prefix = f"spm_{args.vocab_type}{vocab_size_str}_{args.task}"
+    spm_filename_prefix = f"spm_{args.vocab_type}{vocab_size_str}_{args.task}_joint"
     with NamedTemporaryFile(mode="w") as f:
         for lang in MUSTC.LANGUAGES:
             tsv_path = cur_root / f"en-{lang}" / f"train_{args.task}.tsv"
@@ -242,7 +251,7 @@ def process_joint(args):
     gen_config_yaml(
         cur_root,
         spm_filename=spm_filename_prefix + ".model",
-        yaml_filename=f"config_{args.task}.yaml",
+        yaml_filename=f"config_{args.vocab_type}{vocab_size_str}_{args.task}_joint.yaml",
         specaugment_policy="ld",
         prepend_tgt_lang_tag=(args.task == "st"),
     )
@@ -279,6 +288,8 @@ def main():
              "variance"
         )
     parser.add_argument("--use-audio-input", action="store_true")
+    parser.add_argument("--langs", default=None, type=str, 
+        help="Target languages in the related pairs to process, seperated by comma")
     args = parser.parse_args()
 
     if args.joint:
