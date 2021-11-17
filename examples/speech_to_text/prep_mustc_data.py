@@ -184,7 +184,10 @@ def process(args):
             if is_train_split:
                 train_text.extend(manifest["tgt_text"])
             df = pd.DataFrame.from_dict(manifest)
-            df = filter_manifest_df(df, is_train_split=is_train_split)
+            df = filter_manifest_df(df, is_train_split=is_train_split, 
+                                    min_n_frames=args.min_n_frames, 
+                                    max_n_frames=args.max_n_frames,
+                                    )
             save_df_to_tsv(df, cur_root / f"{split}_{args.task}.tsv")
         # Generate vocab
         v_size_str = "" if args.vocab_type == "char" else str(args.vocab_size)
@@ -290,6 +293,8 @@ def main():
     parser.add_argument("--use-audio-input", action="store_true")
     parser.add_argument("--langs", default=None, type=str, 
         help="Target languages in the related pairs to process, seperated by comma")
+    parser.add_argument("--min-n-frames", default=5, type=int)
+    parser.add_argument("--max-n-frames", default=3000, type=int)
     args = parser.parse_args()
 
     if args.joint:
