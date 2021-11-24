@@ -309,7 +309,7 @@ class MultiOutputDecoder(FairseqDecoder):
         return merge_output(speech_dec_out, ctc_out, text_dec_out)
 
 
-@register_model("siamese_st2t_transformer")
+@register_model("siamese_st2t_transformer_dev")
 class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
     def __init__(self, encoder, decoder):
         super().__init__(encoder, decoder)
@@ -699,7 +699,7 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
     def build_model(cls, args, task):
         # torch.autograd.set_detect_anomaly(True)
         # make sure that all args are properly defaulted
-        siamese_st2t_transformer_base(args)
+        siamese_st2t_transformer_dev_base(args)
 
         encoder = cls.build_encoder(args, task)
         decoder = cls.build_decoder(args, task, encoder)
@@ -885,9 +885,9 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
 
 
 @register_model_architecture(
-    "siamese_st2t_transformer", "siamese_st2t_transformer_base"
+    "siamese_st2t_transformer_dev", "siamese_st2t_transformer_dev_base"
 )
-def siamese_st2t_transformer_base(args):
+def siamese_st2t_transformer_dev_base(args):
     args.encoder_freezing_updates = getattr(args, "encoder_freezing_updates", 0)
     # Convolutional subsampler
     args.input_feat_per_channel = getattr(args, "input_feat_per_channel", 80)
@@ -938,61 +938,61 @@ def siamese_st2t_transformer_base(args):
     args.decoder_layers = getattr(args, "decoder_layers", 6)
 
 
-@register_model_architecture("siamese_st2t_transformer", "siamese_st2t_transformer_s")
-def siamese_st2t_transformer_s(args):
+@register_model_architecture("siamese_st2t_transformer_dev", "siamese_st2t_transformer_dev_s")
+def siamese_st2t_transformer_dev_s(args):
     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 256)
     args.encoder_text_embed_dim = getattr(args, "encoder_text_embed_dim", 256)
     args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 256 * 8)
     args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 4)
     args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 4)
     args.dropout = getattr(args, "dropout", 0.1)
-    siamese_st2t_transformer_base(args)
+    siamese_st2t_transformer_dev_base(args)
 
 
-@register_model_architecture("siamese_st2t_transformer", "siamese_st2t_transformer_sl")
-def siamese_st2t_transformer_sl(args):
+@register_model_architecture("siamese_st2t_transformer_dev", "siamese_st2t_transformer_dev_sl")
+def siamese_st2t_transformer_dev_sl(args):
     args.speech_encoder_layers = getattr(args, "speech_encoder_layers", 21)
     args.text_encoder_layers = getattr(args, "text_encoder_layers", 12)
     args.decoder_layers = getattr(args, "decoder_layers", 12)
-    siamese_st2t_transformer_s(args)
+    siamese_st2t_transformer_dev_s(args)
 
 
-@register_model_architecture("siamese_st2t_transformer", "siamese_st2t_transformer_sl_tenc6")
-def siamese_st2t_transformer_sl_tenc6(args):
+@register_model_architecture("siamese_st2t_transformer_dev", "siamese_st2t_transformer_dev_sl_tenc6")
+def siamese_st2t_transformer_dev_sl_tenc6(args):
     args.speech_encoder_layers = getattr(args, "speech_encoder_layers", 21)
-    siamese_st2t_transformer_s(args)
+    siamese_st2t_transformer_dev_s(args)
 
 
-@register_model_architecture("siamese_st2t_transformer", "siamese_st2t_transformer_sls")
-def siamese_st2t_transformer_sl(args):
+@register_model_architecture("siamese_st2t_transformer_dev", "siamese_st2t_transformer_dev_sls")
+def siamese_st2t_transformer_dev_sl(args):
     args.speech_encoder_layers = getattr(args, "speech_encoder_layers", 19)
     args.text_encoder_layers = getattr(args, "text_encoder_layers", 12)
     args.decoder_layers = getattr(args, "decoder_layers", 12)
-    siamese_st2t_transformer_s(args)
+    siamese_st2t_transformer_dev_s(args)
 
 
-@register_model_architecture("siamese_st2t_transformer", "siamese_st2t_transformer_m")
-def siamese_st2t_transformer_m(args):
+@register_model_architecture("siamese_st2t_transformer_dev", "siamese_st2t_transformer_dev_m")
+def siamese_st2t_transformer_dev_m(args):
     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 512)
     args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 512 * 4)
     args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 8)
     args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 8)
     args.dropout = getattr(args, "dropout", 0.15)
-    siamese_st2t_transformer_base(args)
+    siamese_st2t_transformer_dev_base(args)
 
 
-@register_model_architecture("siamese_st2t_transformer", "siamese_st2t_transformer_l")
-def siamese_st2t_transformer_l(args):
+@register_model_architecture("siamese_st2t_transformer_dev", "siamese_st2t_transformer_dev_l")
+def siamese_st2t_transformer_dev_l(args):
     args.speech_encoder_layers = getattr(args, "speech_encoder_layers", 18)
     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 512)
     args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 512 * 4)
     args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 8)
     args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 8)
     args.dropout = getattr(args, "dropout", 0.2)
-    siamese_st2t_transformer_base(args)
+    siamese_st2t_transformer_dev_base(args)
 
-@register_model_architecture("siamese_st2t_transformer", "siamese_st2t_transformer_lp")
-def siamese_st2t_transformer_lp(args):
+@register_model_architecture("siamese_st2t_transformer_dev", "siamese_st2t_transformer_dev_lp")
+def siamese_st2t_transformer_dev_lp(args):
     args.speech_encoder_layers = getattr(args, "speech_encoder_layers", 18)
     args.text_encoder_layers = getattr(args, "text_encoder_layers", 12)
     args.decoder_layers = getattr(args, "decoder_layers", 12)
@@ -1001,4 +1001,4 @@ def siamese_st2t_transformer_lp(args):
     args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 8)
     args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 8)
     args.dropout = getattr(args, "dropout", 0.2)
-    siamese_st2t_transformer_base(args)
+    siamese_st2t_transformer_dev_base(args)

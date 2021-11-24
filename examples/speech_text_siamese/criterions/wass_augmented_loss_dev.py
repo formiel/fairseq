@@ -117,7 +117,7 @@ class CtcWassersteinCriterionConfig(CtcCriterionConfig):
     # )
 
 
-@register_criterion("wasserstein_augmented_loss", dataclass=CtcWassersteinCriterionConfig)
+@register_criterion("wasserstein_augmented_loss_dev", dataclass=CtcWassersteinCriterionConfig)
 class CtcWassersteinCriterion(CtcCriterion):
     def __init__(self, cfg: CtcWassersteinCriterionConfig, task: FairseqTask):
         super().__init__(cfg, task)
