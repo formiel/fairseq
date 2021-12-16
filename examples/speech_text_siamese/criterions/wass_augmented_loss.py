@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 
 import torch
 import torch.nn.functional as F
-from fairseq import metrics, utils
+from fairseq import metrics, utils, modules
 from fairseq.criterions import register_criterion
 from fairseq.data.data_utils import post_process
 from fairseq.tasks import FairseqTask
@@ -21,7 +21,7 @@ from fairseq.dataclass.constants import ChoiceEnum
 
 from fairseq.criterions.label_smoothed_cross_entropy import label_smoothed_nll_loss
 
-import optimal_transport as ot
+# import optimal_transport as ot
 from geomloss import SamplesLoss
 
 from .soft_dtw_cuda import SoftDTW
@@ -43,6 +43,12 @@ class CtcWassersteinCriterionConfig(CtcCriterionConfig):
             + (1 - ctc_weight - attn_weight_speech - attn_weight_text) * wass_loss"},
     )
     attn_weight_text: float = field(
+        default=0.0,
+        metadata={"help": "loss = ctc_weight * ctc_loss + attn_weight_speech * attn_loss_speech \
+            + attn_weight_text * attn_loss_text \
+            + (1 - ctc_weight - attn_weight_speech - attn_weight_text) * wass_loss"},
+    )
+    mlm_weight: float = field(
         default=0.0,
         metadata={"help": "loss = ctc_weight * ctc_loss + attn_weight_speech * attn_loss_speech \
             + attn_weight_text * attn_loss_text \
@@ -124,6 +130,7 @@ class CtcWassersteinCriterion(CtcCriterion):
         self.ctc_weight = cfg.ctc_weight
         self.attn_weight_speech = cfg.attn_weight_speech
         self.attn_weight_text = cfg.attn_weight_text
+        self.mlm_weight = cfg.mlm_weight
         self.dtw_weight = cfg.dtw_weight
         self.eps = cfg.label_smoothing
         self.gamma = cfg.gamma
@@ -146,50 +153,86 @@ class CtcWassersteinCriterion(CtcCriterion):
         logging.info(f"ctc_weight = {self.ctc_weight}")
         logging.info(f"attn_weight_speech = {self.attn_weight_speech}")
         logging.info(f"attn_weight_text = {self.attn_weight_text}")
+        logging.info(f"mlm_weight = {self.mlm_weight}")
         logging.info(f"eps = {self.eps}")
         logging.info(f"gamma = {self.gamma}")
 
     def forward(self, model, sample, reduce=True):
         net_input = sample["net_input"]
-        # net_output is a tuple of 3 None/Dict elements
-        net_output, encoder_out = model(**net_input, use_encoder_outputs=True)
-        sample_size = net_input["src_tokens"].size(0) if self.sentence_avg else sample["ntokens"]
+        # logging.info(f"sample: {sample}")
+        text_mode = True if "src_tokens" not in net_input else False
+        masked_tokens = None
+        if sample["masked_target"] is not None:
+            masked_tokens = sample["masked_target"].ne(self.pad_idx)
+        # logging.info(f"*** sample *** \n{sample}")
+        net_output, encoder_out = model(
+            **net_input, 
+            masked_tokens=masked_tokens,
+            use_encoder_outputs=True
+        ) 
+        if text_mode:
+            sample_size = (net_input["masked_src_txt_tokens"].size(0) 
+                                if self.sentence_avg else sample["ntokens"])
+        else:
+            sample_size = (net_input["src_tokens"].size(0) 
+                                if self.sentence_avg else sample["ntokens"])
         
         loss = 0.0
         extra = {"ce_loss_speech": 0.0, "nll_loss_speech": 0.0,
                 "ce_loss_text": 0.0, "nll_loss_text": 0.0,
                 "ctc_loss": 0.0, 
-                "wass_loss": 0.0, "dtw_loss": 0.0, "cross_attn_loss": 0.0}
-        if self.attn_weight_speech > 0.0:
-            ce_loss_speech, extra = self.compute_ce_loss(
-                model, net_output, sample, extra, reduce=reduce, idx=0,
-            )
-            loss += self.attn_weight_speech * ce_loss_speech
+                "mlm_loss": 0.0,
+                "wass_loss": 0.0, 
+                "dtw_loss": 0.0, 
+                "cross_attn_loss": 0.0,
+                }
+        if not text_mode:
+            if self.attn_weight_speech > 0.0:
+                ce_loss_speech, extra = self.compute_ce_loss(
+                    model, net_output, sample, extra, reduce=reduce, idx=0,
+                )
+                loss += self.attn_weight_speech * ce_loss_speech
+            if self.ctc_weight > 0.0:
+                ctc_loss, extra = self.compute_ctc_loss(
+                    model, net_output, encoder_out, net_input, extra
+                )
+                loss += self.ctc_weight * ctc_loss
+
         if self.attn_weight_text > 0.0:
             ce_loss_text, extra = self.compute_ce_loss(
                 model, net_output, sample, extra, reduce=reduce, idx=2,
             )
             loss += self.attn_weight_text * ce_loss_text
-        if self.ctc_weight > 0.0:
-            ctc_loss, extra = self.compute_ctc_loss(
-                model, net_output, encoder_out, net_input, extra
+
+        if self.mlm_weight > 0.0:
+            mlm_loss, extra = self.compute_mlm_loss(
+                net_output,
+                sample,
+                masked_tokens,
+                extra,
             )
-            loss += self.ctc_weight * ctc_loss
-        if isinstance(encoder_out, tuple):
-            if self.dtw_weight > 0.0 :
-                sdtw = SoftDTW(use_cuda=True, gamma=0.1)
-                dtw_loss = self.compte_soft_dtw(sdtw, encoder_out)
-                loss += self.dtw_weight * dtw_loss
-                extra["dtw_loss"] = dtw_loss
-            if self.use_wass_loss:
-                wass_loss = self.compute_wass_loss(encoder_out)
-                loss += ((1 - self.attn_weight_speech - self.attn_weight_text 
-                        - self.ctc_weight - self.dtw_weight) * wass_loss)
-                extra["wass_loss"] = wass_loss
-            if self.use_cross_attentive_loss:
-                cross_attn_loss = torch.sum(self.cross_attentive_loss(encoder_out))
-                loss += cross_attn_loss
-                extra["cross_attn_loss"] = cross_attn_loss
+            loss += self.mlm_weight * mlm_loss
+        
+        if not text_mode:
+            if isinstance(encoder_out, tuple) and encoder_out[0] is not None:
+                if self.dtw_weight > 0.0 :
+                    sdtw = SoftDTW(use_cuda=True, gamma=0.1)
+                    dtw_loss = self.compte_soft_dtw(sdtw, encoder_out)
+                    loss += self.dtw_weight * dtw_loss
+                    extra["dtw_loss"] = dtw_loss
+                if self.use_wass_loss:
+                    wass_loss = self.compute_wass_loss(encoder_out)
+                    loss += (
+                        (
+                            1 - self.attn_weight_speech - self.attn_weight_text 
+                            - self.mlm_weight - self.ctc_weight - self.dtw_weight
+                        ) * wass_loss
+                    )
+                    extra["wass_loss"] = wass_loss
+                if self.use_cross_attentive_loss:
+                    cross_attn_loss = torch.sum(self.cross_attentive_loss(encoder_out))
+                    loss += cross_attn_loss
+                    extra["cross_attn_loss"] = cross_attn_loss
 
         logging_output = {
             "loss": utils.item(loss.data) if loss != 0.0 else 0.0,  # * sample['ntokens'],
@@ -198,6 +241,7 @@ class CtcWassersteinCriterion(CtcCriterion):
             "ce_loss_text": utils.item(extra["ce_loss_text"].data) if extra["ce_loss_text"] != 0.0 else 0.0,
             "nll_loss_text": utils.item(extra["nll_loss_text"].data) if extra["nll_loss_text"] != 0.0 else 0.0,
             "ctc_loss": utils.item(extra["ctc_loss"].data) if extra["ctc_loss"] != 0.0 else 0.0,
+            "mlm_loss": utils.item(extra["mlm_loss"].data) if extra["mlm_loss"] != 0.0 else 0.0,
             "wass_loss": utils.item(extra["wass_loss"].data) if extra["wass_loss"] != 0.0 else 0.0,
             "dtw_loss": utils.item(extra["dtw_loss"].data) if extra["dtw_loss"] != 0.0 else 0.0,
             "cross_attn_loss": utils.item(extra["cross_attn_loss"].data) if extra["cross_attn_loss"] != 0.0 else 0.0,
@@ -214,7 +258,7 @@ class CtcWassersteinCriterion(CtcCriterion):
                 extra["lprobs_ctc"], sample, net_input, extra["input_lengths"], logging_output)
 
         if self.report_accuracy:
-            if self.attn_weight_speech > 0.0:
+            if not text_mode and self.attn_weight_speech > 0.0:
                 n_correct, total = self.compute_accuracy(extra["lprobs_ce_speech"], extra["target"])
                 logging_output["n_correct_speech"] = utils.item(n_correct.data)
                 logging_output["total_speech"] = utils.item(total.data)
@@ -251,6 +295,22 @@ class CtcWassersteinCriterion(CtcCriterion):
         extra[f"nll_loss{suffix}"] = nll_loss
         extra[f"lprobs_ce{suffix}"] = lprobs
         extra["target"] = target
+        return loss, extra
+
+    def compute_mlm_loss(self, net_output, sample, masked_tokens, extra):
+        logits = net_output[0][-1]
+        targets = sample["masked_target"]
+        # logging.info(f"masked_tokens: {torch.sum(masked_tokens)}")
+        if masked_tokens is not None:
+            targets = targets[masked_tokens]
+        # logging.info(f"targets: {torch.numel(targets)}")
+        loss = modules.cross_entropy(
+            logits.view(-1, logits.size(-1)),
+            targets.view(-1),
+            reduction="sum",
+            ignore_index=self.pad_idx,
+        )   
+        extra["mlm_loss"] = loss
         return loss, extra
 
     def compute_accuracy(self, lprobs, target):
@@ -381,26 +441,26 @@ class CtcWassersteinCriterion(CtcCriterion):
                 ).sum()  # use constant weights = 1/number of samples
             else:
                 B, S, T = speech_out.size()[1], speech_out.size()[0], text_out.size()[0]
-                non_padding_speech = (torch.ones(B, S) > 0).to(device=speech_out.device)
-                non_padding_text = (torch.ones(B, T) > 0).to(device=text_out.device)
-                if encoder_out[0]["encoder_padding_mask"]:
-                    non_padding_speech = ~encoder_out[0]["encoder_padding_mask"][0] # B x S
-                if encoder_out[1]["encoder_padding_mask"]:
-                    non_padding_text = ~encoder_out[1]["encoder_padding_mask"][0] # B x T
-                speech_weights = (
-                    torch.ones_like(non_padding_speech) / 
-                    torch.sum(non_padding_speech, dim=-1).unsqueeze(-1) *
-                    non_padding_speech
-                )
-                text_weights = (
-                    torch.ones_like(non_padding_text) / 
-                    torch.sum(non_padding_text, dim=-1).unsqueeze(-1) *
-                    non_padding_text
-                )
+                # non_padding_speech = (torch.ones(B, S) > 0).to(device=speech_out.device)
+                # non_padding_text = (torch.ones(B, T) > 0).to(device=text_out.device)
+                # if encoder_out[0]["encoder_padding_mask"]:
+                #     non_padding_speech = ~encoder_out[0]["encoder_padding_mask"][0] # B x S
+                # if encoder_out[1]["encoder_padding_mask"]:
+                #     non_padding_text = ~encoder_out[1]["encoder_padding_mask"][0] # B x T
+                # speech_weights = (
+                #     torch.ones_like(non_padding_speech) / 
+                #     torch.sum(non_padding_speech, dim=-1).unsqueeze(-1) *
+                #     non_padding_speech
+                # )
+                # text_weights = (
+                #     torch.ones_like(non_padding_text) / 
+                #     torch.sum(non_padding_text, dim=-1).unsqueeze(-1) *
+                #     non_padding_text
+                # )
                 wass_loss = wloss(
-                    speech_weights,
+                    # speech_weights.float(),
                     speech_out.float().transpose(0, 1).contiguous(),
-                    text_weights,
+                    # text_weights.float(),
                     text_out.float().transpose(0, 1).contiguous()
                 ).sum()
         else:
@@ -415,21 +475,19 @@ class CtcWassersteinCriterion(CtcCriterion):
             assert not self.do_bs1 # not implemented for copy mechanism yet
             x1 = encoder_out[0]["embed_src_tokens"][0]
             x2 = encoder_out[1]["embed_src_tokens"][0]
-            wass_loss += wloss(x1.float().transpose(0, 1).contiguous(), 
-                        text_out.float().transpose(0, 1).contiguous()
-                        ).sum() + \
+            wass_loss += (wloss(x1.float().transpose(0, 1).contiguous(), 
+                        text_out.float().transpose(0, 1).contiguous()).sum() +
                         wloss(x2.float().transpose(0, 1).contiguous(), 
-                        speech_out.float().transpose(0, 1).contiguous()
-                        ).sum()
+                        speech_out.float().transpose(0, 1).contiguous()).sum())
         return wass_loss
 
-    def compute_wass_loss_old(self, pred, target):
-        # pred, target: T x B x D
-        pred = pred.transpose(0, 1).contiguous() # B x T x D
-        target = target.transpose(0, 1).contiguous() # B x T x D
-        loss, Z = ot.wasserstein_dist(pred, target, self.wass_metric, p=1, 
-                                      position_cost=self.wass_pos_cost_val)
-        return loss, Z
+    # def compute_wass_loss_old(self, pred, target):
+    #     # pred, target: T x B x D
+    #     pred = pred.transpose(0, 1).contiguous() # B x T x D
+    #     target = target.transpose(0, 1).contiguous() # B x T x D
+    #     loss, Z = ot.wasserstein_dist(pred, target, self.wass_metric, p=1, 
+    #                                   position_cost=self.wass_pos_cost_val)
+    #     return loss, Z
 
     def compte_soft_dtw(self, sdtw, encoder_out):
         pred = encoder_out[0]["encoder_out"][0].transpose(0, 1).contiguous()
@@ -489,6 +547,7 @@ class CtcWassersteinCriterion(CtcCriterion):
         loss_sum = utils.item(sum(log.get("loss", 0) for log in logging_outputs))
         ce_loss_speech_sum = utils.item(sum(log.get("ce_loss_speech", 0) for log in logging_outputs))
         ce_loss_text_sum = utils.item(sum(log.get("ce_loss_text", 0) for log in logging_outputs))
+        mlm_loss_sum = utils.item(sum(log.get("mlm_loss", 0) for log in logging_outputs))
         ctc_loss_sum = utils.item(sum(log.get("ctc_loss", 0) for log in logging_outputs))
         wass_loss_sum = utils.item(sum(log.get("wass_loss", 0) for log in logging_outputs))
         dtw_loss_sum = utils.item(sum(log.get("dtw_loss", 0) for log in logging_outputs))
@@ -521,6 +580,10 @@ class CtcWassersteinCriterion(CtcCriterion):
         if ctc_loss_sum != 0.0:
             metrics.log_scalar(
                 "ctc_loss", ctc_loss_sum / sample_size / math.log(2), sample_size, round=3
+            )
+        if mlm_loss_sum != 0.0:
+            metrics.log_scalar(
+                "mlm_loss", mlm_loss_sum / sample_size / math.log(2), sample_size, round=3
             )
         if wass_loss_sum != 0:
             metrics.log_scalar(
@@ -620,3 +683,4 @@ class CtcWassersteinCriterion(CtcCriterion):
         to True will improves distributed training speed.
         """
         return True
+     

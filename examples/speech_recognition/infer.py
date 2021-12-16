@@ -9,6 +9,8 @@ Run inference for pre-processed data with a trained model.
 """
 
 import ast
+import argparse
+from argparse import Namespace
 import logging
 import math
 import os
@@ -21,6 +23,8 @@ from fairseq import checkpoint_utils, options, progress_bar, tasks, utils
 from fairseq.data.data_utils import post_process
 from fairseq.logging.meters import StopwatchMeter, TimeMeter
 
+from fairseq.scoring.wer import WerScorer
+from fairseq.dataclass.utils import convert_namespace_to_omegaconf
 
 logging.basicConfig()
 logging.root.setLevel(logging.INFO)
@@ -191,6 +195,19 @@ def optimize_models(args, use_cuda, models):
             model.cuda()
 
 
+def apply_half(t):
+    if t.dtype is torch.float32:
+        return t.to(dtype=torch.half)
+    return t
+
+
+def get_symbols_to_strip_from_output(generator):
+    if hasattr(generator, "symbols_to_strip_from_output"):
+        return generator.symbols_to_strip_from_output
+    else:
+        return {"</s>"}
+
+
 class ExistingEmissionsDecoder(object):
     def __init__(self, decoder, emissions):
         self.decoder = decoder
@@ -210,6 +227,7 @@ class ExistingEmissionsDecoder(object):
 def main(args, task=None, model_state=None):
     check_args(args)
 
+    use_fp16 = args.fp16
     if args.max_tokens is None and args.batch_size is None:
         args.max_tokens = 4000000
     logger.info(args)
@@ -236,8 +254,6 @@ def main(args, task=None, model_state=None):
             state=model_state,
         )
         optimize_models(args, use_cuda, models)
-        saved_cfg.task.speech_only = True
-        logging.info("loading dataset...")
         task.load_dataset(args.gen_subset, task_cfg=saved_cfg.task)
 
 
@@ -249,6 +265,28 @@ def main(args, task=None, model_state=None):
             args.data, args.gen_subset, len(task.dataset(args.gen_subset))
         )
     )
+
+    # Set up scorer
+    scoring_args = {"wer_tokenizer": getattr(args, "wer_tokenizer", "13a"), 
+                    "wer_remove_punct": getattr(args, "wer_remove_punct", True), 
+                    "wer_char_level": getattr(args, "wer_char_level", False), 
+                    "wer_lowercase": getattr(args, "wer_lowercase", True)}
+    scoring_cfg = argparse.Namespace(**scoring_args)
+    print(f"| scoring_cfg: {scoring_cfg}")
+    scorer = WerScorer(scoring_cfg)
+
+    # Handle tokenization and BPE
+    if isinstance(args, Namespace):
+        cfg = convert_namespace_to_omegaconf(args)
+    tokenizer = task.build_tokenizer(cfg.tokenizer)
+    bpe = task.build_bpe(cfg.bpe)
+
+    def decode_fn(x):
+        if bpe is not None:
+            x = bpe.decode(x)
+        if tokenizer is not None:
+            x = tokenizer.decode(x)
+        return x
 
     # hack to pass transitions to W2lDecoder
     if args.criterion == "asg_loss":
@@ -319,6 +357,8 @@ def main(args, task=None, model_state=None):
         wps_meter = TimeMeter()
         for sample in t:
             sample = utils.move_to_cuda(sample) if use_cuda else sample
+            if use_fp16:
+                sample = utils.apply_to_sample(apply_half, sample)
             if "net_input" not in sample:
                 continue
 
@@ -374,6 +414,28 @@ def main(args, task=None, model_state=None):
                 )
                 errs_t += errs
                 lengths_t += length
+                # Use WER scorer
+                target_str = tgt_dict.string(
+                        target_tokens,
+                        cfg.common_eval.post_process,
+                        escape_unk=True,
+                        extra_symbols_to_ignore=get_symbols_to_strip_from_output(
+                            generator
+                        ),
+                    )
+                target_str = decode_fn(target_str)
+
+                _, hypo_str, _ = utils.post_process_prediction(
+                    hypo_tokens=hypos[i][0]["tokens"].int().cpu(),
+                    src_str="",
+                    alignment=None,
+                    align_dict=None,
+                    tgt_dict=tgt_dict,
+                    remove_bpe=cfg.common_eval.post_process,
+                    extra_symbols_to_ignore=get_symbols_to_strip_from_output(generator),
+                )
+                detok_hypo_str = decode_fn(hypo_str)
+                scorer.add_string(target_str, detok_hypo_str)
 
             wps_meter.update(num_generated_tokens)
             t.log({"wps": round(wps_meter.avg)})
@@ -410,6 +472,8 @@ def main(args, task=None, model_state=None):
             )
         )
         logger.info("| Generate {} with beam={}".format(args.gen_subset, args.beam))
+
+    logger.info("| Lower-cased + punctuations removed WER = {}".format(scorer.result_string()))
     return task, wer
 
 

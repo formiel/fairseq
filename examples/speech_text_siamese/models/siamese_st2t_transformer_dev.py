@@ -24,9 +24,8 @@ from fairseq.models.speech_to_text import (
     TransformerDecoderScriptable,
 )
 from fairseq.models.transformer import TransformerEncoder
+from fairseq.models.roberta import RobertaLMHead
 from torch import Tensor
-
-from geomloss import SamplesLoss
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +60,6 @@ class CTCDecoder(FairseqDecoder):
 
     def forward(
         self,
-        prev_output_tokens,
         encoder_out: Optional[Dict[str, List[Tensor]]],
     ):
         encoder_out = encoder_out[0] if isinstance(encoder_out, tuple) else encoder_out
@@ -106,7 +104,7 @@ class SiameseSpeechTextEncoders(FairseqEncoder):
         self.shrink_speech_output = getattr(args, "shrink_speech_output", False)
         self.zero_speech_output = getattr(args, "zero_speech_output", False)
         self.use_linear_after_encoder = getattr(args, "use_linear_after_encoder", False)
-        self.compute_ot_plan = getattr(args, "compute_ot_plan", False)
+        self.use_lm_head = getattr(args, "use_lm_head", False)
 
     @classmethod
     def build_speech_encoder(cls, args):
@@ -169,9 +167,11 @@ class SiameseSpeechTextEncoders(FairseqEncoder):
 
         # Set shared layers
         if args.encoder_shared_layers > 0:
-            start = 0 if args.encoder_shared_layers_order == 0 \
-                    else -min(args.text_encoder_layers, args.speech_encoder_layers)
-            end = args.encoder_shared_layers if start == 0 else 0
+            start = args.encoder_shared_layers_order
+            end = args.encoder_shared_layers if start==0 else -args.encoder_shared_layers
+            if start == -1:
+                start = end
+                end = 0
             for i in range(start, end):
                 if isinstance(text_encoder, TransformerLinearEncoder):
                     text_encoder.main_encoder.layers[i] = spch_encoder.transformer_layers[i]
@@ -202,38 +202,12 @@ class SiameseSpeechTextEncoders(FairseqEncoder):
             raise ValueError(
                 "src_tokens and src_txt_tokens cannot be None at the same time"
             )
-        ret1 = self.spch_encoder(src_tokens, src_lengths)
+        ret1 = None
         ret2 = None
+        if src_tokens is not None:
+            ret1 = self.spch_encoder(src_tokens, src_lengths)
         if src_txt_tokens is not None and self.text_encoder is not None:
             ret2 = self.text_encoder(src_txt_tokens, src_txt_lengths)
-
-        # if self.compute_ot_plan:
-        #     p = 2
-        #     blur = 0.05
-        #     OT_solver = SamplesLoss(loss="sinkhorn", p=p, blur=blur, debias=False, potentials=True)
-        #     speech_out = ret1["encoder_out"][0] # N x B x D
-        #     text_out = ret2["encoder_out"][0] # M x B x D
-        #     B = speech_out.size()[1]
-        #     out = [None] * B
-        #     for i in range(B):
-        #         x = speech_out[:, i, :].squeeze(1) # N x D
-        #         y = text_out[:, i, :].squeeze(1)
-        #         N, M, D = x.size()[0], y.size()[0], x.size()[1]
-        #         x_weight = OT_solver.generate_weights(x).detach() # B x N
-        #         y_weight = OT_solver.generate_weights(y).detach() # B x M
-        #         F, G = OT_solver(x_weight, x, y_weight, y)  # Dual potentials
-        #         F = F.detach()
-        #         G = G.detach()
-
-        #         a_i, x_i = x_weight.view(N, -1), x.view(N, -1, D)
-        #         b_j, y_j = y_weight.view(-1, M), y.view(-1, M, D)
-        #         F_i, G_j = F.view(N, -1), G.view(-1, M)
-        #         C_ij = (1/p) * ((x_i - y_j)**p).sum(-1)  # (N,M) cost matrix
-        #         eps = blur**p  # temperature epsilon
-        #         P_ij = ((F_i + G_j - C_ij) / eps).exp() * (a_i * b_j)  # (N,M) transport plan
-        #         out[i] = torch.matmul(P_ij.T, x).transpose(0, 1)
-        #     ret1["encoder_out"] = [torch.nn.utils.rnn.pad_sequence(out).transpose(0, 2)]
-        #     ret1["encoder_padding_mask"] = ret2["encoder_padding_mask"]
 
         def merge_output(rst1, rst2):
             if rst2 is None:
@@ -265,33 +239,45 @@ class MultiOutputDecoder(FairseqDecoder):
         self, 
         prev_output_tokens, 
         encoder_out, 
-        incremental_state=None, 
+        masked_tokens=None,
+        incremental_state=None,
         **kwargs
     ):
         speech_dec_out = None
         ctc_out = None
         text_dec_out = None
 
-        if self.speech_decoder is not None:
+        speech_enc_out = encoder_out[0] if isinstance(encoder_out, tuple) else encoder_out
+        if self.speech_decoder is not None and speech_enc_out is not None:
             speech_dec_out = self.speech_decoder(
                 prev_output_tokens,
-                encoder_out=encoder_out[0] if isinstance(encoder_out, tuple) else encoder_out,
+                encoder_out=speech_enc_out,
                 incremental_state=incremental_state,
                 **kwargs
             )
-        if self.ctc_module is not None:
+        if self.ctc_module is not None and speech_enc_out is not None:
             ctc_out = self.ctc_module(
-                prev_output_tokens,
-                encoder_out=encoder_out[0] if isinstance(encoder_out, tuple) else encoder_out,
+                encoder_out=speech_enc_out,
                 **kwargs
             )
         if self.text_decoder is not None:
-            text_dec_out = self.text_decoder(
-                prev_output_tokens,
-                encoder_out=encoder_out[1] if isinstance(encoder_out, tuple) else encoder_out,
-                incremental_state=incremental_state,
-                **kwargs
-            )
+            # assert isinstance(encoder_out, tuple)
+            encoder_out = encoder_out if isinstance(encoder_out, tuple) else (None, encoder_out)
+            if not isinstance(self.text_decoder, RobertaLMHead):
+                text_dec_out = self.text_decoder(
+                    prev_output_tokens,
+                    encoder_out=encoder_out[1],
+                    incremental_state=incremental_state,
+                    **kwargs
+                )
+            else:
+                if masked_tokens is not None:
+                    text_dec_out = self.text_decoder(
+                        encoder_out[1]["encoder_out"][0].transpose(0, 1), # T x B x C -> B x T x C
+                        masked_tokens,
+                    )
+                text_dec_out = (text_dec_out, {})
+
         def merge_output(res1, res2, res3):
             """merging outputs of 3 decoders, each is Tuple[Tensor, Dict]"""
             out = [None] * 3
@@ -305,8 +291,13 @@ class MultiOutputDecoder(FairseqDecoder):
                 out_dict = res1[1]
                 return tuple(out), out_dict
             return tuple(out), res1[1]
-
-        return merge_output(speech_dec_out, ctc_out, text_dec_out)
+        
+        if masked_tokens is not None:
+            return merge_output(speech_dec_out, ctc_out, text_dec_out)
+        else:
+            return (speech_dec_out if speech_dec_out is not None 
+                    else ctc_out if ctc_out is not None 
+                    else text_dec_out)
 
 
 @register_model("siamese_st2t_transformer_dev")
@@ -497,6 +488,16 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             help="Use speech decoder"
         )
         parser.add_argument(
+            "--use-lm-head",
+            action="store_true",
+            help="Use LM head for MLM objective"
+        )
+        parser.add_argument(
+            "--untie-weights-text-embed-lm-output",
+            action="store_true",
+            help="Use LM head for MLM objective"
+        )
+        parser.add_argument(
             "--use-linear-after-encoder",
             action="store_true",
             help="Add Linear after the text encoder"
@@ -598,6 +599,7 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
         dec_cfg = {
             "decoder_layerdrop": args.decoder_layerdrop,
             "share_decoder_input_output_embed": args.share_decoder_input_output_embed,
+            "encoder_embed_dim": args.encoder_embed_dim,
             "decoder_embed_dim": args.decoder_embed_dim,
             "max_target_positions": args.max_target_positions,
             "dropout": args.dropout,
@@ -658,6 +660,17 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
                 assert encoder.text_encoder is not None
                 text_decoder.embed_tokens = encoder.text_encoder.embed_tokens
                 text_decoder.embed_positions = encoder.text_encoder.embed_positions
+
+        if getattr(args, "use_lm_head", False):
+            text_decoder = RobertaLMHead(args.encoder_embed_dim, 
+                                    len(task.source_dictionary),
+                                    "relu",
+                                    weight=(
+                                        encoder.text_encoder.embed_tokens.weight
+                                        if not getattr(args, "untie_weights_text_embed_lm_output", False) 
+                                        else None
+                                    ))
+            num_outputs += 1
         
         if getattr(args, "load_pretrain_speech_decoder", "") != "":
             state = checkpoint_utils.load_checkpoint_to_cpu(args.load_pretrain_speech_decoder)
@@ -719,7 +732,11 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
     ):
         """Get normalized probabilities (or log probs) from a net's output."""
         assert not isinstance(self.decoder, DummyDecoder)
-        if isinstance(self.decoder, MultiOutputDecoder):
+        if (isinstance(self.decoder, MultiOutputDecoder)
+            and isinstance(net_output[0], tuple)
+        ):
+            if sum(o is not None for o in net_output[0]) == 1:
+                idx = [i for i, o in enumerate(net_output[0]) if o is not None][0]
             net_output = (net_output[0][idx], net_output[1])
         
         if hasattr(self, "adaptive_softmax") and self.adaptive_softmax is not None:
@@ -744,14 +761,29 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
 
     def forward(
         self,
-        src_tokens,
-        src_lengths,
+        src_tokens=None,
+        src_lengths=None,
         prev_output_tokens=None,
         use_encoder_outputs=False,
         src_txt_tokens=None,
         src_txt_lengths=None,
+        masked_src_txt_tokens=None,
+        masked_src_lengths=None,
+        masked_tokens=None,
+        mode="sup_speech",
         **kwargs
     ):
+        # train with MLM objective
+        if mode == "text":
+            src_txt_tokens = masked_src_txt_tokens
+            src_txt_lengths = masked_src_lengths
+            src_tokens = None
+            src_lengths = None
+        else:
+            if self.encoder.use_lm_head:
+                src_txt_tokens = masked_src_txt_tokens
+                src_txt_lengths = masked_src_lengths
+
         encoder_out = self.encoder(
             src_tokens,
             src_lengths=src_lengths,
@@ -761,12 +793,27 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
         )
         if isinstance(self.decoder, DummyDecoder):
             return None, encoder_out
-
-        decoder_out = self.decoder(
-            prev_output_tokens,
-            encoder_out=encoder_out,
-            **kwargs
-        )
+        
+        if isinstance(self.decoder, MultiOutputDecoder):
+            decoder_out = self.decoder(
+                prev_output_tokens,
+                encoder_out=encoder_out,
+                masked_tokens=masked_tokens,
+                **kwargs
+            )
+        elif isinstance(self.decoder, TransformerDecoderScriptable):
+            decoder_out = self.decoder(
+                prev_output_tokens,
+                encoder_out=encoder_out,
+                **kwargs
+            )
+        elif isinstance(self.decoder, CTCDecoder):
+            decoder_out = self.decoder(
+                encoder_out=encoder_out,
+                **kwargs
+            )
+        else:
+            raise NotImplementedError
 
         def zero_speech_output(speech_out, preds):
             """
@@ -792,7 +839,7 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             blank_idx = self.decoder.blank_idx if isinstance(self.decoder, CTCDecoder) \
                 else self.decoder.ctc_module.blank_idx
             m = ~(preds.eq(blank_idx) | diff_preds.eq(0)) # T x B
-            reduced_t = torch.numel(m) - torch.sum(m)
+            reduced_t = T*B - torch.sum(m)
             m = m.transpose(0, 1).unsqueeze(2).expand(-1, -1, D) # B x T x D
             speech_out = speech_out.transpose(0, 1) * m # B x T x D
             return speech_out.transpose(0, 1), reduced_t / (T*B)
@@ -849,34 +896,38 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             Y = pad_seq_given_lens_arrays(Y, lengths)
             return Y.transpose(0, 1), reduced_t / (T*B)
 
-        if not self.encoder.use_linear_after_encoder:
-            speech_out = encoder_out[0]["encoder_out"][0] if isinstance(encoder_out, tuple) \
-                else encoder_out["encoder_out"][0] # T x B x D
-        else:
-            assert isinstance(self.decoder, CTCDecoder)
-            speech_out = decoder_out[0] # T x B x V
-        x = speech_out
-        
-        # Shrink speech output
-        if self.encoder.shrink_speech_output or self.encoder.zero_speech_output:
-            assert isinstance(self.decoder, CTCDecoder) or isinstance(self.decoder, MultiOutputDecoder)
-            ctc_out = decoder_out[0] if isinstance(self.decoder, CTCDecoder) else decoder_out[0][1]
-            lprobs_ctc = F.log_softmax(ctc_out, dim=-1).contiguous() # T x B x V
-            preds = torch.argmax(lprobs_ctc, dim=-1).contiguous() # T x B
-
-            if self.encoder.zero_speech_output:
-                x, reduced_t = zero_speech_output(speech_out, preds)
-            elif self.encoder.shrink_speech_output:
-                x, reduced_t = shrink_speech_output(speech_out, preds)
+        if mode != "text":
+            if not self.encoder.use_linear_after_encoder:
+                speech_out = encoder_out[0]["encoder_out"][0] if isinstance(encoder_out, tuple) \
+                    else encoder_out["encoder_out"][0] # T x B x D
             else:
-                raise NotImplementedError
+                assert isinstance(self.decoder, CTCDecoder)
+                speech_out = decoder_out[0] # T x B x V
+            x = speech_out
+            
+            # Shrink speech output
+            if self.encoder.shrink_speech_output or self.encoder.zero_speech_output:
+                assert isinstance(self.decoder, CTCDecoder) or isinstance(self.decoder, MultiOutputDecoder)
+                ctc_out = (decoder_out[0] if isinstance(self.decoder, CTCDecoder) 
+                        else decoder_out[0][1] if isinstance(decoder_out[0], tuple)
+                        else decoder_out[0]
+                        )
+                lprobs_ctc = F.log_softmax(ctc_out, dim=-1).contiguous() # T x B x V
+                preds = torch.argmax(lprobs_ctc, dim=-1).contiguous() # T x B
 
-            decoder_out[-1]["reduced_speech_output"] = reduced_t
+                if self.encoder.zero_speech_output:
+                    x, reduced_t = zero_speech_output(speech_out, preds)
+                elif self.encoder.shrink_speech_output:
+                    x, reduced_t = shrink_speech_output(speech_out, preds)
+                else:
+                    raise NotImplementedError
 
-        if isinstance(encoder_out, tuple):
-            encoder_out[0]["encoder_out"] = [x] # T x B x D or T x B x V
-        else:
-            encoder_out["encoder_out"] = [x] # T x B x D or T x B x V
+                decoder_out[-1]["reduced_speech_output"] = reduced_t
+
+            if isinstance(encoder_out, tuple):
+                encoder_out[0]["encoder_out"] = [x] # T x B x D or T x B x V
+            else:
+                encoder_out["encoder_out"] = [x] # T x B x D or T x B x V
 
         if use_encoder_outputs:
             return decoder_out, encoder_out
@@ -979,6 +1030,15 @@ def siamese_st2t_transformer_dev_m(args):
     args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 8)
     args.dropout = getattr(args, "dropout", 0.15)
     siamese_st2t_transformer_dev_base(args)
+
+
+@register_model_architecture("siamese_st2t_transformer_dev", "siamese_st2t_transformer_dev_m_h768")
+def siamese_st2t_transformer_dev_m_h768(args):
+    args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 768)
+    args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 768 * 4)
+    args.text_encoder_layers = getattr(args, "text_encoder_layers", 12)
+    args.dropout = getattr(args, "dropout", 0.15)
+    siamese_st2t_transformer_dev_m(args)
 
 
 @register_model_architecture("siamese_st2t_transformer_dev", "siamese_st2t_transformer_dev_l")

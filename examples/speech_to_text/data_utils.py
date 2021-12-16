@@ -45,6 +45,8 @@ def gen_vocab(
         f"--bos_id={BOS_TOKEN_ID}",
         f"--eos_id={EOS_TOKEN_ID}",
         f"--pad_id={PAD_TOKEN_ID}",
+        f"--max_sentence_length=9216",
+        f"--train_extremely_large_corpus=true",
     ]
     if special_symbols is not None:
         _special_symbols = ",".join(special_symbols)
