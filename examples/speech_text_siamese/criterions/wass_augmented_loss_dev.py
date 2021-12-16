@@ -441,26 +441,26 @@ class CtcWassersteinCriterion(CtcCriterion):
                 ).sum()  # use constant weights = 1/number of samples
             else:
                 B, S, T = speech_out.size()[1], speech_out.size()[0], text_out.size()[0]
-                # non_padding_speech = (torch.ones(B, S) > 0).to(device=speech_out.device)
-                # non_padding_text = (torch.ones(B, T) > 0).to(device=text_out.device)
-                # if encoder_out[0]["encoder_padding_mask"]:
-                #     non_padding_speech = ~encoder_out[0]["encoder_padding_mask"][0] # B x S
-                # if encoder_out[1]["encoder_padding_mask"]:
-                #     non_padding_text = ~encoder_out[1]["encoder_padding_mask"][0] # B x T
-                # speech_weights = (
-                #     torch.ones_like(non_padding_speech) / 
-                #     torch.sum(non_padding_speech, dim=-1).unsqueeze(-1) *
-                #     non_padding_speech
-                # )
-                # text_weights = (
-                #     torch.ones_like(non_padding_text) / 
-                #     torch.sum(non_padding_text, dim=-1).unsqueeze(-1) *
-                #     non_padding_text
-                # )
+                non_padding_speech = (torch.ones(B, S) > 0).to(device=speech_out.device)
+                non_padding_text = (torch.ones(B, T) > 0).to(device=text_out.device)
+                if encoder_out[0]["encoder_padding_mask"]:
+                    non_padding_speech = ~encoder_out[0]["encoder_padding_mask"][0] # B x S
+                if encoder_out[1]["encoder_padding_mask"]:
+                    non_padding_text = ~encoder_out[1]["encoder_padding_mask"][0] # B x T
+                speech_weights = (
+                    torch.ones_like(non_padding_speech) / 
+                    torch.sum(non_padding_speech, dim=-1).unsqueeze(-1) *
+                    non_padding_speech
+                )
+                text_weights = (
+                    torch.ones_like(non_padding_text) / 
+                    torch.sum(non_padding_text, dim=-1).unsqueeze(-1) *
+                    non_padding_text
+                )
                 wass_loss = wloss(
-                    # speech_weights.float(),
+                    speech_weights.float(),
                     speech_out.float().transpose(0, 1).contiguous(),
-                    # text_weights.float(),
+                    text_weights.float(),
                     text_out.float().transpose(0, 1).contiguous()
                 ).sum()
         else:
