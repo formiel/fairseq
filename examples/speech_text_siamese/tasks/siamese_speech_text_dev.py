@@ -205,7 +205,7 @@ class SiameseSpeechTextToTextTaskDev(SpeechTextJointToTextTask):
             random_token_prob=0.1,
             freq_weighted_replacement=False,
             mask_whole_words=None,
-            mask_multiple_length=self.args.mask_multiple_length,
+            mask_multiple_length=int(self.args.mask_multiple_length),
             mask_stdev=0.0,
         )
 
@@ -260,7 +260,7 @@ class SiameseSpeechTextToTextTaskDev(SpeechTextJointToTextTask):
             seed=self.args.seed,
             mask_sym=self.mask_sym,
             mask_prob=self.args.mask_prob,
-            mask_multiple_length=self.args.mask_multiple_length,
+            mask_multiple_length=int(self.args.mask_multiple_length),
             speech_only=self.speech_only, 
         )
         text_dataset = None

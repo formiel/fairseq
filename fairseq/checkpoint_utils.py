@@ -833,6 +833,58 @@ def load_pretrained_component_from_model_different_keys(
     return component
 
 
+def load_pretrained_component_from_model_different_keys_v2(
+    component: Union[FairseqEncoder, FairseqDecoder], 
+    checkpoint: Union[str, dict],
+    ckpt_component_types=["encoder"],
+    exclude_layers=None,
+):
+    """
+    Load a pretrained FairseqEncoder or FairseqDecoder from checkpoint into the
+    provided `component` object. If state_dict fails to load, there may be a
+    mismatch in the architecture of the corresponding `component` found in the
+    `checkpoint` file.
+    """
+    if isinstance(checkpoint, str):
+        if not PathManager.exists(checkpoint):
+            raise IOError("Model file not found: {}".format(checkpoint))
+        state = load_checkpoint_to_cpu(checkpoint)
+    elif isinstance(checkpoint, dict):
+        state = checkpoint
+    else:
+        raise NotImplementedError(f"checkpoint has to be of str or dict type")
+    
+    # update state dict name for MHA layers
+    upgrade_state_dict_named(state["model"])
+
+    component_state_dict = OrderedDict()
+    loaded_components = []
+    for key in state["model"].keys():
+        for ckpt_type in ckpt_component_types:
+            if exclude_layers is None:
+                do_load = True if key.startswith(ckpt_type) else False
+            else:
+                do_load = (True 
+                    if key.startswith(ckpt_type) and all([l not in key for l in exclude_layers])
+                    else False
+                    )
+            if do_load:
+                # encoder.input_layers.0.0.weight --> input_layers.0.0.weight
+                component_subkey = key[len(ckpt_type) + 1 :]
+                component_state_dict[component_subkey] = state["model"][key]
+                loaded_components.append(component_subkey)
+            
+    not_loaded_components = set(component.state_dict()) - set(loaded_components)
+    if len(not_loaded_components) > 0:
+        logging.info(f"*** Not loaded components (to be initialized randomly) ***")
+    for key in not_loaded_components:
+        if "_proj" not in key: # MHA keys
+            logging.info(f"- {key}")
+            component_state_dict[key] = component.state_dict()[key]
+    component.load_state_dict(component_state_dict, strict=True)
+    return component
+
+
 def verify_checkpoint_directory(save_dir: str) -> None:
     if not os.path.exists(save_dir):
         os.makedirs(save_dir, exist_ok=True)
@@ -847,3 +899,36 @@ def verify_checkpoint_directory(save_dir: str) -> None:
         raise e
     else:
         os.remove(temp_file_path)
+
+
+def upgrade_state_dict_named(state_dict):
+    items_to_add = {}
+    keys_to_remove = []
+
+    for k in state_dict.keys():
+        if k.endswith("in_proj_weight"):
+            prefix = ".".join(k.split(".")[:-1]) + "."
+            # in_proj_weight used to be q + k + v with same dimensions
+            dim = int(state_dict[k].shape[0] / 3)
+            items_to_add[prefix + "q_proj.weight"] = state_dict[k][:dim]
+            items_to_add[prefix + "k_proj.weight"] = state_dict[k][dim : 2 * dim]
+            items_to_add[prefix + "v_proj.weight"] = state_dict[k][2 * dim :]
+
+            keys_to_remove.append(k)
+
+            k_bias = prefix + "in_proj_bias"
+            if k_bias in state_dict.keys():
+                dim = int(state_dict[k].shape[0] / 3)
+                items_to_add[prefix + "q_proj.bias"] = state_dict[k_bias][:dim]
+                items_to_add[prefix + "k_proj.bias"] = state_dict[k_bias][
+                    dim : 2 * dim
+                ]
+                items_to_add[prefix + "v_proj.bias"] = state_dict[k_bias][2 * dim :]
+
+                keys_to_remove.append(prefix + "in_proj_bias")
+
+    for k in keys_to_remove:
+        del state_dict[k]
+
+    for key, value in items_to_add.items():
+        state_dict[key] = value

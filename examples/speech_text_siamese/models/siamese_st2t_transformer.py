@@ -455,6 +455,13 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             help=""" path to the pretrained speech decoder """,
         )
         parser.add_argument(
+            "--load-pretrain-text-decoder",
+            type=str,
+            metavar="EXPR",
+            default="",
+            help=""" path to the pretrained text decoder """,
+        )
+        parser.add_argument(
             "--load-pretrain-decoder",
             type=str,
             metavar="EXPR",
@@ -561,13 +568,25 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             task.src_dict,
         )
 
-        if args.load_pretrain_speech_encoder != "":
+        if getattr(args, "load_pretrain_speech_encoder", "") != "":
+            logging.info(f"Loading pretrained speech encoder ...")
             state = checkpoint_utils.load_checkpoint_to_cpu(args.load_pretrain_speech_encoder)
             ckpt_component_type = ["encoder.spch_encoder"] \
                 if any([key.startswith("encoder.spch_encoder") for key in state["model"].keys()]) else ["encoder"]
             checkpoint_utils.load_pretrained_component_from_model_different_keys(
                 spch_encoder, state, ckpt_component_types=ckpt_component_type)
             logging.info(f"Loaded pretrained speech encoder from {args.load_pretrain_speech_encoder}")
+
+        if getattr(args, "load_pretrain_text_encoder", "") != "":
+            logging.info(f"Loading pretrained text encoder ...")
+            state = checkpoint_utils.load_checkpoint_to_cpu(args.load_pretrain_text_encoder)
+            ckpt_component_type = ["decoder.sentence_encoder"] \
+                if any([key.startswith("decoder.sentence_encoder") for key in state["model"].keys()]) else ["encoder"]
+            checkpoint_utils.load_pretrained_component_from_model_different_keys_v2(
+                text_encoder, state, ckpt_component_types=ckpt_component_type,
+                exclude_layers=["embed_tokens", "embed_positions", "emb_layer_norm"]
+            )
+            logging.info(f"Loaded pretrained text encoder from {args.load_pretrain_text_encoder}")
 
         if getattr(args, "load_pretrain_text_encoder_last", "") != "":
             # if share encoder, speech encoder parameters will be used.
@@ -671,6 +690,16 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
                                         else None
                                     ))
             num_outputs += 1
+            if getattr(args, "load_pretrain_text_decoder", "") != "":
+                logging.info(f"Loading pretrained text decoder ...")
+                state = checkpoint_utils.load_checkpoint_to_cpu(args.load_pretrain_text_decoder)
+                ckpt_component_type = ["decoder.lm_head"] \
+                    if any([key.startswith("decoder.lm_head") for key in state["model"].keys()]) else ["decoder"]
+                checkpoint_utils.load_pretrained_component_from_model_different_keys_v2(
+                    text_decoder, state, ckpt_component_types=ckpt_component_type,
+                    exclude_layers=["lm_head.weight", "lm_head.bias"]
+                )
+                logging.info(f"Loaded pretrained text decoder from {args.load_pretrain_text_decoder}")
         
         if getattr(args, "load_pretrain_speech_decoder", "") != "":
             state = checkpoint_utils.load_checkpoint_to_cpu(args.load_pretrain_speech_decoder)
