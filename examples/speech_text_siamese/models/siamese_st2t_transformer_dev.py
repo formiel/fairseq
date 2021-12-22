@@ -702,6 +702,7 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
                 logging.info(f"Loaded pretrained text decoder from {args.load_pretrain_text_decoder}")
         
         if getattr(args, "load_pretrain_speech_decoder", "") != "":
+            logging.info(f"Loading pretrained speech decoder ...")
             state = checkpoint_utils.load_checkpoint_to_cpu(args.load_pretrain_speech_decoder)
             # check if language pairs in state
             multi_dec = False
@@ -712,10 +713,20 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
                 if multi_dec:
                     break
             
-            ckpt_component_type = [f"models.{lang_pair}.decoder", "models.decoder"] \
-                if multi_dec else ["models.decoder"]
-            checkpoint_utils.load_pretrained_component_from_model_different_keys(
-                    speech_decoder, state, ckpt_component_types=ckpt_component_type)
+            try:
+                ckpt_component_type = [f"models.{lang_pair}.decoder", "models.decoder"] \
+                    if multi_dec else ["models.decoder"]
+                checkpoint_utils.load_pretrained_component_from_model_different_keys(
+                        speech_decoder, state, ckpt_component_types=ckpt_component_type)
+            except:
+                ckpt_component_type = ["encoder.sentence_encoder", "encoder.lm_head"] \
+                if any([key.startswith("encoder.sentence_encoder") for key in state["model"].keys()]) else ["decoder"]
+                checkpoint_utils.load_pretrained_component_from_model_different_keys_v2(
+                    speech_decoder, state, ckpt_component_types=ckpt_component_type,
+                    exclude_layers=["lm_head.bias", 
+                                    "lm_head.dense.weight", "lm_head.dense.bias"],
+                    changed_subkeys={"lm_head.weight": "lm_head.output_projection.weight"}
+                )
             logging.info(f"Loaded pretrained decoder from {args.load_pretrain_speech_decoder}")
         
         if num_outputs >= 2:
