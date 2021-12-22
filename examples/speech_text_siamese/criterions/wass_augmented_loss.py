@@ -34,31 +34,37 @@ class CtcWassersteinCriterionConfig(CtcCriterionConfig):
         default=0.0,
         metadata={"help": "loss = ctc_weight * ctc_loss + attn_weight_speech * attn_loss_speech \
             + attn_weight_text * attn_loss_text \
-            + (1 - ctc_weight - attn_weight_speech - attn_weight_text) * wass_loss"},
+            + ot_weight * ot_loss"},
     )
     attn_weight_speech: float = field(
         default=0.0,
         metadata={"help": "loss = ctc_weight * ctc_loss + attn_weight_speech * attn_loss_speech \
             + attn_weight_text * attn_loss_text \
-            + (1 - ctc_weight - attn_weight_speech - attn_weight_text) * wass_loss"},
+            + ot_weight * ot_loss"},
     )
     attn_weight_text: float = field(
         default=0.0,
         metadata={"help": "loss = ctc_weight * ctc_loss + attn_weight_speech * attn_loss_speech \
             + attn_weight_text * attn_loss_text \
-            + (1 - ctc_weight - attn_weight_speech - attn_weight_text) * wass_loss"},
+            + ot_weight * ot_loss"},
     )
     mlm_weight: float = field(
         default=0.0,
         metadata={"help": "loss = ctc_weight * ctc_loss + attn_weight_speech * attn_loss_speech \
             + attn_weight_text * attn_loss_text \
-            + (1 - ctc_weight - attn_weight_speech - attn_weight_text) * wass_loss"},
+            + ot_weight * ot_loss"},
+    )
+    ot_weight: float = field(
+        default=0.0,
+        metadata={"help": "loss = ctc_weight * ctc_loss + attn_weight_speech * attn_loss_speech \
+            + attn_weight_text * attn_loss_text \
+            + ot_weight * ot_loss"},
     )
     dtw_weight: float = field(
         default=0.0,
         metadata={"help": "loss = ctc_weight * ctc_loss + attn_weight_speech * attn_loss_speech \
             + attn_weight_text * attn_loss_text \
-            + (1 - ctc_weight - attn_weight_speech - attn_weight_text - dtw_weight) * wass_loss \
+            + (1 - ctc_weight - attn_weight_speech - attn_weight_text - dtw_weight) * ot_loss \
             + dtw_weight * dtw_loss"},
     )
     gamma: float = field(
@@ -131,6 +137,7 @@ class CtcWassersteinCriterion(CtcCriterion):
         self.attn_weight_speech = cfg.attn_weight_speech
         self.attn_weight_text = cfg.attn_weight_text
         self.mlm_weight = cfg.mlm_weight
+        self.ot_weight = cfg.ot_weight
         self.dtw_weight = cfg.dtw_weight
         self.eps = cfg.label_smoothing
         self.gamma = cfg.gamma
@@ -150,16 +157,16 @@ class CtcWassersteinCriterion(CtcCriterion):
         self.wass_pos_cost_val = cfg.wass_pos_cost
         self.use_cross_attentive_loss = cfg.use_cross_attentive_loss
         # self.use_soft_dtw_loss = cfg.use_soft_dtw_loss
-        logging.info(f"ctc_weight = {self.ctc_weight}")
+        logging.info(f"*** Weights in loss function ***")
+        logging.info(f"ctc_weight = {self.ctc_weight}, gamma = {self.gamma}")
+        logging.info(f"mlm_weight = {self.mlm_weight}")
+        logging.info(f"ot_weight = {self.ot_weight}")
         logging.info(f"attn_weight_speech = {self.attn_weight_speech}")
         logging.info(f"attn_weight_text = {self.attn_weight_text}")
-        logging.info(f"mlm_weight = {self.mlm_weight}")
-        logging.info(f"eps = {self.eps}")
-        logging.info(f"gamma = {self.gamma}")
+        logging.info(f"label smoothing eps = {self.eps}")
 
     def forward(self, model, sample, reduce=True):
         net_input = sample["net_input"]
-        # logging.info(f"sample: {sample}")
         text_mode = True if "src_tokens" not in net_input else False
         masked_tokens = None
         if sample["masked_target"] is not None:
@@ -222,12 +229,13 @@ class CtcWassersteinCriterion(CtcCriterion):
                     extra["dtw_loss"] = dtw_loss
                 if self.use_wass_loss:
                     wass_loss = self.compute_wass_loss(encoder_out)
-                    loss += (
-                        (
-                            1 - self.attn_weight_speech - self.attn_weight_text 
-                            - self.mlm_weight - self.ctc_weight - self.dtw_weight
-                        ) * wass_loss
-                    )
+                    # loss += (
+                    #     (
+                    #         1 - self.attn_weight_speech - self.attn_weight_text 
+                    #         - self.mlm_weight - self.ctc_weight - self.dtw_weight
+                    #     ) * wass_loss
+                    # )
+                    loss += self.ot_weight * wass_loss
                     extra["wass_loss"] = wass_loss
                 if self.use_cross_attentive_loss:
                     cross_attn_loss = torch.sum(self.cross_attentive_loss(encoder_out))

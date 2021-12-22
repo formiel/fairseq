@@ -578,8 +578,8 @@ def roberta_prenorm_architecture(args):
     base_architecture(args)
 
 
-@register_model_architecture("roberta", "roberta_for_siamese_m")
-def roberta_prenorm_architecture(args):
+@register_model_architecture("roberta", "roberta_for_siamese_st2t_m_enc6")
+def roberta_for_siamese_st2t_m_enc6(args):
     args.layernorm_embedding = safe_getattr(args, "layernorm_embedding", False)
     args.encoder_normalize_before = safe_getattr(args, "encoder_normalize_before", True)
     args.encoder_learned_pos = safe_getattr(args, "encoder_learned_pos", False)
@@ -588,6 +588,18 @@ def roberta_prenorm_architecture(args):
     args.encoder_ffn_embed_dim = safe_getattr(args, "encoder_ffn_embed_dim", 2048)
     args.encoder_attention_heads = safe_getattr(args, "encoder_attention_heads", 8)
     base_architecture(args)
+
+
+@register_model_architecture("roberta", "roberta_for_siamese_st2t_m_enc8")
+def roberta_for_siamese_st2t_m_enc8(args):
+    args.encoder_layers = safe_getattr(args, "encoder_layers", 8)
+    roberta_for_siamese_st2t_m_enc6(args)
+
+
+@register_model_architecture("roberta", "roberta_for_siamese_st2t_m_enc10")
+def roberta_for_siamese_st2t_m_enc10(args):
+    args.encoder_layers = safe_getattr(args, "encoder_layers", 10)
+    roberta_for_siamese_st2t_m_enc6(args)
 
 
 @register_model_architecture("roberta", "roberta_base")
