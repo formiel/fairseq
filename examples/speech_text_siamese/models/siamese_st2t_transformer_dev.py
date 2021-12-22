@@ -844,7 +844,7 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
         elif isinstance(self.decoder, TransformerDecoderScriptable):
             decoder_out = self.decoder(
                 prev_output_tokens,
-                encoder_out=encoder_out,
+                encoder_out=encoder_out[0] if isinstance(encoder_out, tuple) else encoder_out,
                 **kwargs
             )
         elif isinstance(self.decoder, CTCDecoder):

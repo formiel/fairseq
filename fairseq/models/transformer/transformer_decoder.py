@@ -362,12 +362,13 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
             x = self.layer_norm(x)
 
         # T x B x C -> B x T x C
+        out = x
         x = x.transpose(0, 1)
 
         if self.project_out_dim is not None:
             x = self.project_out_dim(x)
 
-        return x, {"attn": [attn], "inner_states": inner_states}
+        return x, {"attn": [attn], "inner_states": inner_states, "before_out_proj": out}
 
     def output_layer(self, features):
         """Project features to the vocabulary size."""
