@@ -38,10 +38,14 @@ def Linear(in_features, out_features, bias=True):
     return m
 
 
-def build_embedding(dictionary, embed_dim):
+def build_embedding(dictionary, embed_dim, init_normal=True):
     num_embeddings = len(dictionary)
     padding_idx = dictionary.pad()
-    return Embedding(num_embeddings, embed_dim, padding_idx)
+    if init_normal:
+        logging.info(f"*** Init embedding layer from normal distribution ***")
+        return Embedding(num_embeddings, embed_dim, padding_idx)
+    logging.info(f"*** DO NOT init embedding layer from normal distribution ***")
+    return nn.Embedding(num_embeddings, embed_dim, padding_idx)
 
 
 class CTCDecoder(FairseqDecoder):
@@ -553,6 +557,11 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             "--compute-ot-plan",
             action="store_true",
             help="Comupute optimal transport plan"
+        )
+        parser.add_argument(
+            "--no-normal-init-embedding",
+            action="store_true",
+            help="",
         )  
 
     @classmethod
@@ -647,7 +656,9 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
 
         speech_decoder = None
         if getattr(args, "use_speech_decoder", False):
-            dec_emb = build_embedding(task.target_dictionary, args.decoder_embed_dim)
+            dec_emb = build_embedding(task.target_dictionary, 
+                                      args.decoder_embed_dim,
+                                      not getattr(args, "no_normal_init_embedding", False))
             speech_decoder = TransformerDecoderScriptable(
                 dec_cfg, task.target_dictionary, dec_emb)
             num_outputs += 1
