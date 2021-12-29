@@ -589,11 +589,11 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
         if getattr(args, "load_pretrain_text_encoder", "") != "":
             logging.info(f"Loading pretrained text encoder ...")
             state = checkpoint_utils.load_checkpoint_to_cpu(args.load_pretrain_text_encoder)
-            ckpt_component_type = ["decoder.sentence_encoder"] \
-                if any([key.startswith("decoder.sentence_encoder") for key in state["model"].keys()]) else ["encoder"]
+            ckpt_component_type = ["encoder.sentence_encoder"] \
+                if any([key.startswith("encoder.sentence_encoder") for key in state["model"].keys()]) else ["encoder"]
             checkpoint_utils.load_pretrained_component_from_model_different_keys_v2(
                 text_encoder, state, ckpt_component_types=ckpt_component_type,
-                exclude_layers=["embed_tokens", "embed_positions", "emb_layer_norm"]
+                # exclude_layers=["embed_tokens", "embed_positions", "emb_layer_norm"]
             )
             logging.info(f"Loaded pretrained text encoder from {args.load_pretrain_text_encoder}")
 
@@ -704,11 +704,11 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             if getattr(args, "load_pretrain_text_decoder", "") != "":
                 logging.info(f"Loading pretrained text decoder ...")
                 state = checkpoint_utils.load_checkpoint_to_cpu(args.load_pretrain_text_decoder)
-                ckpt_component_type = ["decoder.lm_head"] \
-                    if any([key.startswith("decoder.lm_head") for key in state["model"].keys()]) else ["decoder"]
+                ckpt_component_type = ["encoder.lm_head"] \
+                    if any([key.startswith("encoder.lm_head") for key in state["model"].keys()]) else ["decoder"]
                 checkpoint_utils.load_pretrained_component_from_model_different_keys_v2(
                     text_decoder, state, ckpt_component_types=ckpt_component_type,
-                    exclude_layers=["lm_head.weight", "lm_head.bias"]
+                    # exclude_layers=["lm_head.weight", "lm_head.bias"]
                 )
                 logging.info(f"Loaded pretrained text decoder from {args.load_pretrain_text_decoder}")
         

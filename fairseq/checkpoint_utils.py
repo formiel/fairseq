@@ -864,6 +864,8 @@ def load_pretrained_component_from_model_different_keys_v2(
         if changed_subkeys is not None:
             for old_val, new_val in changed_subkeys.items():
                 new_key = key.replace(old_val, new_val)
+        else:
+            new_key = key
         for ckpt_type in ckpt_component_types:
             if exclude_layers is None:
                 do_load = True if key.startswith(ckpt_type) else False
