@@ -860,6 +860,7 @@ class DualInputS2TTransformerModel(FairseqEncoderDecoderModel):
             checkpoint_utils.load_pretrained_component_from_model(
                 encoder, args.load_pretrain_encoder
             )
+            logging.info(f"Loaded pretrained encoder from {args.load_pretrain_encoder}")
         return encoder
 
     @classmethod
