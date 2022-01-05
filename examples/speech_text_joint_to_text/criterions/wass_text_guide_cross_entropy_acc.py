@@ -24,7 +24,8 @@ class WassGuidedCrossEntAccCriterion(GuidedCrossEntAccCriterion):
             label_smoothing, 
             disable_text_guide_update_num=0, 
             attentive_cost_regularization=0,
-            use_wass_loss=False,
+            ot_weight=0.0,
+            ot_mt_weight=0.0,
             ):
         super().__init__(task, 
                         sentence_avg, 
@@ -34,7 +35,8 @@ class WassGuidedCrossEntAccCriterion(GuidedCrossEntAccCriterion):
                         disable_text_guide_update_num=disable_text_guide_update_num, 
                         attentive_cost_regularization=attentive_cost_regularization
                         )
-        self.use_wass_loss = use_wass_loss
+        self.ot_weight = ot_weight
+        self.ot_mt_weight = ot_mt_weight
 
     @staticmethod
     def add_args(parser):
@@ -52,18 +54,26 @@ class WassGuidedCrossEntAccCriterion(GuidedCrossEntAccCriterion):
                             help="use encoder attentive loss regularization with cost ratio D")
         parser.add_argument("--attentive-cost-without-normalize", action='store_true',
                             help="Don't do normalization during attentive cost computation")
-        parser.add_argument("--use-wass-loss", action="store_true")
+        parser.add_argument('--ot-weight', default=0., type=float, metavar='D',
+                            help='Weight for OT loss between speech and text encoders')
+        parser.add_argument('--ot-mt-weight', default=0., type=float, metavar='D',
+                            help='Weight for OT loss between text encoder and speech decoder')
+
 
     def forward(self, model, sample, reduce=True):
         reduction = 'sum' if reduce else 'none'
         net_input = sample["net_input"]
-        net_output, encoder_out = model(**net_input, use_encoder_outputs=self.use_wass_loss)
+        net_output, encoder_out = model(**net_input, 
+                                        use_encoder_outputs=(
+                                            self.ot_weight > 0.0 or self.ot_mt_weight > 0.0
+                                        ))
         attn_cost = None
         lprobs = model.get_normalized_probs(net_output, log_probs=True)
         is_dual_input = True if net_input['src_tokens'] is not None and net_input.get('src_txt_tokens') is not None else False
         target = model.get_targets(sample, net_output)
         src_token_num = 0
         wass_loss = None
+        wass_loss_mt = None
         if is_dual_input:
             # lprobs_spch from speech encoder and lprobs_text from text encoder
             lprobs_spch, lprobs_text = torch.chunk(lprobs, 2)
@@ -79,19 +89,23 @@ class WassGuidedCrossEntAccCriterion(GuidedCrossEntAccCriterion):
             total = speech_total + text_total
 
             # Wasserstein loss
-            if isinstance(encoder_out, tuple) and self.use_wass_loss:
+            if isinstance(encoder_out, tuple):
                 speech_out = encoder_out[0]["encoder_out"][0] # T x B x D
                 text_out = encoder_out[1]["encoder_out"][0] # T x B x D
-                wloss = SamplesLoss(loss="sinkhorn", p=2, blur=.05)
-                wass_loss = wloss(speech_out.float().transpose(0, 1).contiguous(), 
-                                text_out.float().transpose(0, 1).contiguous()
-                                )  # By default, use constant weights = 1/number of samples
-                wass_loss = wass_loss.sum()
-                # logging.info(f"wass_loss: {wass_loss}")
-                loss  = loss + wass_loss
-
+                if self.ot_weight > 0.0:
+                    wloss = SamplesLoss(loss="sinkhorn", p=2, blur=.05)
+                    wass_loss = wloss(speech_out.float().transpose(0, 1).contiguous(), 
+                                    text_out.float().transpose(0, 1).contiguous()
+                                    ).sum()
+                    loss  += self.ot_weight * wass_loss
+                if self.ot_mt_weight > 0.0:
+                    wloss_mt = SamplesLoss(loss="sinkhorn", p=2, blur=.05)
+                    wass_loss_mt = wloss_mt(text_out.float().transpose(0, 1).contiguous(), 
+                                    net_output[1]["extra"].transpose(0, 1).contiguous()
+                                    ).sum()
+                    loss  += self.ot_mt_weight * wass_loss_mt
+                
             attn_cost = net_output[1].get('attn_cost')
-            # logging.info(f"attn_cost: {attn_cost}")
             if attn_cost is not None:
                 # attn_cost is batch_first and padding tokens have been masked already
                 src_token_num = attn_cost.ne(0).sum()
@@ -107,8 +121,9 @@ class WassGuidedCrossEntAccCriterion(GuidedCrossEntAccCriterion):
             speech_nll_loss = None
 
         sample_size, logging_output = self.get_logging_output(
-            sample, loss, nll_loss, correct, total, src_token_num, speech_loss, speech_nll_loss, attn_cost, is_dual_input,
-            wass_loss,
+            sample, loss, nll_loss, correct, total, src_token_num, 
+            speech_loss, speech_nll_loss, attn_cost, is_dual_input,
+            wass_loss, wass_loss_mt
         )
         return loss, sample_size, logging_output
 
@@ -125,6 +140,7 @@ class WassGuidedCrossEntAccCriterion(GuidedCrossEntAccCriterion):
         attn_cost=None,
         is_dual_input=False,
         wass_loss=None,
+        wass_loss_mt=None,
     ):
 
         sample_size = (
@@ -151,6 +167,8 @@ class WassGuidedCrossEntAccCriterion(GuidedCrossEntAccCriterion):
             logging_output["speech_attn_loss"] = attn_cost
         if wass_loss is not None:
             logging_output["wass_loss"] = utils.item(wass_loss.data)
+        if wass_loss_mt is not None:
+            logging_output["wass_loss_mt"] = utils.item(wass_loss_mt.data)
 
         return sample_size*mul_size, logging_output
 
@@ -163,6 +181,7 @@ class WassGuidedCrossEntAccCriterion(GuidedCrossEntAccCriterion):
         loss_sum = sum(log.get("loss", 0) for log in logging_outputs)
         nll_loss_sum = sum(log.get("nll_loss", 0) for log in logging_outputs)
         wass_loss_sum = sum(log.get("wass_loss", 0) for log in logging_outputs)
+        wass_loss_mt_sum = sum(log.get("wass_loss_mt", 0) for log in logging_outputs)
         ntokens = sum(log.get("ntokens", 0) for log in logging_outputs)
         nsentences = sum(log.get("nsentences", 0) for log in logging_outputs)
         sample_size = sum(log.get("sample_size", 0) for log in logging_outputs)
@@ -176,6 +195,7 @@ class WassGuidedCrossEntAccCriterion(GuidedCrossEntAccCriterion):
             "loss": loss_sum / sample_size / math.log(2) if sample_size > 0 else 0.0,
             "nll_loss": nll_loss_sum / sample_size / math.log(2) if sample_size > 0 else 0.0,
             "wass_loss": wass_loss_sum / sample_size / math.log(2) if sample_size > 0 else 0.0,
+            "wass_loss_mt": wass_loss_mt_sum / sample_size / math.log(2) if sample_size > 0 else 0.0,
             # if args.sentence_avg, then sample_size is nsentences, and loss
             # is per-sentence loss; else sample_size is ntokens, and the loss
             # becomes per-output token loss

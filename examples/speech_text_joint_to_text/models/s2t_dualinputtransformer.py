@@ -508,6 +508,7 @@ class TransformerMultiInputDecoder(FairseqDecoder):
                   tgt_len, src_len)`
         """
         assert not isinstance(encoder_out, EncoderOut)
+        extra = None
         if isinstance(encoder_out, tuple):  # training with mulitple input
             rst = []
             assert len(encoder_out) == 2
@@ -522,6 +523,7 @@ class TransformerMultiInputDecoder(FairseqDecoder):
                         self.text_decoder(prev_output_tokens, eo, incremental_state)
                     )
             dec_out = torch.cat([r[0] for r in rst], dim=0)
+            extra = rst[0][1]["before_out_proj"]
             attn_cost = None
             if self.compute_cross_attentive_loss:
                 assert isinstance(encoder_out[0], dict)
@@ -540,7 +542,7 @@ class TransformerMultiInputDecoder(FairseqDecoder):
                         student_masking=encoder_out[1]["encoder_padding_mask"],
                     )
 
-            return (dec_out, {"attn_cost": attn_cost})
+            return (dec_out, {"attn_cost": attn_cost, "extra": extra})
         else:  # inference or training with one input
             if has_txt_input:
                 return self.text_decoder(
