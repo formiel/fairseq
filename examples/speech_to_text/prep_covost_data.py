@@ -224,8 +224,11 @@ def process(args):
             manifest["id"].append(utt_id)
             manifest["audio"].append(audio_paths[utt_id])
             manifest["n_frames"].append(audio_lengths[utt_id])
+            manifest["src_text"].append(src_utt)
             manifest["tgt_text"].append(src_utt if args.tgt_lang is None else tgt_utt)
             manifest["speaker"].append(speaker_id)
+            manifest["src_lang"].append(args.src_lang)
+            manifest["tgt_lang"].append(args.src_lang if args.tgt_lang is None else args.tgt_lang)
         is_train_split = split.startswith("train")
         if is_train_split:
             train_text.extend(manifest["tgt_text"])
