@@ -732,17 +732,17 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             except:
                 exclude_layers = None
                 changed_subkeys = None
+                ckpt_component_type = ["decoder"]
                 if any([key.startswith("encoder.sentence_encoder") for key in state["model"].keys()]):
-                    ckpt_component_type = ["encoder.sentence_encoder", "encoder.lm_head"] # BERT init
+                    ckpt_component_type = ["encoder.sentence_encoder", "encoder.lm_head"] # BERT
                     exclude_layers = ["lm_head.bias", "lm_head.dense.weight", "lm_head.dense.bias"]
                     changed_subkeys = {"lm_head.weight": "lm_head.output_projection.weight"}
-                elif any([key.startswith("encoder.text_encoder") for key in state["model"].keys()]):
-                    ckpt_component_type = ["encoder.text_encoder"] # Siamese init
+                if any([key.startswith("encoder.text_encoder") for key in state["model"].keys()]):
+                    ckpt_component_type = ["encoder.text_encoder"] # Siamese encoders
                     changed_subkeys = {"decoder.proj.weight": "encoder.text_encoder.output_projection.weight"}
-                else:
-                    ckpt_component_type = ["decoder"]
-                # ckpt_component_type = ["encoder.sentence_encoder", "encoder.lm_head"] \
-                # if any([key.startswith("encoder.sentence_encoder") for key in state["model"].keys()]) else ["decoder"]
+                if any([key.startswith("decoder.speech_decoder") for key in state["model"].keys()]):
+                    ckpt_component_type = ["decoder.speech_decoder"] # Siamese encoders + speech decoder
+                    
                 checkpoint_utils.load_pretrained_component_from_model_different_keys_v2(
                     speech_decoder, state, ckpt_component_types=ckpt_component_type,
                     exclude_layers=exclude_layers,
