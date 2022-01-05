@@ -730,13 +730,23 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
                 checkpoint_utils.load_pretrained_component_from_model_different_keys(
                         speech_decoder, state, ckpt_component_types=ckpt_component_type)
             except:
-                ckpt_component_type = ["encoder.sentence_encoder", "encoder.lm_head"] \
-                if any([key.startswith("encoder.sentence_encoder") for key in state["model"].keys()]) else ["decoder"]
+                exclude_layers = None
+                changed_subkeys = None
+                if any([key.startswith("encoder.sentence_encoder") for key in state["model"].keys()]):
+                    ckpt_component_type = ["encoder.sentence_encoder", "encoder.lm_head"] # BERT init
+                    exclude_layers = ["lm_head.bias", "lm_head.dense.weight", "lm_head.dense.bias"]
+                    changed_subkeys = {"lm_head.weight": "lm_head.output_projection.weight"}
+                elif any([key.startswith("encoder.text_encoder") for key in state["model"].keys()]):
+                    ckpt_component_type = ["encoder.text_encoder"] # Siamese init
+                    changed_subkeys = {"decoder.proj.weight": "encoder.text_encoder.output_projection.weight"}
+                else:
+                    ckpt_component_type = ["decoder"]
+                # ckpt_component_type = ["encoder.sentence_encoder", "encoder.lm_head"] \
+                # if any([key.startswith("encoder.sentence_encoder") for key in state["model"].keys()]) else ["decoder"]
                 checkpoint_utils.load_pretrained_component_from_model_different_keys_v2(
                     speech_decoder, state, ckpt_component_types=ckpt_component_type,
-                    exclude_layers=["lm_head.bias", 
-                                    "lm_head.dense.weight", "lm_head.dense.bias"],
-                    changed_subkeys={"lm_head.weight": "lm_head.output_projection.weight"}
+                    exclude_layers=exclude_layers,
+                    changed_subkeys=changed_subkeys,
                 )
             logging.info(f"Loaded pretrained decoder from {args.load_pretrain_speech_decoder}")
         

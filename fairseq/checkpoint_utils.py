@@ -874,6 +874,7 @@ def load_pretrained_component_from_model_different_keys_v2(
                     if key.startswith(ckpt_type) and all([l not in key for l in exclude_layers])
                     else False
                     )
+            do_load = True if new_key.startswith(ckpt_type) else do_load
             if do_load:
                 # encoder.input_layers.0.0.weight --> input_layers.0.0.weight
                 component_subkey = new_key[len(ckpt_type) + 1 :]
