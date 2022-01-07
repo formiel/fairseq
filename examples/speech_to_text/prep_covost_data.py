@@ -195,7 +195,10 @@ def process(args):
     if not root.is_dir():
         raise NotADirectoryError(f"{root} does not exist")
     # Extract features
-    feature_root = root / "fbank80"
+    feature_root_name = (
+        "fbank80" if args.tgt_lang is None else f"fbank80_{args.src_lang}2{args.tgt_lang}"
+    )
+    feature_root = root / feature_root_name
     feature_root.mkdir(exist_ok=True)
     for split in CoVoST.SPLITS:
         print(f"Fetching split {split}...")
@@ -206,7 +209,7 @@ def process(args):
                 waveform, sample_rate, feature_root / f"{utt_id}.npy"
             )
     # Pack features into ZIP
-    zip_path = root / "fbank80.zip"
+    zip_path = root / f"{feature_root_name}.zip"
     print("ZIPing features...")
     create_zip(feature_root, zip_path)
     print("Fetching ZIP manifest...")
