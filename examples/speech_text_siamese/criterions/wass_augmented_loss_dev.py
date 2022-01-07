@@ -170,6 +170,10 @@ class CtcWassersteinCriterionConfig(CtcCriterionConfig):
         default=0.05,
         metadata={"help": "blur in SampleLoss"},
     )
+    ot_scaling: float = field(
+        default=0.5,
+        metadata={"help": "blur in SampleLoss"},
+    )
 
 
 @register_criterion("wasserstein_augmented_loss_dev", dataclass=CtcWassersteinCriterionConfig)
@@ -203,6 +207,7 @@ class CtcWassersteinCriterion(CtcCriterion):
         self.ot_loss = cfg.ot_loss
         self.ot_p = cfg.ot_p
         self.ot_blur = cfg.ot_blur
+        self.ot_scaling = cfg.ot_scaling
         self.wass_metric = cfg.wass_metric
         self.wass_pos_cost = cfg.wass_pos_cost
         self.wass_pos_epoch = cfg.wass_pos_epoch
@@ -213,8 +218,8 @@ class CtcWassersteinCriterion(CtcCriterion):
         logging.info(f"ctc_weight = {self.ctc_weight}, gamma = {self.gamma}")
         logging.info(f"mlm_weight = {self.mlm_weight}")
         logging.info(f"ot_weight = {self.ot_weight}")
-        logging.info(f"ot_weight_st = {self.ot_weight_st}, ot_weight_st_ctc = {self.ot_weight_st_ctc}, ot_weight_mt = {self.ot_weight_mt}")
-        logging.info(f"ot_loss = {self.ot_loss}, ot_p = {self.ot_p}, ot_blur = {self.ot_blur}")
+        logging.info(f"ot_weight_st = {self.ot_weight_st}, ot_weight_mt = {self.ot_weight_mt}")
+        logging.info(f"ot_loss = {self.ot_loss}, ot_p = {self.ot_p}, ot_blur = {self.ot_blur}, ot_scaling = {self.ot_scaling}")
         logging.info(f"attn_weight_speech = {self.attn_weight_speech}")
         logging.info(f"attn_weight_text = {self.attn_weight_text}")
         logging.info(f"label smoothing eps = {self.eps}")
@@ -307,7 +312,10 @@ class CtcWassersteinCriterion(CtcCriterion):
                 else:
                     speech_out = encoder_out["encoder_out"][0]
                 if self.use_wass_loss_st: # between speech enc_out and dec_out
-                    wloss_st = SamplesLoss(loss=self.ot_loss, p=self.ot_p, blur=self.ot_blur)
+                    wloss_st = SamplesLoss(loss=self.ot_loss, 
+                                            p=self.ot_p, 
+                                            blur=self.ot_blur,
+                                            scaling=self.ot_scaling)
                     wass_loss_st = wloss_st(
                         speech_out.float().transpose(0, 1).contiguous(),
                         net_output[1]["before_out_proj"].transpose(0, 1).contiguous()
@@ -315,7 +323,10 @@ class CtcWassersteinCriterion(CtcCriterion):
                     loss += wass_loss_st * self.ot_weight_st
                     extra["wass_loss_st"] = wass_loss_st
                 if self.use_wass_loss_mt: # between text enc_out and dec_out
-                    wloss_mt = SamplesLoss(loss=self.ot_loss, p=self.ot_p, blur=self.ot_blur)
+                    wloss_mt = SamplesLoss(loss=self.ot_loss, 
+                                            p=self.ot_p, 
+                                            blur=self.ot_blur,
+                                            scaling=self.ot_scaling)
                     wass_loss_mt = wloss_mt(
                         text_out.float().transpose(0, 1).contiguous(),
                         net_output[1]["before_out_proj"].transpose(0, 1).contiguous()
@@ -325,7 +336,10 @@ class CtcWassersteinCriterion(CtcCriterion):
             if self.use_wass_loss_st_ctc:
                 assert isinstance(net_output[0], tuple)
                 ctc_out = net_output[0][1] # T x B x D
-                wloss_st_ctc = SamplesLoss(loss=self.ot_loss, p=self.ot_p, blur=self.ot_blur)
+                wloss_st_ctc = SamplesLoss(loss=self.ot_loss, 
+                                            p=self.ot_p, 
+                                            blur=self.ot_blur,
+                                            scaling=self.ot_scaling)
                 wass_loss_st_ctc = wloss_st_ctc(
                     ctc_out.float().transpose(0, 1).contiguous(),
                     net_output[0][0] # B x T x C
@@ -533,7 +547,10 @@ class CtcWassersteinCriterion(CtcCriterion):
     def compute_wass_loss(self, encoder_out):
         speech_out = encoder_out[0]["encoder_out"][0] # S x B x D
         text_out = encoder_out[1]["encoder_out"][0] # T x B x D
-        wloss = SamplesLoss(loss=self.ot_loss, p=self.ot_p, blur=self.ot_blur)
+        wloss = SamplesLoss(loss=self.ot_loss, 
+                            p=self.ot_p, 
+                            blur=self.ot_blur,
+                            scaling=self.ot_scaling)
         if not self.do_bs1:
             if not self.zero_padding_weights:
                 wass_loss = wloss(
