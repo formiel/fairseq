@@ -733,10 +733,12 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
                 exclude_layers = None
                 changed_subkeys = None
                 ckpt_component_type = ["decoder"]
+                reset_key = True
                 if any([key.startswith("encoder.sentence_encoder") for key in state["model"].keys()]):
                     ckpt_component_type = ["encoder.sentence_encoder", "encoder.lm_head"] # BERT
                     exclude_layers = ["lm_head.bias", "lm_head.dense.weight", "lm_head.dense.bias"]
                     changed_subkeys = {"lm_head.weight": "lm_head.output_projection.weight"}
+                    reset_key = False
                 if any([key.startswith("encoder.text_encoder") for key in state["model"].keys()]):
                     ckpt_component_type = ["encoder.text_encoder"] # Siamese encoders
                     changed_subkeys = {"decoder.proj.weight": "encoder.text_encoder.output_projection.weight"}
@@ -747,6 +749,7 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
                     speech_decoder, state, ckpt_component_types=ckpt_component_type,
                     exclude_layers=exclude_layers,
                     changed_subkeys=changed_subkeys,
+                    reset_key=reset_key,
                 )
             logging.info(f"Loaded pretrained decoder from {args.load_pretrain_speech_decoder}")
         
