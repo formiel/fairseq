@@ -117,20 +117,6 @@ class SpeechTextJointToTextDevTask(SpeechToTextTask):
             metavar="S",
             help="target language for inference",
         )
-        # parser.add_argument(
-        #     "--max-source-positions",
-        #     default=6000,
-        #     type=int,
-        #     metavar="N",
-        #     help="max number of tokens in the source sequence",
-        # )
-        # parser.add_argument(
-        #     "--max-target-positions",
-        #     default=1024,
-        #     type=int,
-        #     metavar="N",
-        #     help="max number of tokens in the target sequence",
-        # )
 
     def __init__(self, args, src_dict, tgt_dict, infer_tgt_lang_id=None):
         super().__init__(args, tgt_dict)
