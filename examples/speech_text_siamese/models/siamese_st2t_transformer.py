@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 def Linear(in_features, out_features, bias=True):
     m = nn.Linear(in_features, out_features, bias)
     nn.init.xavier_uniform_(m.weight)
+    logging.info(f"| bias in Linear layer: {bias}")
     if bias:
         nn.init.constant_(m.bias, 0.0)
     return m
@@ -49,7 +50,7 @@ def build_embedding(dictionary, embed_dim, init_normal=True):
 
 
 class CTCDecoder(FairseqDecoder):
-    def __init__(self, dictionary, embed_dim, task, dropout_rate=0.0):
+    def __init__(self, dictionary, embed_dim, task, dropout_rate=0.0, bias=True):
         super().__init__(dictionary)
         self.blank_idx = (
             dictionary.index(task.blank_symbol)
@@ -59,7 +60,7 @@ class CTCDecoder(FairseqDecoder):
         self.pad_idx = dictionary.pad()
         self.eos_idx = dictionary.eos()
         self.dropout_module = FairseqDropout(dropout_rate)
-        self.proj = Linear(embed_dim, len(dictionary))
+        self.proj = Linear(embed_dim, len(dictionary), bias=bias)
         logging.info(f"| dictionary for CTC module: {len(dictionary)} types")
 
     def forward(
@@ -514,11 +515,11 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             action="store_true",
             help="Use LM head for MLM objective"
         )
-        parser.add_argument(
-            "--untie-weights-text-embed-lm-output",
-            action="store_true",
-            help="Use LM head for MLM objective"
-        )
+        # parser.add_argument(
+        #     "--untie-weights-text-embed-lm-output",
+        #     action="store_true",
+        #     help="Use LM head for MLM objective"
+        # )
         parser.add_argument(
             "--use-linear-after-encoder",
             action="store_true",
@@ -563,6 +564,21 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             "--share-text-encoder-ctc-decoder-input-output",
             action="store_true",
             help="share text encoder embed and ctc output layer",
+        )
+        parser.add_argument(
+            "--share-text-embed-mlm-head",
+            action="store_true",
+            help="share text encoder embed and MLM head",
+        )
+        parser.add_argument(
+            "--share-ctc-mlm-head",
+            action="store_true",
+            help="share Linear ctc output layer and MLM head",
+        )
+        parser.add_argument(
+            "--no-bias-in-proj",
+            action="store_true",
+            help="Not use bias in Linear layer",
         )
         parser.add_argument(
             "--compute-ot-plan",
@@ -696,6 +712,7 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
                 dec_cfg.decoder_embed_dim,
                 task,
                 dec_cfg.dropout,
+                bias=not getattr(args, "no_bias_in_proj", False),
             )
             num_outputs += 1
             if getattr(args, "share_text_encoder_ctc_decoder_input_output", False):
@@ -717,11 +734,9 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             text_decoder = RobertaLMHead(args.encoder_embed_dim, 
                                     len(task.source_dictionary),
                                     "relu",
-                                    weight=(
-                                        encoder.text_encoder.embed_tokens.weight
-                                        if not getattr(args, "untie_weights_text_embed_lm_output", False) 
-                                        else None
-                                    ))
+                                    weight=None,
+                                    bias=not getattr(args, "no_bias_in_proj", False),
+                                    )
             num_outputs += 1
             if getattr(args, "load_pretrain_text_decoder", "") != "":
                 logging.info(f"Loading pretrained text decoder ...")
@@ -733,6 +748,14 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
                     # exclude_layers=["lm_head.weight", "lm_head.bias"]
                 )
                 logging.info(f"Loaded pretrained text decoder from {args.load_pretrain_text_decoder}")
+
+            if getattr(args, "share_text_embed_mlm_head", False):
+                text_decoder.weight = encoder.text_encoder.embed_tokens.weight
+
+            if getattr(args, "share_ctc_mlm_head", False):
+                text_decoder.weight = ctc_module.proj.weight
+                if not getattr(args, "no_bias_in_proj", False):
+                    text_decoder.bias = ctc_module.proj.bias
         
         if getattr(args, "load_pretrain_speech_decoder", "") != "":
             logging.info(f"Loading pretrained speech decoder ...")

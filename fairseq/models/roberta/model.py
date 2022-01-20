@@ -365,7 +365,7 @@ class RobertaModel(FairseqEncoderModel):
 class RobertaLMHead(nn.Module):
     """Head for masked language modeling."""
 
-    def __init__(self, embed_dim, output_dim, activation_fn, weight=None):
+    def __init__(self, embed_dim, output_dim, activation_fn, weight=None, bias=True):
         super().__init__()
         self.dense = nn.Linear(embed_dim, embed_dim)
         self.activation_fn = utils.get_activation_fn(activation_fn)
@@ -374,7 +374,9 @@ class RobertaLMHead(nn.Module):
         if weight is None:
             weight = nn.Linear(embed_dim, output_dim, bias=False).weight
         self.weight = weight
-        self.bias = nn.Parameter(torch.zeros(output_dim))
+        self.bias = None
+        if bias:
+            self.bias = nn.Parameter(torch.zeros(output_dim))
 
     def forward(self, features, masked_tokens=None, **kwargs):
         # Only project the masked tokens while training,
@@ -386,7 +388,9 @@ class RobertaLMHead(nn.Module):
         x = self.activation_fn(x)
         x = self.layer_norm(x)
         # project back to size of vocabulary with bias
-        x = F.linear(x, self.weight) + self.bias
+        x = F.linear(x, self.weight)
+        if self.bias is not None:
+            x = x + self.bias
         return x
 
 
