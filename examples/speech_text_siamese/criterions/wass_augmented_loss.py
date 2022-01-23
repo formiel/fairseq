@@ -122,34 +122,34 @@ class CtcWassersteinCriterionConfig(CtcCriterionConfig):
     #     default=0,
     #     metadata={"help": "increase ctc_weight linearly to ctc_weight for this number of epoch"},
     # )
-    use_wass_loss: bool = field(
-        default=False,
-        metadata={"help": "Use Wasserstein loss"},
-    )
-    use_wass_loss_st: bool = field(
-        default=False,
-        metadata={"help": "Use Wasserstein loss between speech out and prediction"},
-    )
-    use_wass_loss_st_ctc: bool = field(
-        default=False,
-        metadata={"help": "Use Wasserstein loss between speech out and prediction"},
-    )
-    use_wass_loss_mt: bool = field(
-        default=False,
-        metadata={"help": "Use Wasserstein loss between text out and prediction"},
-    )
-    wass_metric: WASS_METRIC_CHOICES = field(
-        default="none", 
-        metadata={"help": "type of distance measure between X_i and Y_j"}
-    )
-    wass_pos_cost: float = field(
-        default=0.0,
-        metadata={"help": "penalty to enforce alignment"},
-    )
-    wass_pos_epoch: int = field(
-        default=0,
-        metadata={"help": "Epoch at which the position cost decreases to 0"},
-    )
+    # use_wass_loss: bool = field(
+    #     default=False,
+    #     metadata={"help": "Use Wasserstein loss"},
+    # )
+    # use_wass_loss_st: bool = field(
+    #     default=False,
+    #     metadata={"help": "Use Wasserstein loss between speech out and prediction"},
+    # )
+    # use_wass_loss_st_ctc: bool = field(
+    #     default=False,
+    #     metadata={"help": "Use Wasserstein loss between speech out and prediction"},
+    # )
+    # use_wass_loss_mt: bool = field(
+    #     default=False,
+    #     metadata={"help": "Use Wasserstein loss between text out and prediction"},
+    # )
+    # wass_metric: WASS_METRIC_CHOICES = field(
+    #     default="none", 
+    #     metadata={"help": "type of distance measure between X_i and Y_j"}
+    # )
+    # wass_pos_cost: float = field(
+    #     default=0.0,
+    #     metadata={"help": "penalty to enforce alignment"},
+    # )
+    # wass_pos_epoch: int = field(
+    #     default=0,
+    #     metadata={"help": "Epoch at which the position cost decreases to 0"},
+    # )
     use_cross_attentive_loss: bool = field(
         default=False,
         metadata={"help": "Use cross-attentive loss"},
@@ -200,18 +200,18 @@ class CtcWassersteinCriterion(CtcCriterion):
         # self.ctc_warmup_epoch = cfg.ctc_warmup_epoch
         # self.ctc_weight_val = cfg.ctc_weight \
         #     if self.ctc_zero_epoch == 0 and self.ctc_warmup_epoch == 0 else 0.0
-        self.use_wass_loss = cfg.use_wass_loss
-        self.use_wass_loss_st = cfg.use_wass_loss_st
-        self.use_wass_loss_st_ctc = cfg.use_wass_loss_st_ctc
-        self.use_wass_loss_mt = cfg.use_wass_loss_mt
+        # self.use_wass_loss = cfg.use_wass_loss
+        # self.use_wass_loss_st = cfg.use_wass_loss_st
+        # self.use_wass_loss_st_ctc = cfg.use_wass_loss_st_ctc
+        # self.use_wass_loss_mt = cfg.use_wass_loss_mt
         self.ot_loss = cfg.ot_loss
         self.ot_p = cfg.ot_p
         self.ot_blur = cfg.ot_blur
         self.ot_scaling = cfg.ot_scaling
-        self.wass_metric = cfg.wass_metric
-        self.wass_pos_cost = cfg.wass_pos_cost
-        self.wass_pos_epoch = cfg.wass_pos_epoch
-        self.wass_pos_cost_val = cfg.wass_pos_cost
+        # self.wass_metric = cfg.wass_metric
+        # self.wass_pos_cost = cfg.wass_pos_cost
+        # self.wass_pos_epoch = cfg.wass_pos_epoch
+        # self.wass_pos_cost_val = cfg.wass_pos_cost
         self.use_cross_attentive_loss = cfg.use_cross_attentive_loss
         # self.use_soft_dtw_loss = cfg.use_soft_dtw_loss
         logging.info(f"*** Weights in loss function ***")
@@ -230,12 +230,12 @@ class CtcWassersteinCriterion(CtcCriterion):
         masked_tokens = None
         if sample["masked_target"] is not None:
             masked_tokens = sample["masked_target"].ne(self.pad_idx)
-        # logging.info(f"*** sample *** \n{sample}")
+
         net_output, encoder_out = model(
             **net_input, 
             masked_tokens=masked_tokens,
             use_encoder_outputs=True
-        ) 
+        )
         if text_mode:
             sample_size = (net_input["masked_src_txt_tokens"].size(0) 
                                 if self.sentence_avg else sample["ntokens"])
@@ -289,29 +289,26 @@ class CtcWassersteinCriterion(CtcCriterion):
                     dtw_loss = self.compte_soft_dtw(sdtw, encoder_out)
                     loss += self.dtw_weight * dtw_loss
                     extra["dtw_loss"] = dtw_loss
-                if self.use_wass_loss:
+                if self.ot_weight > 0.0:
+                    assert model.encoder.text_encoder_aux is not None
                     wass_loss = self.compute_wass_loss(encoder_out)
-                    # loss += (
-                    #     (
-                    #         1 - self.attn_weight_speech - self.attn_weight_text 
-                    #         - self.mlm_weight - self.ctc_weight - self.dtw_weight
-                    #     ) * wass_loss
-                    # )
                     loss += self.ot_weight * wass_loss
                     extra["wass_loss"] = wass_loss
                 if self.use_cross_attentive_loss:
                     cross_attn_loss = torch.sum(self.cross_attentive_loss(encoder_out))
                     loss += cross_attn_loss
                     extra["cross_attn_loss"] = cross_attn_loss
-            if self.use_wass_loss_st or self.use_wass_loss_mt:
+            if self.ot_weight_mt > 0.0 or self.ot_weight_st > 0.0:
+                if self.ot_weight_mt > 0.0:
+                    assert model.text_encoder_aux is not None
                 speech_out = None
                 text_out = None 
                 if isinstance(encoder_out, tuple):
                     speech_out = encoder_out[0]["encoder_out"][0] # S x B x D
-                    text_out = encoder_out[1]["encoder_out"][0] # T x B x D
+                    text_out = encoder_out[-1]["encoder_out"][0] # T x B x D
                 else:
                     speech_out = encoder_out["encoder_out"][0]
-                if self.use_wass_loss_st: # between speech enc_out and dec_out
+                if self.ot_weight_st > 0.0: # between speech enc_out and dec_out
                     wloss_st = SamplesLoss(loss=self.ot_loss, 
                                             p=self.ot_p, 
                                             blur=self.ot_blur,
@@ -322,7 +319,7 @@ class CtcWassersteinCriterion(CtcCriterion):
                     ).sum()
                     loss += wass_loss_st * self.ot_weight_st
                     extra["wass_loss_st"] = wass_loss_st
-                if self.use_wass_loss_mt: # between text enc_out and dec_out
+                if self.ot_weight_mt > 0.0: # between text enc_out and dec_out
                     wloss_mt = SamplesLoss(loss=self.ot_loss, 
                                             p=self.ot_p, 
                                             blur=self.ot_blur,
@@ -333,7 +330,7 @@ class CtcWassersteinCriterion(CtcCriterion):
                     ).sum()
                     loss += wass_loss_mt * self.ot_weight_mt
                     extra["wass_loss_mt"] = wass_loss_mt
-            if self.use_wass_loss_st_ctc:
+            if self.ot_weight_st_ctc:
                 assert isinstance(net_output[0], tuple)
                 ctc_out = net_output[0][1] # T x B x D
                 wloss_st_ctc = SamplesLoss(loss=self.ot_loss, 
@@ -546,7 +543,7 @@ class CtcWassersteinCriterion(CtcCriterion):
 
     def compute_wass_loss(self, encoder_out):
         speech_out = encoder_out[0]["encoder_out"][0] # S x B x D
-        text_out = encoder_out[1]["encoder_out"][0] # T x B x D
+        text_out = encoder_out[-1]["encoder_out"][0] # T x B x D
         wloss = SamplesLoss(loss=self.ot_loss, 
                             p=self.ot_p, 
                             blur=self.ot_blur,
