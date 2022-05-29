@@ -168,8 +168,8 @@ class SiameseSpeechTextEncoders(FairseqEncoder):
             "quant_noise_pq": args.quant_noise_pq,
         }
         text_encoder = None
-        if getattr(args, "no_text_encoder", False):
-            return text_encoder
+        # if getattr(args, "no_text_encoder", False):
+        #     return text_encoder
 
         model_args = namedtuple("args", cfg.keys())(*cfg.values())
         enc_emb = build_embedding(src_dictionary, model_args.encoder_embed_dim)
@@ -669,7 +669,7 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             args, task.src_dict, spch_encoder,
             num_layers_shared_spch_encoder=getattr(args, "encoder_shared_layers", 0),
             shared_order_spch_encoder=getattr(args, "encoder_shared_layers_order", -1)
-        )
+        ) if not getattr(args, "no_text_encoder", False) else None
         text_encoder_aux = SiameseSpeechTextEncoders.build_text_encoder(
             args, task.src_dict, spch_encoder,
             text_encoder_shared=text_encoder,
