@@ -155,8 +155,8 @@ class SiameseSpeechTextEncoders(FairseqEncoder):
             "encoder_layers": args.text_encoder_layers,
             "encoder_layerdrop": args.encoder_layerdrop,
             "encoder_attention_heads": args.encoder_attention_heads,
-            "encoder_learned_pos": args.encoder_learned_pos,
-            "max_source_positions": args.max_source_positions,
+            "encoder_learned_pos": args.encoder_text_learned_pos,
+            "max_source_positions": args.max_positions_text,
             "dropout": args.dropout,
             "encoder_normalize_before": args.encoder_normalize_before,
             "activation_dropout": args.activation_dropout,
@@ -166,6 +166,7 @@ class SiameseSpeechTextEncoders(FairseqEncoder):
             "no_token_positional_embeddings": args.no_token_positional_embeddings,
             "no_scale_embedding": args.no_scale_embedding,
             "quant_noise_pq": args.quant_noise_pq,
+            "layernorm_embedding": args.encoder_text_layernorm_embedding,
         }
         text_encoder = None
         # if getattr(args, "no_text_encoder", False):
@@ -660,6 +661,21 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             "--use-text-encoder-aux",
             action="store_true",
             help="Use auxiliary text encoder for OT loss"
+        )
+        parser.add_argument(
+            "--encoder-text-learned-pos",
+            action="store_true",
+            help="Use auxiliary text encoder for OT loss"
+        )
+        parser.add_argument(
+            "--encoder-text-layernorm-embedding",
+            action="store_true",
+            help="Use auxiliary text encoder for OT loss"
+        )
+        parser.add_argument(
+            "--freeze-text-encoder-aux",
+            action="store_true",
+            help="Use auxiliary text encoder for OT loss"
         ) 
 
     @classmethod
@@ -698,14 +714,20 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
         if getattr(args, "load_pretrain_text_encoder", "") != "":
             logging.info(f"Loading pretrained text encoder ...")
             state = checkpoint_utils.load_checkpoint_to_cpu(args.load_pretrain_text_encoder)
-            ckpt_component_type = ["encoder.sentence_encoder"] \
-                if any([key.startswith("encoder.sentence_encoder") for key in state["model"].keys()]) else ["encoder"]
+            ckpt_component_type = ["decoder.sentence_encoder"] \
+                if any([key.startswith("decoder.sentence_encoder") for key in state["model"].keys()]) else ["encoder"]
             checkpoint_utils.load_pretrained_component_from_model_different_keys_v2(
-                text_encoder, state, ckpt_component_types=ckpt_component_type,
+                text_encoder if text_encoder is not None else text_encoder_aux,
+                state, ckpt_component_types=ckpt_component_type,
                 # exclude_layers=["embed_tokens", "embed_positions", "emb_layer_norm"]
             )
             logging.info(f"Loaded pretrained text encoder from {args.load_pretrain_text_encoder}")
 
+        if getattr(args, "freeze_text_encoder_aux", False):
+            logging.info(f"Freezing text encoder aux ...")
+            for n, p in text_encoder_aux.named_parameters():
+                logging.info(f"- freezing {n}")
+                p.requires_grad = False
         if getattr(args, "freeze_text_encoder_embed", False):
             logging.info(f"Freezing text encoder embedding layer...")
             text_encoder.embed_tokens.requires_grad = False
@@ -1150,6 +1172,8 @@ def siamese_st2t_transformer_base(args):
     args.encoder_normalize_before = getattr(args, "encoder_normalize_before", True)
     args.encoder_layerdrop = getattr(args, "encoder_layerdrop", 0)
     args.encoder_learned_pos = getattr(args, "encoder_learned_pos", False)
+    args.encoder_text_learned_pos = getattr(args, "encoder_text_learned_pos", False)
+    args.encoder_text_layernorm_embedding = getattr(args, "encoder_text_layernorm_embedding", False)
 
     args.decoder_embed_dim = getattr(args, "decoder_embed_dim", args.encoder_embed_dim)
     args.decoder_ffn_embed_dim = getattr(
@@ -1196,28 +1220,6 @@ def siamese_st2t_transformer_s(args):
     siamese_st2t_transformer_base(args)
 
 
-# @register_model_architecture("siamese_st2t_transformer", "siamese_st2t_transformer_sl")
-# def siamese_st2t_transformer_sl(args):
-#     args.speech_encoder_layers = getattr(args, "speech_encoder_layers", 21)
-#     args.text_encoder_layers = getattr(args, "text_encoder_layers", 12)
-#     args.decoder_layers = getattr(args, "decoder_layers", 12)
-#     siamese_st2t_transformer_s(args)
-
-
-# @register_model_architecture("siamese_st2t_transformer", "siamese_st2t_transformer_sl_tenc6")
-# def siamese_st2t_transformer_sl_tenc6(args):
-#     args.speech_encoder_layers = getattr(args, "speech_encoder_layers", 21)
-#     siamese_st2t_transformer_s(args)
-
-
-# @register_model_architecture("siamese_st2t_transformer", "siamese_st2t_transformer_sls")
-# def siamese_st2t_transformer_sl(args):
-#     args.speech_encoder_layers = getattr(args, "speech_encoder_layers", 19)
-#     args.text_encoder_layers = getattr(args, "text_encoder_layers", 12)
-#     args.decoder_layers = getattr(args, "decoder_layers", 12)
-#     siamese_st2t_transformer_s(args)
-
-
 @register_model_architecture("siamese_st2t_transformer", "siamese_st2t_transformer_m")
 def siamese_st2t_transformer_m(args):
     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 512)
@@ -1226,15 +1228,6 @@ def siamese_st2t_transformer_m(args):
     args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 8)
     args.dropout = getattr(args, "dropout", 0.15)
     siamese_st2t_transformer_base(args)
-
-
-# @register_model_architecture("siamese_st2t_transformer", "siamese_st2t_transformer_m_h768")
-# def siamese_st2t_transformer_m_h768(args):
-#     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 768)
-#     args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 768 * 4)
-#     args.text_encoder_layers = getattr(args, "text_encoder_layers", 12)
-#     args.dropout = getattr(args, "dropout", 0.15)
-#     siamese_st2t_transformer_m(args)
 
 
 @register_model_architecture("siamese_st2t_transformer", "siamese_st2t_transformer_l")
@@ -1246,15 +1239,3 @@ def siamese_st2t_transformer_l(args):
     args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 8)
     args.dropout = getattr(args, "dropout", 0.2)
     siamese_st2t_transformer_base(args)
-
-# @register_model_architecture("siamese_st2t_transformer", "siamese_st2t_transformer_lp")
-# def siamese_st2t_transformer_lp(args):
-#     args.speech_encoder_layers = getattr(args, "speech_encoder_layers", 18)
-#     args.text_encoder_layers = getattr(args, "text_encoder_layers", 12)
-#     args.decoder_layers = getattr(args, "decoder_layers", 12)
-#     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 512)
-#     args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 512 * 4)
-#     args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 8)
-#     args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 8)
-#     args.dropout = getattr(args, "dropout", 0.2)
-#     siamese_st2t_transformer_base(args)
