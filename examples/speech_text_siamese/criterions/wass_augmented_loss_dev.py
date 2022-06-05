@@ -300,7 +300,7 @@ class CtcWassersteinCriterion(CtcCriterion):
                     extra["cross_attn_loss"] = cross_attn_loss
             if self.ot_weight_mt > 0.0 or self.ot_weight_st > 0.0:
                 if self.ot_weight_mt > 0.0:
-                    assert model.text_encoder_aux is not None
+                    assert model.encoder.text_encoder_aux is not None
                 speech_out = None
                 text_out = None 
                 if isinstance(encoder_out, tuple):
