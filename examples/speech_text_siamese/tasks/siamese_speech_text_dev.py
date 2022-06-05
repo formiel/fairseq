@@ -111,7 +111,7 @@ class SiameseSpeechTextToTextTaskDev(SpeechTextJointToTextTask):
             "--max-positions-text",
             type=int,
             metavar="N",
-            default=400,
+            default=512,
             help="maximum tokens for per encoder text input ",
         )
         parser.add_argument(
@@ -140,7 +140,7 @@ class SiameseSpeechTextToTextTaskDev(SpeechTextJointToTextTask):
         if self.src_dict is not None:
             assert self.tgt_dict.pad() == self.src_dict.pad()
             assert self.tgt_dict.eos() == self.src_dict.eos()
-            if self.args.monolingual_text_data != "":
+            if self.args.monolingual_text_data != "" or self.args.load_pretrain_text_encoder != "": # TODO: fix quick test for init using roberta
                 self.mask_idx = self.src_dict.add_symbol(self.mask_sym)
 
     @classmethod

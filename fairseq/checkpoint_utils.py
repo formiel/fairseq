@@ -941,3 +941,10 @@ def upgrade_state_dict_named(state_dict):
 
     for key, value in items_to_add.items():
         state_dict[key] = value
+
+    # rename emb_layer_norm -> layernorm_embedding
+    for k in list(state_dict.keys()):
+        if ".emb_layer_norm." in k:
+            new_k = k.replace(".emb_layer_norm.", ".layernorm_embedding.")
+            state_dict[new_k] = state_dict[k]
+            del state_dict[k]
