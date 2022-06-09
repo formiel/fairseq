@@ -112,7 +112,11 @@ class CtcWassersteinCriterionConfig(CtcCriterionConfig):
     )
     report_accuracy: bool = field(
         default=False,
-        metadata={"help": "ignore_prefix_size"},
+        metadata={"help": "report accuracy"},
+    )
+    compute_dist_decoder: bool = field(
+        default=False,
+        metadata={"help": "compute_dist_decoder"},
     )
     # ctc_zero_epoch: int = field(
     #     default=0,
@@ -154,10 +158,10 @@ class CtcWassersteinCriterionConfig(CtcCriterionConfig):
         default=False,
         metadata={"help": "Use cross-attentive loss"},
     )
-    # use_soft_dtw_loss: bool = field(
-    #     default=False,
-    #     metadata={"help": "Use soft DTW loss"},
-    # )
+    use_soft_dtw_loss: bool = field(
+        default=False,
+        metadata={"help": "Use soft DTW loss"},
+    )
     ot_loss: SAMPLE_LOSS_CHOICES = field(
         default="sinkhorn", 
         metadata={"help": "type of distance measure between X_i and Y_j"}
@@ -196,6 +200,7 @@ class CtcWassersteinCriterion(CtcCriterion):
         self.zero_padding_weights = cfg.zero_padding_weights
         self.ignore_prefix_size = cfg.ignore_prefix_size
         self.report_accuracy = cfg.report_accuracy
+        self.compute_dist_decoder = cfg.compute_dist_decoder
         # self.ctc_zero_epoch = cfg.ctc_zero_epoch
         # self.ctc_warmup_epoch = cfg.ctc_warmup_epoch
         # self.ctc_weight_val = cfg.ctc_weight \
@@ -213,7 +218,7 @@ class CtcWassersteinCriterion(CtcCriterion):
         # self.wass_pos_epoch = cfg.wass_pos_epoch
         # self.wass_pos_cost_val = cfg.wass_pos_cost
         self.use_cross_attentive_loss = cfg.use_cross_attentive_loss
-        # self.use_soft_dtw_loss = cfg.use_soft_dtw_loss
+        self.use_soft_dtw_loss = cfg.use_soft_dtw_loss
         logging.info(f"*** Weights in loss function ***")
         logging.info(f"ctc_weight = {self.ctc_weight}, gamma = {self.gamma}")
         logging.info(f"mlm_weight = {self.mlm_weight}")
@@ -223,6 +228,15 @@ class CtcWassersteinCriterion(CtcCriterion):
         logging.info(f"attn_weight_speech = {self.attn_weight_speech}")
         logging.info(f"attn_weight_text = {self.attn_weight_text}")
         logging.info(f"label smoothing eps = {self.eps}")
+        # Initialize loss
+        if self.dtw_weight > 0.0:
+            self.soft_dtw_loss = SoftDTW(use_cuda=True, gamma=0.1)
+        if self.ot_weight > 0.0 or self.ot_weight_mt > 0.0 or self.ot_weight_st or self.ot_weight_st_ctc:
+            self.ot_loss = SamplesLoss(loss=self.ot_loss, 
+                            p=self.ot_p, 
+                            blur=self.ot_blur,
+                            scaling=self.ot_scaling)
+
 
     def forward(self, model, sample, reduce=True):
         net_input = sample["net_input"]
@@ -283,21 +297,33 @@ class CtcWassersteinCriterion(CtcCriterion):
             loss += self.mlm_weight * mlm_loss
         
         if not text_mode:
-            if isinstance(encoder_out, tuple) and encoder_out[0] is not None:
-                if self.dtw_weight > 0.0 :
-                    sdtw = SoftDTW(use_cuda=True, gamma=0.1)
-                    dtw_loss = self.compte_soft_dtw(sdtw, encoder_out)
-                    loss += self.dtw_weight * dtw_loss
-                    extra["dtw_loss"] = dtw_loss
-                if self.ot_weight > 0.0:
+            # if isinstance(encoder_out, tuple) and encoder_out[0] is not None:
+            if self.dtw_weight > 0.0 :
+                dtw_loss = self.compte_soft_dtw(self.soft_dtw_loss, 
+                                                encoder_out,
+                                                model=model,
+                                                net_output=net_output,
+                                                net_input=net_input,
+                                                compute_dist_decoder=self.compute_dist_decoder,
+                                                )
+                loss += self.dtw_weight * dtw_loss
+                extra["dtw_loss"] = dtw_loss
+            if self.ot_weight > 0.0:
+                if not self.compute_dist_decoder:
                     assert model.encoder.text_encoder_aux is not None
-                    wass_loss = self.compute_wass_loss(encoder_out)
-                    loss += self.ot_weight * wass_loss
-                    extra["wass_loss"] = wass_loss
-                if self.use_cross_attentive_loss:
-                    cross_attn_loss = torch.sum(self.cross_attentive_loss(encoder_out))
-                    loss += cross_attn_loss
-                    extra["cross_attn_loss"] = cross_attn_loss
+                wass_loss = self.compute_wass_loss(self.ot_loss, 
+                                                    encoder_out,
+                                                    model=model,
+                                                    net_output=net_output,
+                                                    net_input=net_input,
+                                                    compute_dist_decoder=self.compute_dist_decoder,
+                                                    )
+                loss += self.ot_weight * wass_loss
+                extra["wass_loss"] = wass_loss
+            if self.use_cross_attentive_loss:
+                cross_attn_loss = torch.sum(self.cross_attentive_loss(encoder_out))
+                loss += cross_attn_loss
+                extra["cross_attn_loss"] = cross_attn_loss
             if self.ot_weight_mt > 0.0 or self.ot_weight_st > 0.0:
                 if self.ot_weight_mt > 0.0:
                     assert model.encoder.text_encoder_aux is not None
@@ -309,22 +335,22 @@ class CtcWassersteinCriterion(CtcCriterion):
                 else:
                     speech_out = encoder_out["encoder_out"][0]
                 if self.ot_weight_st > 0.0: # between speech enc_out and dec_out
-                    wloss_st = SamplesLoss(loss=self.ot_loss, 
-                                            p=self.ot_p, 
-                                            blur=self.ot_blur,
-                                            scaling=self.ot_scaling)
-                    wass_loss_st = wloss_st(
+                    # wloss_st = SamplesLoss(loss=self.ot_loss, 
+                    #                         p=self.ot_p, 
+                    #                         blur=self.ot_blur,
+                    #                         scaling=self.ot_scaling)
+                    wass_loss_st = self.ot_loss(
                         speech_out.float().transpose(0, 1).contiguous(),
                         net_output[1]["before_out_proj"].transpose(0, 1).contiguous()
                     ).sum()
                     loss += wass_loss_st * self.ot_weight_st
                     extra["wass_loss_st"] = wass_loss_st
                 if self.ot_weight_mt > 0.0: # between text enc_out and dec_out
-                    wloss_mt = SamplesLoss(loss=self.ot_loss, 
-                                            p=self.ot_p, 
-                                            blur=self.ot_blur,
-                                            scaling=self.ot_scaling)
-                    wass_loss_mt = wloss_mt(
+                    # wloss_mt = SamplesLoss(loss=self.ot_loss, 
+                    #                         p=self.ot_p, 
+                    #                         blur=self.ot_blur,
+                    #                         scaling=self.ot_scaling)
+                    wass_loss_mt = self.ot_loss(
                         text_out.float().transpose(0, 1).contiguous(),
                         net_output[1]["before_out_proj"].transpose(0, 1).contiguous()
                     ).sum()
@@ -332,15 +358,23 @@ class CtcWassersteinCriterion(CtcCriterion):
                     extra["wass_loss_mt"] = wass_loss_mt
             if self.ot_weight_st_ctc:
                 assert isinstance(net_output[0], tuple)
-                ctc_out = net_output[0][1] # T x B x D
-                wloss_st_ctc = SamplesLoss(loss=self.ot_loss, 
-                                            p=self.ot_p, 
-                                            blur=self.ot_blur,
-                                            scaling=self.ot_scaling)
-                wass_loss_st_ctc = wloss_st_ctc(
-                    ctc_out.float().transpose(0, 1).contiguous(),
-                    net_output[0][0] # B x T x C
-                ).sum()
+                # ctc_out = net_output[0][1] # T x B x D
+                # wloss_st_ctc = SamplesLoss(loss=self.ot_loss, 
+                #                             p=self.ot_p, 
+                #                             blur=self.ot_blur,
+                #                             scaling=self.ot_scaling)
+                # wass_loss_st_ctc = self.ot_loss(
+                #     ctc_out.float().transpose(0, 1).contiguous(),
+                #     net_output[0][0] # B x T x C
+                # ).sum()
+                wass_loss_st_ctc = self.compute_wass_loss(self.ot_loss, 
+                                                    encoder_out,
+                                                    model=model,
+                                                    net_output=net_output,
+                                                    net_input=net_input,
+                                                    compute_dist_decoder=self.compute_dist_decoder,
+                                                    ot_spch_dec_and_ctc_out=True
+                                                    )
                 extra["wass_loss_st_ctc"] = wass_loss_st_ctc
 
         logging_output = {
@@ -362,7 +396,7 @@ class CtcWassersteinCriterion(CtcCriterion):
             "sample_size": net_input["src_tokens"].size(0) if self.sentence_avg else sample["ntokens"],
             # "wass_pos_cost": self.wass_pos_cost_val,
             # "ctc_weight": self.ctc_weight,
-            "reduced_speech_output": net_output[-1].get("reduced_speech_output", 0.0),
+            # "reduced_speech_output": net_output[-1].get("reduced_speech_output", 0.0),
         }
 
         if not model.training and self.ctc_weight > 0.0:
@@ -412,10 +446,8 @@ class CtcWassersteinCriterion(CtcCriterion):
     def compute_mlm_loss(self, net_output, sample, masked_tokens, extra):
         logits = net_output[0][-1]
         targets = sample["masked_target"]
-        # logging.info(f"masked_tokens: {torch.sum(masked_tokens)}")
         if masked_tokens is not None:
             targets = targets[masked_tokens]
-        # logging.info(f"targets: {torch.numel(targets)}")
         loss = modules.cross_entropy(
             logits.view(-1, logits.size(-1)),
             targets.view(-1),
@@ -541,16 +573,42 @@ class CtcWassersteinCriterion(CtcCriterion):
             logging_output["c_total"] = c_len
         return logging_output
 
-    def compute_wass_loss(self, encoder_out):
+    def compute_wass_loss(self, ot_loss, encoder_out,
+                            model=None,
+                            net_output=None,
+                            net_input=None,
+                            compute_dist_decoder=False,
+                            ot_spch_dec_and_ctc_out=False):
+        if compute_dist_decoder:
+            if not ot_spch_dec_and_ctc_out:
+                assert net_output is not None
+                assert net_input is not None
+                # pred = net_output[0].transpose(0, 1) # TxBxD -> BxTxD
+                lprobs = model.get_normalized_probs(net_output, log_probs=False, idx=1)
+                target = F.one_hot(net_input["src_txt_tokens"], 
+                            num_classes=lprobs.size()[-1]).transpose(0, 1) # BxT -> TxB
+                wass_loss = ot_loss(
+                        lprobs.float().transpose(0, 1).contiguous(),
+                        target.float().transpose(0, 1).contiguous()
+                    ).sum()
+            else:
+                spch_dec_out = net_output[0][0] # BxTxD
+                ctc_dec_out = net_output[0][1].transpose(0, 1) # TxBxD -> BxTxD
+                wass_loss = ot_loss(
+                        spch_dec_out.float().contiguous(),
+                        ctc_dec_out.float().contiguous()
+                    ).sum()
+            return wass_loss
+        
         speech_out = encoder_out[0]["encoder_out"][0] # S x B x D
         text_out = encoder_out[-1]["encoder_out"][0] # T x B x D
-        wloss = SamplesLoss(loss=self.ot_loss, 
-                            p=self.ot_p, 
-                            blur=self.ot_blur,
-                            scaling=self.ot_scaling)
+        # wloss = SamplesLoss(loss=self.ot_loss, 
+        #                     p=self.ot_p, 
+        #                     blur=self.ot_blur,
+        #                     scaling=self.ot_scaling)
         if not self.do_bs1:
             if not self.zero_padding_weights:
-                wass_loss = wloss(
+                wass_loss = ot_loss(
                     speech_out.float().transpose(0, 1).contiguous(),
                     text_out.float().transpose(0, 1).contiguous()
                 ).sum()  # use constant weights = 1/number of samples
@@ -572,7 +630,7 @@ class CtcWassersteinCriterion(CtcCriterion):
                     torch.sum(non_padding_text, dim=-1).unsqueeze(-1) *
                     non_padding_text
                 )
-                wass_loss = wloss(
+                wass_loss = ot_loss(
                     speech_weights.float(),
                     speech_out.float().transpose(0, 1).contiguous(),
                     text_weights.float(),
@@ -584,15 +642,15 @@ class CtcWassersteinCriterion(CtcCriterion):
             # compute Wasserstein loss for each example
             wass_loss = 0.0
             for i in range(speech_out.size()[1]):
-                wass_loss += wloss(speech_out[:speech_lens[i], i, :], 
+                wass_loss += ot_loss(speech_out[:speech_lens[i], i, :], 
                                 text_out[:text_lens[i], i, :]).sum()
         if self.copy_mechanism:
             assert not self.do_bs1 # not implemented for copy mechanism yet
             x1 = encoder_out[0]["embed_src_tokens"][0]
             x2 = encoder_out[1]["embed_src_tokens"][0]
-            wass_loss += (wloss(x1.float().transpose(0, 1).contiguous(), 
+            wass_loss += (ot_loss(x1.float().transpose(0, 1).contiguous(), 
                         text_out.float().transpose(0, 1).contiguous()).sum() +
-                        wloss(x2.float().transpose(0, 1).contiguous(), 
+                        ot_loss(x2.float().transpose(0, 1).contiguous(), 
                         speech_out.float().transpose(0, 1).contiguous()).sum())
         return wass_loss
 
@@ -604,10 +662,27 @@ class CtcWassersteinCriterion(CtcCriterion):
     #                                   position_cost=self.wass_pos_cost_val)
     #     return loss, Z
 
-    def compte_soft_dtw(self, sdtw, encoder_out):
-        pred = encoder_out[0]["encoder_out"][0].transpose(0, 1).contiguous()
-        target = encoder_out[1]["encoder_out"][0].transpose(0, 1).contiguous()
-        return sdtw(pred, target).sum()
+    def compte_soft_dtw(self, sdtw, 
+                        encoder_out,
+                        model=None, 
+                        net_output=None, 
+                        net_input=None,
+                        compute_dist_decoder=False):
+        if not compute_dist_decoder:
+            pred = encoder_out[0]["encoder_out"][0].transpose(0, 1).contiguous() # TxBxD -> BxTxD
+            target = encoder_out[1]["encoder_out"][0].transpose(0, 1).contiguous()
+            return sdtw(pred, target).sum()
+        else: # compute dtw between predictions and one-hot groundtruth
+            assert net_output is not None
+            assert net_input is not None
+            # lprobs = net_output[0].transpose(0, 1) # TxBxD -> BxTxD
+            lprobs = model.get_normalized_probs(net_output, log_probs=False, idx=1).transpose(0, 1)
+            # logging.info(f"lprobs: {lprobs.size()}")
+            target = F.one_hot(net_input["src_txt_tokens"], 
+                        num_classes=lprobs.size()[-1]) # src_txt_tokens: BxT
+            # logging.info(f"target: {target.size()}")
+            return sdtw(lprobs, target).sum()
+        
 
     def cross_attentive_loss(self, encoder_out, 
         teacher_masking=[], student_masking=[], eps=1e-6,

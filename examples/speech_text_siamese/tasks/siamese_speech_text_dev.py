@@ -140,7 +140,7 @@ class SiameseSpeechTextToTextTaskDev(SpeechTextJointToTextTask):
         if self.src_dict is not None:
             assert self.tgt_dict.pad() == self.src_dict.pad()
             assert self.tgt_dict.eos() == self.src_dict.eos()
-            if self.args.monolingual_text_data != "" or self.args.load_pretrain_text_encoder != "": # TODO: fix quick test for init using roberta
+            if self.args.monolingual_text_data != "": # TODO: fix quick test for init using roberta
                 self.mask_idx = self.src_dict.add_symbol(self.mask_sym)
 
     @classmethod
