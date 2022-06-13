@@ -106,12 +106,13 @@ class SiameseSpeechTextEncoders(FairseqEncoder):
         super().__init__(dictionary)
 
         self.spch_encoder = spch_encoder
-        self.text_encoder = text_encoder # denoising auto-encoder
+        self.text_encoder = text_encoder # denoising auto-encoder or MT encoder
         self.text_encoder_aux = text_encoder_aux # OT
         self.shrink_speech_output = getattr(args, "shrink_speech_output", False)
         self.zero_speech_output = getattr(args, "zero_speech_output", False)
         self.use_linear_after_encoder = getattr(args, "use_linear_after_encoder", False)
         self.use_lm_head = getattr(args, "use_lm_head", False)
+        self.do_mt = getattr(args, "do_mt", False)
 
     @classmethod
     def build_speech_encoder(cls, args):
@@ -231,7 +232,7 @@ class SiameseSpeechTextEncoders(FairseqEncoder):
         ret1 = None
         ret2 = None
         ret3 = None
-        if src_tokens is not None:
+        if src_tokens is not None and self.spch_encoder is not None:
             ret1 = self.spch_encoder(src_tokens, src_lengths)
         if masked_src_txt_tokens is not None and self.text_encoder is not None:
             ret2 = self.text_encoder(masked_src_txt_tokens, masked_src_lengths)
@@ -239,7 +240,9 @@ class SiameseSpeechTextEncoders(FairseqEncoder):
             ret3 = self.text_encoder_aux(src_txt_tokens, src_txt_lengths)
 
         def merge_output(rst1, rst2, rst3):
-            if rst3 is None:
+            if rst1 is None:
+                return rst2
+            elif rst3 is None:
                 return rst1 if rst2 is None else (rst1, rst2)
             elif rst2 is None:
                 return rst1 if rst3 is None else (rst1, rst3)
@@ -249,7 +252,10 @@ class SiameseSpeechTextEncoders(FairseqEncoder):
 
     def reorder_encoder_out(self, encoder_out, new_order):
         assert self.training is False  # used for inference only
-        return self.spch_encoder.reorder_encoder_out(encoder_out, new_order)
+        if self.spch_encoder is not None:
+            return self.spch_encoder.reorder_encoder_out(encoder_out, new_order)
+        else:
+            return self.text_encoder.reorder_encoder_out(encoder_out, new_order)
 
 
 class MultiOutputDecoder(FairseqDecoder):
@@ -677,10 +683,15 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             action="store_true",
             help="Use auxiliary text encoder for OT loss"
         ) 
+        parser.add_argument(
+            "--do-mt",
+            action="store_true",
+            help="train MT model"
+        ) 
 
     @classmethod
     def build_encoder(cls, args, task):
-        spch_encoder = SiameseSpeechTextEncoders.build_speech_encoder(args)
+        spch_encoder = SiameseSpeechTextEncoders.build_speech_encoder(args) if not getattr(args, "do_mt", False) else None
         text_encoder = SiameseSpeechTextEncoders.build_text_encoder(
             args, task.src_dict, spch_encoder,
             num_layers_shared_spch_encoder=getattr(args, "encoder_shared_layers", 0),
@@ -999,6 +1010,9 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
         #     if self.encoder.use_lm_head:
         #         src_txt_tokens = masked_src_txt_tokens
         #         src_txt_lengths = masked_src_lengths
+        if self.encoder.do_mt:
+            masked_src_txt_tokens = src_txt_tokens
+            masked_src_lengths = src_txt_lengths
 
         encoder_out = self.encoder(
             src_tokens,
