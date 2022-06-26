@@ -23,6 +23,10 @@ from fairseq.models.speech_to_text import (
     S2TTransformerEncoder,
     TransformerDecoderScriptable,
 )
+from fairseq.models.speech_to_text.s2t_transformer import Conv1dSubsampler
+from fairseq.modules import LayerNorm, MultiheadAttention
+from fairseq.modules.fairseq_dropout import FairseqDropout
+from fairseq.data.data_utils import lengths_to_padding_mask
 from fairseq.models.transformer import TransformerEncoder
 from fairseq.models.roberta import RobertaLMHead
 from torch import Tensor
@@ -94,6 +98,58 @@ class TransformerLinearEncoder(FairseqEncoder):
         return ret
 
 
+class SpeechEncoderWithAdapter(FairseqEncoder):
+    def __init__(self, args):
+        super().__init__(None)
+        self.spch_encoder = S2TTransformerEncoder(args)
+        self.cnn_module = None
+        if not getattr(args, "no_cnn_in_adapter", False):
+            self.cnn_module = Conv1dSubsampler(
+                args.encoder_embed_dim,
+                args.conv_channels,
+                args.encoder_embed_dim,
+                [3],
+            )
+        self.fc = nn.Sequential(
+            nn.Linear(args.encoder_embed_dim, args.encoder_embed_dim * 2),
+            nn.ReLU(),
+            nn.Linear(args.encoder_embed_dim * 2, args.encoder_embed_dim),
+            LayerNorm(args.encoder_embed_dim)
+        )
+
+    def forward(self, src_tokens, src_lengths, return_all_hiddens=False):
+        speech_out = self.spch_encoder(
+            src_tokens, src_lengths, return_all_hiddens=return_all_hiddens
+        )
+        # logging.info(f"speech_out: {speech_out['encoder_out'][0].size()}") # T x B x D
+        # logging.info(f"input_lengths: {speech_out['input_lengths'][0].size()}") # B
+        x = speech_out["encoder_out"][0]
+        if speech_out['encoder_padding_mask']:
+            encoder_padding_mask = speech_out['encoder_padding_mask'][0]
+        else:
+            encoder_padding_mask = torch.zeros(1)
+        input_lens = speech_out["input_lengths"][0]
+        if self.cnn_module is not None:
+            x, input_lens = self.cnn_module(
+                speech_out["encoder_out"][0].transpose(0, 1),
+                speech_out["input_lengths"][0]
+            )
+            encoder_padding_mask = lengths_to_padding_mask(input_lens)
+        # logging.info(f"x: {x.size()}, input_lens: {input_lens.size()}, encoder_padding_mask: {encoder_padding_mask.size()}")
+        x = self.fc(x)
+        # logging.info(f"x: {x.size()}")
+
+        return {
+            "encoder_out": [x],  # T x B x C
+            "encoder_padding_mask": [encoder_padding_mask] if encoder_padding_mask.any() else [],  # B x T
+            "encoder_embedding": [],  # B x T x C
+            "encoder_states": [],  # List[T x B x C]
+            "src_tokens": [],
+            "src_lengths": [],
+            "input_lengths": [input_lens],
+        }
+
+
 class SiameseSpeechTextEncoders(FairseqEncoder):
     def __init__(
         self,
@@ -137,9 +193,13 @@ class SiameseSpeechTextEncoders(FairseqEncoder):
             "no_scale_embedding": args.no_scale_embedding,
             "quant_noise_pq": args.quant_noise_pq,
             "encoder_freezing_updates": 0,
+            "no_cnn_in_adapter": getattr(args, "no_cnn_in_adapter", False)
         }
         model_args = namedtuple("args", cfg.keys())(*cfg.values())
-        spch_encoder = S2TTransformerEncoder(model_args)
+        if not getattr(args, "speech_encoder_with_adapter", False):
+            spch_encoder = S2TTransformerEncoder(model_args)
+        else:
+            spch_encoder = SpeechEncoderWithAdapter(model_args)
         return spch_encoder
 
     @classmethod
@@ -687,6 +747,16 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             "--do-mt",
             action="store_true",
             help="train MT model"
+        )
+        parser.add_argument(
+            "--speech-encoder-with-adapter",
+            action="store_true",
+            help="use speech encoder with adapter"
+        )
+        parser.add_argument(
+            "--no-cnn-in-adapter",
+            action="store_true",
+            help="use speech encoder with adapter"
         ) 
 
     @classmethod
