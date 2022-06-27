@@ -723,6 +723,26 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             )
             logging.info(f"Loaded pretrained text encoder from {args.load_pretrain_text_encoder}")
 
+        if getattr(args, "load_pretrain_text_encoder_last", "") != "":
+            # if share encoder, speech encoder parameters will be used.
+            # It provides a chance to use pre-trained mt encoder instead
+            logging.info(f"Loading pretrained text encoder ...")
+            state = checkpoint_utils.load_checkpoint_to_cpu(args.load_pretrain_text_encoder_last)
+            # check if language pairs in state
+            multi_dec = False
+            lang_pair = None
+            for key in state["model"].keys():
+                multi_dec = True if len(key.split(".")[1].split("-")) == 2 else False
+                lang_pair = key.split(".")[1]
+                if multi_dec:
+                    break    
+            ckpt_component_type = [f"models.{lang_pair}.encoder", "models.encoder"] \
+                if multi_dec else ["models.encoder"]
+            checkpoint_utils.load_pretrained_component_from_model_different_keys_v2(
+                    text_encoder if text_encoder is not None else text_encoder_aux, 
+                    state, ckpt_component_types=ckpt_component_type)
+            logging.info(f"Loaded pretrained text encoder last from {args.load_pretrain_text_encoder_last}")
+
         if getattr(args, "freeze_text_encoder_aux", False):
             logging.info(f"Freezing text encoder aux ...")
             for n, p in text_encoder_aux.named_parameters():
@@ -738,24 +758,6 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             for l in range(-args.num_text_encoder_layers_frozen, 0, 1):
                 logging.info(f"- freezing layer {l + args.text_encoder_layers}...")
                 text_encoder.layers[l].requires_grad = False
-
-        if getattr(args, "load_pretrain_text_encoder_last", "") != "":
-            # if share encoder, speech encoder parameters will be used.
-            # It provides a chance to use pre-trained mt encoder instead
-            state = checkpoint_utils.load_checkpoint_to_cpu(args.load_pretrain_text_encoder_last)
-            # check if language pairs in state
-            multi_dec = False
-            lang_pair = None
-            for key in state["model"].keys():
-                multi_dec = True if len(key.split(".")[1].split("-")) == 2 else False
-                lang_pair = key.split(".")[1]
-                if multi_dec:
-                    break    
-            ckpt_component_type = [f"models.{lang_pair}.encoder", "models.encoder"] \
-                if multi_dec else ["models.encoder"]
-            checkpoint_utils.load_pretrained_component_from_model_different_keys(
-                    text_encoder, state, ckpt_component_types=ckpt_component_type)
-            logging.info(f"Loaded pretrained text encoder last from {args.load_pretrain_text_encoder_last}")
 
         if getattr(args, "load_pretrain_encoder", "") != "":
             checkpoint_utils.load_pretrained_component_from_model(
