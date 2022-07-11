@@ -119,7 +119,7 @@ def process(args):
             print(f"{cur_root.as_posix()} does not exist. Skipped.")
             continue
         # Extract features
-        audio_root = cur_root / ("flac" if args.use_audio_input else "fbank80")
+        audio_root = cur_root / ("wav_split" if args.use_audio_input else "fbank80")
         audio_root.mkdir(exist_ok=True)
 
         for split in MUSTC.SPLITS:
@@ -134,8 +134,8 @@ def process(args):
                         to_sample_rate=tgt_sample_rate
                     )
                     sf.write(
-                        (audio_root / f"{utt_id}.flac").as_posix(),
-                        _wavform.numpy(), tgt_sample_rate
+                        (audio_root / f"{utt_id}.wav").as_posix(),
+                        _wavform.T.numpy(), tgt_sample_rate
                     )
             else:
                 print("Extracting log mel filter bank features...")
@@ -158,11 +158,22 @@ def process(args):
                         np.savez(f, mean=stats["mean"], std=stats["std"])
 
         # Pack features into ZIP
-        zip_path = cur_root / f"{audio_root.name}.zip"
-        print("ZIPing audios/features...")
-        create_zip(audio_root, zip_path)
-        print("Fetching ZIP manifest...")
-        audio_paths, audio_lengths = get_zip_manifest(zip_path)
+        if (not args.use_audio_input) or (args.zip_file):
+            zip_path = cur_root / f"{audio_root.name}.zip"
+            print("ZIPing audios/features...")
+            create_zip(audio_root, zip_path, extension="wav")
+            print("Fetching ZIP manifest...")
+            audio_paths, audio_lengths = get_zip_manifest(
+                zip_path, is_audio=args.use_audio_input
+            )
+        else:
+            print("Getting audio paths and audio lengths")
+            audio_paths, audio_lengths = {}, {}
+            paths = list(audio_root.glob(f"*.wav"))
+            for p in paths:
+                audio_id = Path(p).stem
+                audio_paths[audio_id] = p
+                audio_lengths[audio_id] = sf.info(p).frames
         # Generate TSV manifest
         print("Generating manifest...")
         train_text = []
@@ -184,10 +195,11 @@ def process(args):
             if is_train_split:
                 train_text.extend(manifest["tgt_text"])
             df = pd.DataFrame.from_dict(manifest)
-            df = filter_manifest_df(df, is_train_split=is_train_split, 
-                                    min_n_frames=args.min_n_frames, 
-                                    max_n_frames=args.max_n_frames,
-                                    )
+            if not args.use_audio_input:
+                df = filter_manifest_df(df, is_train_split=is_train_split, 
+                                        min_n_frames=args.min_n_frames, 
+                                        max_n_frames=args.max_n_frames,
+                                        )
             save_df_to_tsv(df, cur_root / f"{split}_{args.task}.tsv")
         # Generate vocab
         v_size_str = "" if args.vocab_type == "char" else str(args.vocab_size)
@@ -223,7 +235,8 @@ def process(args):
                 ),
             )
         # Clean up
-        shutil.rmtree(audio_root)
+        if (not args.use_audio_input) or (args.zip_file):
+            shutil.rmtree(audio_root)
 
 
 def process_joint(args):
@@ -291,6 +304,7 @@ def main():
              "variance"
         )
     parser.add_argument("--use-audio-input", action="store_true")
+    parser.add_argument("--zip-file", action="store_true")
     parser.add_argument("--langs", default=None, type=str, 
         help="Target languages in the related pairs to process, seperated by comma")
     parser.add_argument("--min-n-frames", default=5, type=int)

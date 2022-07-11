@@ -61,6 +61,12 @@ class CtcWassersteinCriterionConfig(CtcCriterionConfig):
             + attn_weight_text * attn_loss_text \
             + ot_weight * ot_loss"},
     )
+    ot_weight_embed: float = field(
+        default=0.0,
+        metadata={"help": "loss = ctc_weight * ctc_loss + attn_weight_speech * attn_loss_speech \
+            + attn_weight_text * attn_loss_text \
+            + ot_weight * ot_loss"},
+    )
     ot_weight_st: float = field(
         default=0.0,
         metadata={"help": "loss = ctc_weight * ctc_loss + attn_weight_speech * attn_loss_speech \
@@ -213,6 +219,7 @@ class CtcWassersteinCriterion(CtcCriterion):
         self.ot_p = cfg.ot_p
         self.ot_blur = cfg.ot_blur
         self.ot_scaling = cfg.ot_scaling
+        self.ot_weight_embed = cfg.ot_weight_embed
         # self.wass_metric = cfg.wass_metric
         # self.wass_pos_cost = cfg.wass_pos_cost
         # self.wass_pos_epoch = cfg.wass_pos_epoch
@@ -232,7 +239,12 @@ class CtcWassersteinCriterion(CtcCriterion):
         if self.dtw_weight > 0.0:
             self.soft_dtw_loss = SoftDTW(use_cuda=True, gamma=0.1)
         if self.ot_weight > 0.0 or self.ot_weight_mt > 0.0 or self.ot_weight_st or self.ot_weight_st_ctc:
-            self.ot_loss = SamplesLoss(loss=self.ot_loss, 
+            self.ot_loss = SamplesLoss(loss=cfg.ot_loss, 
+                            p=self.ot_p, 
+                            blur=self.ot_blur,
+                            scaling=self.ot_scaling)
+        if self.ot_weight_embed > 0.0:
+            self.ot_loss_embed = SamplesLoss(loss=cfg.ot_loss, 
                             p=self.ot_p, 
                             blur=self.ot_blur,
                             scaling=self.ot_scaling)
@@ -317,9 +329,21 @@ class CtcWassersteinCriterion(CtcCriterion):
                                                     net_output=net_output,
                                                     net_input=net_input,
                                                     compute_dist_decoder=self.compute_dist_decoder,
+                                                    encoder_out_key="encoder_out",
                                                     )
                 loss += self.ot_weight * wass_loss
                 extra["wass_loss"] = wass_loss
+            if self.ot_weight_embed > 0.0:
+                wass_loss_embed = self.compute_wass_loss(self.ot_loss_embed, 
+                                                    encoder_out,
+                                                    model=model,
+                                                    net_output=net_output,
+                                                    net_input=net_input,
+                                                    compute_dist_decoder=self.compute_dist_decoder,
+                                                    encoder_out_key="embed_src_tokens",
+                                                    )
+                loss += self.ot_weight_embed * wass_loss_embed
+                extra["wass_loss_embed"] = wass_loss_embed
             if self.use_cross_attentive_loss:
                 cross_attn_loss = torch.sum(self.cross_attentive_loss(encoder_out))
                 loss += cross_attn_loss
@@ -339,10 +363,20 @@ class CtcWassersteinCriterion(CtcCriterion):
                     #                         p=self.ot_p, 
                     #                         blur=self.ot_blur,
                     #                         scaling=self.ot_scaling)
-                    wass_loss_st = self.ot_loss(
-                        speech_out.float().transpose(0, 1).contiguous(),
-                        net_output[1]["before_out_proj"].transpose(0, 1).contiguous()
-                    ).sum()
+                    if not self.compute_dist_decoder:
+                        wass_loss_st = self.ot_loss(
+                            speech_out.float().transpose(0, 1).contiguous(),
+                            net_output[1]["before_out_proj"].transpose(0, 1).contiguous()
+                        ).sum()
+                    else:
+                        lprobs = model.get_normalized_probs(net_output, log_probs=False)
+                        target = F.one_hot(net_input["prev_output_tokens"], 
+                                    num_classes=lprobs.size()[-1]) # BxT
+                        wass_loss_st = self.ot_loss(
+                                lprobs.float().contiguous(),
+                                target.float().contiguous()
+                            ).sum()
+
                     loss += wass_loss_st * self.ot_weight_st
                     extra["wass_loss_st"] = wass_loss_st
                 if self.ot_weight_mt > 0.0: # between text enc_out and dec_out
@@ -386,6 +420,7 @@ class CtcWassersteinCriterion(CtcCriterion):
             "ctc_loss": utils.item(extra["ctc_loss"].data) if extra["ctc_loss"] != 0.0 else 0.0,
             "mlm_loss": utils.item(extra["mlm_loss"].data) if extra["mlm_loss"] != 0.0 else 0.0,
             "wass_loss": utils.item(extra["wass_loss"].data) if extra["wass_loss"] != 0.0 else 0.0,
+            "wass_loss_embed": utils.item(extra["wass_loss_embed"].data) if extra["wass_loss_embed"] != 0.0 else 0.0,
             "wass_loss_st": utils.item(extra["wass_loss_st"].data) if extra["wass_loss_st"] != 0.0 else 0.0,
             "wass_loss_st_ctc": utils.item(extra["wass_loss_st_ctc"].data) if extra["wass_loss_st_ctc"] != 0.0 else 0.0,
             "wass_loss_mt": utils.item(extra["wass_loss_mt"].data) if extra["wass_loss_mt"] != 0.0 else 0.0,
@@ -578,7 +613,8 @@ class CtcWassersteinCriterion(CtcCriterion):
                             net_output=None,
                             net_input=None,
                             compute_dist_decoder=False,
-                            ot_spch_dec_and_ctc_out=False):
+                            ot_spch_dec_and_ctc_out=False,
+                            encoder_out_key="encoder_out"):
         if compute_dist_decoder:
             if not ot_spch_dec_and_ctc_out:
                 assert net_output is not None
@@ -586,10 +622,10 @@ class CtcWassersteinCriterion(CtcCriterion):
                 # pred = net_output[0].transpose(0, 1) # TxBxD -> BxTxD
                 lprobs = model.get_normalized_probs(net_output, log_probs=False, idx=1)
                 target = F.one_hot(net_input["src_txt_tokens"], 
-                            num_classes=lprobs.size()[-1]).transpose(0, 1) # BxT -> TxB
+                            num_classes=lprobs.size()[-1]) # BxT
                 wass_loss = ot_loss(
-                        lprobs.float().transpose(0, 1).contiguous(),
-                        target.float().transpose(0, 1).contiguous()
+                        lprobs.float().contiguous(),
+                        target.float().contiguous()
                     ).sum()
             else:
                 spch_dec_out = net_output[0][0] # BxTxD
@@ -600,8 +636,8 @@ class CtcWassersteinCriterion(CtcCriterion):
                     ).sum()
             return wass_loss
         
-        speech_out = encoder_out[0]["encoder_out"][0] # S x B x D
-        text_out = encoder_out[-1]["encoder_out"][0] # T x B x D
+        speech_out = encoder_out[0][encoder_out_key][0] # S x B x D
+        text_out = encoder_out[-1][encoder_out_key][0] # T x B x D
         # wloss = SamplesLoss(loss=self.ot_loss, 
         #                     p=self.ot_p, 
         #                     blur=self.ot_blur,
@@ -740,6 +776,7 @@ class CtcWassersteinCriterion(CtcCriterion):
         mlm_loss_sum = utils.item(sum(log.get("mlm_loss", 0) for log in logging_outputs))
         ctc_loss_sum = utils.item(sum(log.get("ctc_loss", 0) for log in logging_outputs))
         wass_loss_sum = utils.item(sum(log.get("wass_loss", 0) for log in logging_outputs))
+        wass_loss_embed_sum = utils.item(sum(log.get("wass_loss_embed", 0) for log in logging_outputs))
         wass_loss_st_sum = utils.item(sum(log.get("wass_loss_st", 0) for log in logging_outputs))
         wass_loss_st_ctc_sum = utils.item(sum(log.get("wass_loss_st_ctc", 0) for log in logging_outputs))
         wass_loss_mt_sum = utils.item(sum(log.get("wass_loss_mt", 0) for log in logging_outputs))
@@ -783,6 +820,10 @@ class CtcWassersteinCriterion(CtcCriterion):
                 "wass_loss", wass_loss_sum / sample_size / math.log(2), sample_size, round=3
             )
             # metrics.log_scalar("wass_pos_cost", wass_pos_cost / len(logging_outputs), weight=0, round=0)
+        if wass_loss_embed_sum != 0:
+            metrics.log_scalar(
+                "wass_loss_embed", wass_loss_embed_sum / sample_size / math.log(2), sample_size, round=3
+            )
         if wass_loss_st_sum != 0:
             metrics.log_scalar(
                 "wass_loss_st", wass_loss_st_sum / sample_size / math.log(2), sample_size, round=3
