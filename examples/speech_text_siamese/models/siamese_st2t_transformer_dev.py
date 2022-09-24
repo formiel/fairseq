@@ -370,12 +370,28 @@ class MultiOutputDecoder(FairseqDecoder):
         speech_decoder,
         ctc_module,
         text_decoder,
+        shared_layers=None,
+        shared_layers_order=None,
     ):
         super().__init__(dictionary)
         self.speech_decoder = speech_decoder
         self.ctc_module = ctc_module
         self.text_decoder = text_decoder
         assert not (self.speech_decoder is None and self.text_decoder is None)
+        if shared_layers is not None:
+            assert isinstance(shared_layers_order, int) 
+            start = shared_layers_order
+            end = shared_layers if start==0 else -shared_layers
+            if start == -1:
+                start = end
+                end = 0
+            for i in range(start, end):
+                speech_decoder.layers[i] = text_decoder.layers[i]
+            speech_decoder.dropout_module = text_decoder.dropout_module
+            speech_decoder.embed_tokens = text_decoder.embed_tokens
+            speech_decoder.embed_positions = text_decoder.embed_positions
+            speech_decoder.layer_norm = text_decoder.layer_norm
+            speech_decoder.output_projection = text_decoder.output_projection
 
     def forward(
         self, 
@@ -403,18 +419,11 @@ class MultiOutputDecoder(FairseqDecoder):
                 **kwargs
             )
         if self.text_decoder is not None:
-            # assert isinstance(encoder_out, tuple)
-            # logging.info(f"encoder_out: {type(encoder_out)}, {len(encoder_out)}")
-            # logging.info(f"encoder_out[0]: {encoder_out[0].size()}")
-            # logging.info(f"encoder_out[1]: {encoder_out[1].size()}")
-            # logging.info(f"encoder_out[2]: {encoder_out[2].size()}")
-            # if isinstance(encoder_out, tuple) and len(encoder_out) == 3:
-            #     encoder_out = encoder_out[:-1]
             encoder_out = encoder_out if isinstance(encoder_out, tuple) else (None, encoder_out)
             if not isinstance(self.text_decoder, RobertaLMHead):
                 text_dec_out = self.text_decoder(
                     prev_output_tokens,
-                    encoder_out=encoder_out[1],
+                    encoder_out=encoder_out[-1],
                     incremental_state=incremental_state,
                     **kwargs
                 )
@@ -684,6 +693,21 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
                 -1: shared bottom N layers from -N:",
         )
         parser.add_argument(
+            "--decoder-shared-layers",
+            type=int,
+            default=None,
+            metavar="N",
+            help="num shared encoder layers",
+        )
+        parser.add_argument(
+            "--decoder-shared-layers-order",
+            type=int,
+            choices=[0, -1],
+            metavar="N",
+            help="0: shared top N layers from 0:N \
+                -1: shared bottom N layers from -N:",
+        )
+        parser.add_argument(
             "--encoder-aux-shared-layers",
             type=int,
             default=0,
@@ -875,11 +899,31 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             ckpt_component_type = ["decoder.sentence_encoder"] \
                 if any([key.startswith("decoder.sentence_encoder") for key in state["model"].keys()]) else ["encoder"]
             checkpoint_utils.load_pretrained_component_from_model_different_keys_v2(
-                text_encoder if text_encoder is not None else text_encoder_aux,
+                text_encoder_aux if text_encoder_aux is not None else text_encoder,
                 state, ckpt_component_types=ckpt_component_type,
                 # exclude_layers=["embed_tokens", "embed_positions", "emb_layer_norm"]
             )
             logging.info(f"Loaded pretrained text encoder from {args.load_pretrain_text_encoder}")
+
+        if getattr(args, "load_pretrain_text_encoder_last", "") != "":
+            # if share encoder, speech encoder parameters will be used.
+            # It provides a chance to use pre-trained mt encoder instead
+            logging.info(f"Loading pretrained text encoder last ...")
+            state = checkpoint_utils.load_checkpoint_to_cpu(args.load_pretrain_text_encoder_last)
+            # check if language pairs in state
+            multi_dec = False
+            lang_pair = None
+            for key in state["model"].keys():
+                multi_dec = True if len(key.split(".")[1].split("-")) == 2 else False
+                lang_pair = key.split(".")[1]
+                if multi_dec:
+                    break    
+            ckpt_component_type = [f"models.{lang_pair}.encoder", "models.encoder"] \
+                if multi_dec else ["models.encoder"]
+            checkpoint_utils.load_pretrained_component_from_model_different_keys(
+                    text_encoder_aux if text_encoder_aux is not None else text_encoder, 
+                    state, ckpt_component_types=ckpt_component_type)
+            logging.info(f"Loaded pretrained text encoder last from {args.load_pretrain_text_encoder_last}")
 
         if getattr(args, "use_w2v_encoder", False) and getattr(args, "freeze_w2v_encoder", False):
             logging.info(f"Freezeing wav2vec encoder ...")
@@ -902,24 +946,6 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             for l in range(-args.num_text_encoder_layers_frozen, 0, 1):
                 logging.info(f"- freezing layer {l + args.text_encoder_layers}...")
                 text_encoder.layers[l].requires_grad = False
-
-        if getattr(args, "load_pretrain_text_encoder_last", "") != "":
-            # if share encoder, speech encoder parameters will be used.
-            # It provides a chance to use pre-trained mt encoder instead
-            state = checkpoint_utils.load_checkpoint_to_cpu(args.load_pretrain_text_encoder_last)
-            # check if language pairs in state
-            multi_dec = False
-            lang_pair = None
-            for key in state["model"].keys():
-                multi_dec = True if len(key.split(".")[1].split("-")) == 2 else False
-                lang_pair = key.split(".")[1]
-                if multi_dec:
-                    break    
-            ckpt_component_type = [f"models.{lang_pair}.encoder", "models.encoder"] \
-                if multi_dec else ["models.encoder"]
-            checkpoint_utils.load_pretrained_component_from_model_different_keys(
-                    text_encoder, state, ckpt_component_types=ckpt_component_type)
-            logging.info(f"Loaded pretrained text encoder last from {args.load_pretrain_text_encoder_last}")
 
         if getattr(args, "load_pretrain_encoder", "") != "":
             checkpoint_utils.load_pretrained_component_from_model(
@@ -1009,24 +1035,24 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
                                     bias=not getattr(args, "no_bias_in_proj", False),
                                     )
             num_outputs += 1
-            if getattr(args, "load_pretrain_text_decoder", "") != "":
-                logging.info(f"Loading pretrained text decoder ...")
-                state = checkpoint_utils.load_checkpoint_to_cpu(args.load_pretrain_text_decoder)
-                ckpt_component_type = ["encoder.lm_head"] \
-                    if any([key.startswith("encoder.lm_head") for key in state["model"].keys()]) else ["decoder"]
-                checkpoint_utils.load_pretrained_component_from_model_different_keys_v2(
-                    text_decoder, state, ckpt_component_types=ckpt_component_type,
-                    # exclude_layers=["lm_head.weight", "lm_head.bias"]
-                )
-                logging.info(f"Loaded pretrained text decoder from {args.load_pretrain_text_decoder}")
+        if getattr(args, "load_pretrain_text_decoder", "") != "":
+            logging.info(f"Loading pretrained text decoder ...")
+            state = checkpoint_utils.load_checkpoint_to_cpu(args.load_pretrain_text_decoder)
+            ckpt_component_type = ["encoder.lm_head"] \
+                if any([key.startswith("encoder.lm_head") for key in state["model"].keys()]) else ["decoder"]
+            checkpoint_utils.load_pretrained_component_from_model_different_keys_v2(
+                text_decoder, state, ckpt_component_types=ckpt_component_type,
+                # exclude_layers=["lm_head.weight", "lm_head.bias"]
+            )
+            logging.info(f"Loaded pretrained text decoder from {args.load_pretrain_text_decoder}")
 
-            if getattr(args, "share_text_embed_mlm_head", False):
-                text_decoder.weight = encoder.text_encoder.embed_tokens.weight
+        if getattr(args, "share_text_embed_mlm_head", False):
+            text_decoder.weight = encoder.text_encoder.embed_tokens.weight
 
-            if getattr(args, "share_ctc_mlm_head", False):
-                text_decoder.weight = ctc_module.proj.weight
-                if not getattr(args, "no_bias_in_proj", False):
-                    text_decoder.bias = ctc_module.proj.bias
+        if getattr(args, "share_ctc_mlm_head", False):
+            text_decoder.weight = ctc_module.proj.weight
+            if not getattr(args, "no_bias_in_proj", False):
+                text_decoder.bias = ctc_module.proj.bias
         
         if getattr(args, "load_pretrain_speech_decoder", "") != "":
             logging.info(f"Loading pretrained speech decoder ...")
@@ -1086,7 +1112,10 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
             decoder = MultiOutputDecoder(task.target_dictionary,
                                          speech_decoder, 
                                          ctc_module, 
-                                         text_decoder)
+                                         text_decoder, 
+                                         shared_layers=getattr(args, "decoder_shared_layers", None),
+                                         shared_layers_order=getattr(args, "decoder_shared_layers_order", None),
+                                         )
         else:
             assert num_outputs > 0
             decoder = speech_decoder if speech_decoder is not None \
@@ -1412,10 +1441,10 @@ def siamese_st2t_transformer_dev_m(args):
 
 @register_model_architecture("siamese_st2t_transformer_dev", "siamese_st2t_transformer_dev_l")
 def siamese_st2t_transformer_dev_l(args):
-    args.speech_encoder_layers = getattr(args, "speech_encoder_layers", 18)
-    args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 512)
-    args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 512 * 4)
-    args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 8)
-    args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 8)
-    args.dropout = getattr(args, "dropout", 0.2)
+    args.speech_encoder_layers = getattr(args, "speech_encoder_layers", 12)
+    args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 1024)
+    args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 1024 * 4)
+    args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 16)
+    args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 16)
+    args.dropout = getattr(args, "dropout", 0.25)
     siamese_st2t_transformer_dev_base(args)

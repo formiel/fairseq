@@ -231,7 +231,7 @@ def multilingual_transformer_iwslt_de_en(args):
 @register_model_architecture(
     "multilingual_transformer", "multilingual_transformer_mustc"
 )
-def multilingual_transformer_iwslt_de_en(args):
+def multilingual_transformer_mustc(args):
     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 512)
     args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 512*4)
     args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 8)
@@ -244,15 +244,15 @@ def multilingual_transformer_iwslt_de_en(args):
 
 
 @register_model_architecture(
-    "multilingual_transformer", "multilingual_transformer_mustc_s"
+    "multilingual_transformer", "multilingual_transformer_mustc_l"
 )
-def multilingual_transformer_iwslt_de_en(args):
-    args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 256)
-    args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 256*8)
-    args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 4)
+def multilingual_transformer_mustc_l(args):
+    args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 1024)
+    args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 1024*4)
+    args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 16)
     args.encoder_layers = getattr(args, "encoder_layers", 6)
-    args.decoder_embed_dim = getattr(args, "decoder_embed_dim", 256)
-    args.decoder_ffn_embed_dim = getattr(args, "decoder_ffn_embed_dim", 256*8)
-    args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 4)
+    args.decoder_embed_dim = getattr(args, "decoder_embed_dim", 1024)
+    args.decoder_ffn_embed_dim = getattr(args, "decoder_ffn_embed_dim", 1024*4)
+    args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 16)
     args.decoder_layers = getattr(args, "decoder_layers", 6)
     base_multilingual_architecture(args)

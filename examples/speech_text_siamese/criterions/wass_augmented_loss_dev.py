@@ -278,6 +278,7 @@ class CtcWassersteinCriterion(CtcCriterion):
                 "wass_loss_st": 0.0, # between speech enc_out and pred
                 "wass_loss_st_ctc": 0.0, # between ctc_out and pred
                 "wass_loss_mt": 0.0, # between text enc_out and pred
+                "wass_loss_embed": 0.0,
                 "dtw_loss": 0.0, 
                 "cross_attn_loss": 0.0,
                 }

@@ -51,10 +51,13 @@ class MUSTC(Dataset):
     SPLITS = ["train", "dev", "tst-COMMON", "tst-HE"]
     LANGUAGES = ["de", "es", "fr", "it", "nl", "pt", "ro", "ru"]
 
-    def __init__(self, root: str, lang: str, split: str) -> None:
+    def __init__(self, root: str, lang: str, split: str, speed_pertub=1.0) -> None:
         assert split in self.SPLITS and lang in self.LANGUAGES
         _root = Path(root) / f"en-{lang}" / "data" / split
-        wav_root, txt_root = _root / "wav", _root / "txt"
+        speed_suffix = "" if speed_pertub == 1.0 else f"_speed{speed_pertub}"
+        wav_root, txt_root = _root / f"wav{speed_suffix}", _root / "txt"
+        print(f"Speed pertubation rate: {speed_pertub}")
+        print(f"wav path root: {wav_root}")
         assert _root.is_dir() and wav_root.is_dir() and txt_root.is_dir()
         # Load audio segments
         try:
@@ -73,12 +76,17 @@ class MUSTC(Dataset):
         # Gather info
         self.data = []
         for wav_filename, _seg_group in groupby(segments, lambda x: x["wav"]):
+            wav_filename = (wav_filename if speed_pertub == 1.0 
+                else f"{wav_filename.split('.')[0]}.speed{speed_pertub}.wav"
+            )
             wav_path = wav_root / wav_filename
             sample_rate = sf.info(wav_path.as_posix()).samplerate
             seg_group = sorted(_seg_group, key=lambda x: x["offset"])
             for i, segment in enumerate(seg_group):
-                offset = int(float(segment["offset"]) * sample_rate)
-                n_frames = int(float(segment["duration"]) * sample_rate)
+                offset = float(segment["offset"]) / speed_pertub
+                offset = int(offset * sample_rate)
+                duration = float(segment["duration"]) / speed_pertub
+                n_frames = int(duration * sample_rate)
                 _id = f"{wav_path.stem}_{i}"
                 self.data.append(
                     (
@@ -111,6 +119,7 @@ class MUSTC(Dataset):
 def process(args):
     root = Path(args.data_root).absolute()
     processed_langs = MUSTC.LANGUAGES
+    speed_suffix = "" if float(args.speed_pertub) == 1.0 else f"_speed{args.speed_pertub}"
     if args.langs is not None:
         processed_langs = args.langs.split(",")
     for lang in processed_langs:
@@ -119,12 +128,12 @@ def process(args):
             print(f"{cur_root.as_posix()} does not exist. Skipped.")
             continue
         # Extract features
-        audio_root = cur_root / ("wav_split" if args.use_audio_input else "fbank80")
+        audio_root = cur_root / ("wav_split" if args.use_audio_input else f"fbank80{speed_suffix}")
         audio_root.mkdir(exist_ok=True)
 
         for split in MUSTC.SPLITS:
             print(f"Fetching split {split}...")
-            dataset = MUSTC(root.as_posix(), lang, split)
+            dataset = MUSTC(root.as_posix(), lang, split, speed_pertub=float(args.speed_pertub))
             if args.use_audio_input:
                 print("Converting audios...")
                 for waveform, sample_rate, _, _, _, utt_id, _, _ in tqdm(dataset):
@@ -161,7 +170,7 @@ def process(args):
         if (not args.use_audio_input) or (args.zip_file):
             zip_path = cur_root / f"{audio_root.name}.zip"
             print("ZIPing audios/features...")
-            create_zip(audio_root, zip_path, extension="wav")
+            create_zip(audio_root, zip_path)
             print("Fetching ZIP manifest...")
             audio_paths, audio_lengths = get_zip_manifest(
                 zip_path, is_audio=args.use_audio_input
@@ -180,7 +189,7 @@ def process(args):
         for split in MUSTC.SPLITS:
             is_train_split = split.startswith("train")
             manifest = {c: [] for c in MANIFEST_COLUMNS}
-            dataset = MUSTC(args.data_root, lang, split)
+            dataset = MUSTC(args.data_root, lang, split, speed_pertub=float(args.speed_pertub))
             for _, _, src_utt, tgt_utt, speaker_id, utt_id, src_lg, tgt_lg in tqdm(dataset):
                 manifest["id"].append(utt_id)
                 manifest["audio"].append(audio_paths[utt_id])
@@ -200,10 +209,10 @@ def process(args):
                                         min_n_frames=args.min_n_frames, 
                                         max_n_frames=args.max_n_frames,
                                         )
-            save_df_to_tsv(df, cur_root / f"{split}_{args.task}.tsv")
+            save_df_to_tsv(df, cur_root / f"{split}_{args.task}{speed_suffix}.tsv")
         # Generate vocab
         v_size_str = "" if args.vocab_type == "char" else str(args.vocab_size)
-        spm_filename_prefix = f"spm_{args.vocab_type}{v_size_str}_{args.task}"
+        spm_filename_prefix = f"spm_{args.vocab_type}{v_size_str}_{args.task}{speed_suffix}"
         with NamedTemporaryFile(mode="w") as f:
             for t in train_text:
                 f.write(t + "\n")
@@ -226,7 +235,7 @@ def process(args):
             gen_config_yaml(
                 cur_root,
                 spm_filename=spm_filename_prefix + ".model",
-                yaml_filename=f"config_{args.vocab_type}{v_size_str}_{args.task}.yaml",
+                yaml_filename=f"config_{args.vocab_type}{v_size_str}_{args.task}{speed_suffix}.yaml",
                 specaugment_policy="lb",
                 cmvn_type=args.cmvn_type,
                 gcmvn_path=(
@@ -309,6 +318,7 @@ def main():
         help="Target languages in the related pairs to process, seperated by comma")
     parser.add_argument("--min-n-frames", default=5, type=int)
     parser.add_argument("--max-n-frames", default=3000, type=int)
+    parser.add_argument("--speed-pertub", default=1.0, type=float)
     args = parser.parse_args()
 
     if args.joint:
