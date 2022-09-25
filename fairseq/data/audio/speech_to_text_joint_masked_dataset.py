@@ -389,6 +389,7 @@ class SpeechToTextJointMaskedDatasetCreator(SpeechToTextDatasetCreator):
         if is_train_split and len(datasets) > 1 and cfg.sampling_alpha != 1.0:
             # temperature-based sampling
             size_ratios = cls.get_size_ratios(datasets, alpha=cfg.sampling_alpha)
+            logging.info(f"size_ratios: {size_ratios}")
             datasets = [
                 ResamplingDataset(
                     d, size_ratio=r, seed=seed, epoch=epoch, replace=(r >= 1.0)
