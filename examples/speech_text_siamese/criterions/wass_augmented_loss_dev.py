@@ -24,7 +24,7 @@ from fairseq.criterions.label_smoothed_cross_entropy import label_smoothed_nll_l
 # import optimal_transport as ot
 from geomloss import SamplesLoss
 
-from .soft_dtw_cuda import SoftDTW
+# from .soft_dtw_cuda import SoftDTW
 
 WASS_METRIC_CHOICES = ChoiceEnum(["euclidean", "lp", "dot", "dotexp", "cosine", "none"])
 SAMPLE_LOSS_CHOICES = ChoiceEnum(["sinkhorn", "hausdorff", "energy", "gaussian", "laplacian"])

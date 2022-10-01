@@ -24,7 +24,7 @@ from fairseq.criterions.label_smoothed_cross_entropy import label_smoothed_nll_l
 # import optimal_transport as ot
 from geomloss import SamplesLoss
 
-from .soft_dtw_cuda import SoftDTW
+# from .soft_dtw_cuda import SoftDTW
 
 WASS_METRIC_CHOICES = ChoiceEnum(["euclidean", "lp", "dot", "dotexp", "cosine", "none"])
 SAMPLE_LOSS_CHOICES = ChoiceEnum(["sinkhorn", "hausdorff", "energy", "gaussian", "laplacian"])
@@ -168,6 +168,10 @@ class CtcWassersteinCriterionConfig(CtcCriterionConfig):
         default=False,
         metadata={"help": "Use soft DTW loss"},
     )
+    norm_before_ot: bool = field(
+        default=False,
+        metadata={"help": "Normalize before computing OT"},
+    )
     ot_loss: SAMPLE_LOSS_CHOICES = field(
         default="sinkhorn", 
         metadata={"help": "type of distance measure between X_i and Y_j"}
@@ -183,6 +187,10 @@ class CtcWassersteinCriterionConfig(CtcCriterionConfig):
     ot_scaling: float = field(
         default=0.5,
         metadata={"help": "blur in SampleLoss"},
+    )
+    ot_position_weight: float = field(
+        default=0.0,
+        metadata={"help": "weight for positional embedding in OT"},
     )
 
 
@@ -220,6 +228,10 @@ class CtcWassersteinCriterion(CtcCriterion):
         self.ot_blur = cfg.ot_blur
         self.ot_scaling = cfg.ot_scaling
         self.ot_weight_embed = cfg.ot_weight_embed
+        self.norm_before_ot = cfg.norm_before_ot
+        self.ot_position_weight = cfg.ot_position_weight
+        if self.norm_before_ot or (self.ot_position_weight > 0.0):
+            assert self.do_bs1
         # self.wass_metric = cfg.wass_metric
         # self.wass_pos_cost = cfg.wass_pos_cost
         # self.wass_pos_epoch = cfg.wass_pos_epoch
@@ -676,11 +688,34 @@ class CtcWassersteinCriterion(CtcCriterion):
         else:
             speech_lens =encoder_out[0]["input_lengths"][0]
             text_lens = encoder_out[1]["src_lengths"][0].squeeze(-1)
+            # logging.info(f"speech_lens: {speech_lens.size()}\n{speech_lens}")
+            # logging.info(f"text_lens: {text_lens.size()}\n{text_lens}")
+            # logging.info(f"BEFORE NORM: speech_out: {speech_out.size()}, text_out: {text_out.size()}")
+            if self.norm_before_ot:
+                speech_out = speech_out / torch.linalg.norm(speech_out, dim=-1, keepdim=True)
+                text_out = text_out / torch.linalg.norm(text_out, dim=-1, keepdim=True)
+                # logging.info(f"AFTER NORM: speech_out: {speech_out.size()}, text_out: {text_out.size()}")
             # compute Wasserstein loss for each example
             wass_loss = 0.0
+            device = speech_out.device
             for i in range(speech_out.size()[1]):
-                wass_loss += ot_loss(speech_out[:speech_lens[i], i, :], 
-                                text_out[:text_lens[i], i, :]).sum()
+                # un-padded sequence lengths 
+                S = speech_lens[i]
+                T = text_lens[i]
+                speech_feat = speech_out[:S, i, :] # S x D
+                text_feat = text_out[:T, i, :] # T x D
+                # logging.info(f"speech_feat={speech_feat.size()}, text_feat={text_feat.size()}")
+                if self.ot_position_weight > 0.0 and S > 1 and T > 1:
+                    pos_S = self.ot_position_weight * (torch.tensor(range(S), device=device)/(S-1)).unsqueeze(-1)
+                    pos_T = self.ot_position_weight * (torch.tensor(range(T), device=device)/(T-1)).unsqueeze(-1)
+                    # logging.info(f"pos_S: {pos_S.size()}\n{pos_S}")
+                    # logging.info(f"pos_T: {pos_T.size()}\n{pos_T}")
+                    speech_feat = torch.cat((speech_feat, pos_S), dim=-1)
+                    text_feat = torch.cat((text_feat, pos_T), dim=-1)
+                    # logging.info(f"speech_feat={speech_feat.size()}, text_feat={text_feat.size()}")
+                    # logging.info(f"speech_feat: {speech_feat}")
+                    # logging.info(f"text_feat: {text_feat}")
+                wass_loss += ot_loss(speech_feat, text_feat).sum()
         if self.copy_mechanism:
             assert not self.do_bs1 # not implemented for copy mechanism yet
             x1 = encoder_out[0]["embed_src_tokens"][0]
@@ -930,4 +965,3 @@ class CtcWassersteinCriterion(CtcCriterion):
         to True will improves distributed training speed.
         """
         return True
-     
