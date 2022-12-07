@@ -236,7 +236,8 @@ class CtcWassersteinCriterion(CtcCriterion):
         self.ot_position_weight = [cfg.ot_position_weight]
         self.ot_position_weight_trainable = cfg.ot_position_weight_trainable
         if self.norm_before_ot or (cfg.ot_position_weight > 0.0):
-            assert self.do_bs1
+            # assert self.do_bs1
+            logging.info(f"** self.do_bs1 = {self.do_bs1} **")
         if self.ot_position_weight_trainable and cfg.ot_position_weight > 0.0:
             logging.info("** Learn OT position weight **")
             self.ot_position_weight = torch.nn.Parameter(torch.tensor(self.ot_position_weight))
@@ -666,6 +667,37 @@ class CtcWassersteinCriterion(CtcCriterion):
         #                     scaling=self.ot_scaling)
         if not self.do_bs1:
             if not self.zero_padding_weights:
+                if self.norm_before_ot:
+                    speech_out = speech_out / torch.linalg.norm(speech_out, dim=-1, keepdim=True)
+                    text_out = text_out / torch.linalg.norm(text_out, dim=-1, keepdim=True)
+                if self.ot_position_weight[0] > 0.0: 
+                    S, B, _ = speech_out.size()
+                    T = text_out.size()[0]
+                    speech_lens = encoder_out[0]["input_lengths"][0] # torch.Size([B]) 
+                    text_lens = encoder_out[1]["src_lengths"][0].squeeze(-1) # torch.Size([B])
+                    # HACK for lens==1
+                    # s_mask = (speech_lens > 1)
+                    # t_mask = (text_lens > 1)
+                    # speech_lens = speech_lens * s_mask + ~s_mask * 2
+                    # text_lens = text_lens * t_mask + ~t_mask * 2
+                    speech_lens[speech_lens <= 1] = 2
+                    text_lens[text_lens <= 1] = 2
+                    # create tensor in which the elements are range of lengths
+                    speech_pos = torch.matmul(
+                        torch.tensor(range(S), dtype=torch.float, device=speech_out.device).unsqueeze(-1), 
+                        torch.ones((1, B), device=speech_out.device)
+                    ) # S x B
+                    text_pos = torch.matmul(
+                        torch.tensor(range(T), dtype=torch.float, device=speech_out.device).unsqueeze(-1), 
+                        torch.ones((1, B), device=speech_out.device)
+                    ) # T x B
+                    speech_pos = speech_pos / (speech_lens - 1).unsqueeze(0) # S x B
+                    text_pos = text_pos / (text_lens - 1).unsqueeze(0) # T x B
+                    speech_pos[speech_pos > 1] = 1e9
+                    text_pos[text_pos > 1] = 1e9
+                    speech_out = torch.cat((speech_out, speech_pos.unsqueeze(-1)), dim=-1)
+                    text_out = torch.cat((text_out, text_pos.unsqueeze(-1)), dim=-1)
+
                 with torch.cuda.amp.autocast(enabled=False):
                     wass_loss = ot_loss(
                         speech_out.float().transpose(0, 1).contiguous(),

@@ -192,6 +192,10 @@ class CtcWassersteinCriterionConfig(CtcCriterionConfig):
         default=0.0,
         metadata={"help": "weight for positional embedding in OT"},
     )
+    ot_position_weight_trainable: bool = field(
+        default=False,
+        metadata={"help": "learn OT position weight"},
+    )
 
 
 @register_criterion("wasserstein_augmented_loss", dataclass=CtcWassersteinCriterionConfig)
@@ -229,9 +233,14 @@ class CtcWassersteinCriterion(CtcCriterion):
         self.ot_scaling = cfg.ot_scaling
         self.ot_weight_embed = cfg.ot_weight_embed
         self.norm_before_ot = cfg.norm_before_ot
-        self.ot_position_weight = cfg.ot_position_weight
-        if self.norm_before_ot or (self.ot_position_weight > 0.0):
-            assert self.do_bs1
+        self.ot_position_weight = [cfg.ot_position_weight]
+        self.ot_position_weight_trainable = cfg.ot_position_weight_trainable
+        if self.norm_before_ot or (cfg.ot_position_weight > 0.0):
+            # assert self.do_bs1
+            logging.info(f"** self.do_bs1 = {self.do_bs1} **")
+        if self.ot_position_weight_trainable and cfg.ot_position_weight > 0.0:
+            logging.info("** Learn OT position weight **")
+            self.ot_position_weight = torch.nn.Parameter(torch.tensor(self.ot_position_weight))
         # self.wass_metric = cfg.wass_metric
         # self.wass_pos_cost = cfg.wass_pos_cost
         # self.wass_pos_epoch = cfg.wass_pos_epoch
@@ -442,6 +451,7 @@ class CtcWassersteinCriterion(CtcCriterion):
             "ntokens": sample["ntokens"],
             "nsentences": sample["id"].numel(),
             "sample_size": net_input["src_tokens"].size(0) if self.sentence_avg else sample["ntokens"],
+            "ot_position_weight": self.ot_position_weight[0],
             # "wass_pos_cost": self.wass_pos_cost_val,
             # "ctc_weight": self.ctc_weight,
             # "reduced_speech_output": net_output[-1].get("reduced_speech_output", 0.0),
@@ -657,10 +667,42 @@ class CtcWassersteinCriterion(CtcCriterion):
         #                     scaling=self.ot_scaling)
         if not self.do_bs1:
             if not self.zero_padding_weights:
-                wass_loss = ot_loss(
-                    speech_out.float().transpose(0, 1).contiguous(),
-                    text_out.float().transpose(0, 1).contiguous()
-                ).sum()  # use constant weights = 1/number of samples
+                if self.norm_before_ot:
+                    speech_out = speech_out / torch.linalg.norm(speech_out, dim=-1, keepdim=True)
+                    text_out = text_out / torch.linalg.norm(text_out, dim=-1, keepdim=True)
+                if self.ot_position_weight[0] > 0.0: 
+                    S, B, _ = speech_out.size()
+                    T = text_out.size()[0]
+                    speech_lens = encoder_out[0]["input_lengths"][0] # torch.Size([B]) 
+                    text_lens = encoder_out[1]["src_lengths"][0].squeeze(-1) # torch.Size([B])
+                    # HACK for lens==1
+                    # s_mask = (speech_lens > 1)
+                    # t_mask = (text_lens > 1)
+                    # speech_lens = speech_lens * s_mask + ~s_mask * 2
+                    # text_lens = text_lens * t_mask + ~t_mask * 2
+                    speech_lens[speech_lens <= 1] = 2
+                    text_lens[text_lens <= 1] = 2
+                    # create tensor in which the elements are range of lengths
+                    speech_pos = torch.matmul(
+                        torch.tensor(range(S), dtype=torch.float, device=speech_out.device).unsqueeze(-1), 
+                        torch.ones((1, B), device=speech_out.device)
+                    ) # S x B
+                    text_pos = torch.matmul(
+                        torch.tensor(range(T), dtype=torch.float, device=speech_out.device).unsqueeze(-1), 
+                        torch.ones((1, B), device=speech_out.device)
+                    ) # T x B
+                    speech_pos = speech_pos / (speech_lens - 1).unsqueeze(0) # S x B
+                    text_pos = text_pos / (text_lens - 1).unsqueeze(0) # T x B
+                    speech_pos[speech_pos > 1] = 1e9
+                    text_pos[text_pos > 1] = 1e9
+                    speech_out = torch.cat((speech_out, speech_pos.unsqueeze(-1)), dim=-1)
+                    text_out = torch.cat((text_out, text_pos.unsqueeze(-1)), dim=-1)
+
+                with torch.cuda.amp.autocast(enabled=False):
+                    wass_loss = ot_loss(
+                        speech_out.float().transpose(0, 1).contiguous(),
+                        text_out.float().transpose(0, 1).contiguous()
+                    ).sum()  # use constant weights = 1/number of samples
             else:
                 B, S, T = speech_out.size()[1], speech_out.size()[0], text_out.size()[0]
                 non_padding_speech = (torch.ones(B, S) > 0).to(device=speech_out.device)
@@ -702,12 +744,12 @@ class CtcWassersteinCriterion(CtcCriterion):
                 # un-padded sequence lengths 
                 S = speech_lens[i]
                 T = text_lens[i]
-                speech_feat = speech_out[:S, i, :] # S x D
-                text_feat = text_out[:T, i, :] # T x D
+                speech_feat = speech_out[:S, i, :].float() # S x D
+                text_feat = text_out[:T, i, :].float() # T x D
                 # logging.info(f"speech_feat={speech_feat.size()}, text_feat={text_feat.size()}")
-                if self.ot_position_weight > 0.0 and S > 1 and T > 1:
-                    pos_S = self.ot_position_weight * (torch.tensor(range(S), device=device)/(S-1)).unsqueeze(-1)
-                    pos_T = self.ot_position_weight * (torch.tensor(range(T), device=device)/(T-1)).unsqueeze(-1)
+                if self.ot_position_weight[0] > 0.0 and S > 1 and T > 1:
+                    pos_S = self.ot_position_weight[0] * (torch.tensor(range(S), device=device)/(S-1)).unsqueeze(-1)
+                    pos_T = self.ot_position_weight[0] * (torch.tensor(range(T), device=device)/(T-1)).unsqueeze(-1)
                     # logging.info(f"pos_S: {pos_S.size()}\n{pos_S}")
                     # logging.info(f"pos_T: {pos_T.size()}\n{pos_T}")
                     speech_feat = torch.cat((speech_feat, pos_S), dim=-1)
@@ -715,7 +757,8 @@ class CtcWassersteinCriterion(CtcCriterion):
                     # logging.info(f"speech_feat={speech_feat.size()}, text_feat={text_feat.size()}")
                     # logging.info(f"speech_feat: {speech_feat}")
                     # logging.info(f"text_feat: {text_feat}")
-                wass_loss += ot_loss(speech_feat, text_feat).sum()
+                with torch.cuda.amp.autocast(enabled=False):
+                    wass_loss += ot_loss(speech_feat, text_feat).sum()
         if self.copy_mechanism:
             assert not self.do_bs1 # not implemented for copy mechanism yet
             x1 = encoder_out[0]["embed_src_tokens"][0]
@@ -819,6 +862,7 @@ class CtcWassersteinCriterion(CtcCriterion):
         dtw_loss_sum = utils.item(sum(log.get("dtw_loss", 0) for log in logging_outputs))
         cross_attn_loss = utils.item(sum(log.get("cross_attn_loss", 0) for log in logging_outputs))
         ntokens = utils.item(sum(log.get("ntokens", 0) for log in logging_outputs))
+        ot_position_weight = utils.item(sum(log.get("ot_position_weight", 0.0) for log in logging_outputs) / len(logging_outputs))
         # wass_pos_cost = sum(log.get("wass_pos_cost", 0) for log in logging_outputs)
         # ctc_weight = logging_outputs[0].get("ctc_weight", 0.0)
         reduced_speech_output = utils.item(
@@ -830,7 +874,10 @@ class CtcWassersteinCriterion(CtcCriterion):
         sample_size = utils.item(
             sum(log.get("sample_size", 0) for log in logging_outputs)
         )
-
+        if ot_position_weight != 0.0:
+            metrics.log_scalar(
+                    "ot_position_weight", ot_position_weight
+                )
         metrics.log_scalar(
             "loss", loss_sum / sample_size / math.log(2), sample_size, round=3
         )
