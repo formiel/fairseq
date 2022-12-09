@@ -28,9 +28,17 @@ from geomloss import SamplesLoss
 
 WASS_METRIC_CHOICES = ChoiceEnum(["euclidean", "lp", "dot", "dotexp", "cosine", "none"])
 SAMPLE_LOSS_CHOICES = ChoiceEnum(["sinkhorn", "hausdorff", "energy", "gaussian", "laplacian"])
+MATCHING_LOSS_CHOICES = ChoiceEnum(["none", "ot", "dtw",
+                                    "l2_attentive", "l2_interpolate", "l2_avg",
+                                    "kl_attentive", "kl_interpolate", 
+                                    "adversarial"])
 
 @dataclass
 class CtcWassersteinCriterionConfig(CtcCriterionConfig):
+    match_loss_type: MATCHING_LOSS_CHOICES = field(
+        default="none", 
+        metadata={"help": "type of distance measure between X_i and Y_j"}
+    )
     ctc_weight: float = field(
         default=0.0,
         metadata={"help": "loss = ctc_weight * ctc_loss + attn_weight_speech * attn_loss_speech \
@@ -91,6 +99,14 @@ class CtcWassersteinCriterionConfig(CtcCriterionConfig):
             + attn_weight_text * attn_loss_text \
             + (1 - ctc_weight - attn_weight_speech - attn_weight_text - dtw_weight) * ot_loss \
             + dtw_weight * dtw_loss"},
+    )
+    l2_weight: float = field(
+        default=0.0,
+        metadata={"help": "loss = ctc_weight * ctc_loss + l2_weight * l2_loss"},
+    )
+    kl_weight: float = field(
+        default=0.0,
+        metadata={"help": "loss = ctc_weight * ctc_loss + kl_weight * kl_loss"},
     )
     gamma: float = field(
         default=0.0,
@@ -160,14 +176,18 @@ class CtcWassersteinCriterionConfig(CtcCriterionConfig):
     #     default=0,
     #     metadata={"help": "Epoch at which the position cost decreases to 0"},
     # )
-    use_cross_attentive_loss: bool = field(
-        default=False,
-        metadata={"help": "Use cross-attentive loss"},
-    )
-    use_soft_dtw_loss: bool = field(
-        default=False,
-        metadata={"help": "Use soft DTW loss"},
-    )
+    # use_cross_attentive_loss: bool = field(
+    #     default=False,
+    #     metadata={"help": "Use cross-attentive loss"},
+    # )
+    # car_weight: float = field(
+    #     default=0.0,
+    #     metadata={"help": "loss = ce loss + car_weight * car_loss"},
+    # )
+    # use_soft_dtw_loss: bool = field(
+    #     default=False,
+    #     metadata={"help": "Use soft DTW loss"},
+    # )
     norm_before_ot: bool = field(
         default=False,
         metadata={"help": "Normalize before computing OT"},
@@ -202,6 +222,7 @@ class CtcWassersteinCriterionConfig(CtcCriterionConfig):
 class CtcWassersteinCriterion(CtcCriterion):
     def __init__(self, cfg: CtcWassersteinCriterionConfig, task: FairseqTask):
         super().__init__(cfg, task)
+        self.match_loss_type = str(cfg.match_loss_type)
         self.ctc_weight = cfg.ctc_weight
         self.attn_weight_speech = cfg.attn_weight_speech
         self.attn_weight_text = cfg.attn_weight_text
@@ -211,6 +232,15 @@ class CtcWassersteinCriterion(CtcCriterion):
         self.ot_weight_st_ctc = cfg.ot_weight_st_ctc
         self.ot_weight_mt = cfg.ot_weight_mt
         self.dtw_weight = cfg.dtw_weight
+        self.match_weight = 0.0
+        if "l2" in self.match_loss_type:
+            assert cfg.l2_weight > 0.0
+            assert not cfg.kl_weight > 0.0
+            self.match_weight = cfg.l2_weight
+        if "kl" in self.match_loss_type:
+            assert cfg.kl_weight > 0.0
+            assert not cfg.l2_weight > 0.0
+            self.match_weight = cfg.kl_weight
         self.eps = cfg.label_smoothing
         self.gamma = cfg.gamma
         self.copy_mechanism = cfg.copy_mechanism
@@ -245,8 +275,8 @@ class CtcWassersteinCriterion(CtcCriterion):
         # self.wass_pos_cost = cfg.wass_pos_cost
         # self.wass_pos_epoch = cfg.wass_pos_epoch
         # self.wass_pos_cost_val = cfg.wass_pos_cost
-        self.use_cross_attentive_loss = cfg.use_cross_attentive_loss
-        self.use_soft_dtw_loss = cfg.use_soft_dtw_loss
+        # self.use_cross_attentive_loss = cfg.use_cross_attentive_loss
+        # self.use_soft_dtw_loss = cfg.use_soft_dtw_loss
         logging.info(f"*** Weights in loss function ***")
         logging.info(f"ctc_weight = {self.ctc_weight}, gamma = {self.gamma}")
         logging.info(f"mlm_weight = {self.mlm_weight}")
@@ -256,6 +286,7 @@ class CtcWassersteinCriterion(CtcCriterion):
         logging.info(f"attn_weight_speech = {self.attn_weight_speech}")
         logging.info(f"attn_weight_text = {self.attn_weight_text}")
         logging.info(f"label smoothing eps = {self.eps}")
+        logging.info(f"match_loss_type: {self.match_loss_type}, match_weight = {self.match_weight}")
         # Initialize loss
         if self.dtw_weight > 0.0:
             self.soft_dtw_loss = SoftDTW(use_cuda=True, gamma=0.1)
@@ -332,7 +363,7 @@ class CtcWassersteinCriterion(CtcCriterion):
         
         if not text_mode:
             # if isinstance(encoder_out, tuple) and encoder_out[0] is not None:
-            if self.dtw_weight > 0.0 :
+            if self.match_loss_type == "dtw" and self.dtw_weight > 0.0 :
                 dtw_loss = self.compte_soft_dtw(self.soft_dtw_loss, 
                                                 encoder_out,
                                                 model=model,
@@ -342,7 +373,7 @@ class CtcWassersteinCriterion(CtcCriterion):
                                                 )
                 loss += self.dtw_weight * dtw_loss
                 extra["dtw_loss"] = dtw_loss
-            if self.ot_weight > 0.0:
+            if self.ot_weight > 0.0: # for backward comparability
                 if not self.compute_dist_decoder:
                     assert model.encoder.text_encoder_aux is not None
                 wass_loss = self.compute_wass_loss(self.ot_loss, 
@@ -366,10 +397,30 @@ class CtcWassersteinCriterion(CtcCriterion):
                                                     )
                 loss += self.ot_weight_embed * wass_loss_embed
                 extra["wass_loss_embed"] = wass_loss_embed
-            if self.use_cross_attentive_loss:
-                cross_attn_loss = torch.sum(self.cross_attentive_loss(encoder_out))
-                loss += cross_attn_loss
-                extra["cross_attn_loss"] = cross_attn_loss
+
+            if "attentive" in self.match_loss_type:
+                match_loss = torch.sum(
+                    self.match_length_by_cross_attentive(encoder_out,
+                                            distance_loss=self.match_loss_type.split("_")[0])
+                )
+                loss += self.match_weight * match_loss
+                extra["match_loss"] = match_loss
+            elif "interpolate" in self.match_loss_type:
+                match_loss = torch.sum(
+                    self.match_length_by_interpolate(encoder_out,
+                                            distance_loss=self.match_loss_type.split("_")[0])
+                )
+                loss += self.match_weight * match_loss
+                extra["match_loss"] = match_loss
+            elif "avg" in self.match_loss_type:
+                match_loss = torch.sum(
+                    self.match_length_by_average(encoder_out,
+                                            distance_loss=self.match_loss_type.split("_")[0], 
+                                            avg_method=self.match_loss_type.split("_")[-1])
+                )
+                loss += self.match_weight * match_loss
+                extra["match_loss"] = match_loss
+
             if self.ot_weight_mt > 0.0 or self.ot_weight_st > 0.0:
                 if self.ot_weight_mt > 0.0:
                     assert model.encoder.text_encoder_aux is not None
@@ -447,7 +498,7 @@ class CtcWassersteinCriterion(CtcCriterion):
             "wass_loss_st_ctc": utils.item(extra["wass_loss_st_ctc"].data) if extra["wass_loss_st_ctc"] != 0.0 else 0.0,
             "wass_loss_mt": utils.item(extra["wass_loss_mt"].data) if extra["wass_loss_mt"] != 0.0 else 0.0,
             "dtw_loss": utils.item(extra["dtw_loss"].data) if extra["dtw_loss"] != 0.0 else 0.0,
-            "cross_attn_loss": utils.item(extra["cross_attn_loss"].data) if extra["cross_attn_loss"] != 0.0 else 0.0,
+            "match_loss": utils.item(extra["match_loss"].data) if extra["match_loss"] != 0.0 else 0.0,
             "ntokens": sample["ntokens"],
             "nsentences": sample["id"].numel(),
             "sample_size": net_input["src_tokens"].size(0) if self.sentence_avg else sample["ntokens"],
@@ -797,14 +848,75 @@ class CtcWassersteinCriterion(CtcCriterion):
                         num_classes=lprobs.size()[-1]) # src_txt_tokens: BxT
             # logging.info(f"target: {target.size()}")
             return sdtw(lprobs, target).sum()
+
+
+    def match_length_by_average(self, encoder_out, distance_loss="l2", avg_method="avg"):
+        assert distance_loss == "l2"
+        # T X B X D -> B x T x D
+        speech_states = encoder_out[0]["encoder_out"][0].transpose(0, 1)
+        text_states = encoder_out[-1]["encoder_out"][0].transpose(0, 1)
+
+        if avg_method == "avg":
+            speech_padding_mask = encoder_out[0]["encoder_padding_mask"][0] # B x T
+            speech_lens = encoder_out[0]["input_lengths"][0] # torch.Size([B])
+            speech_avg = (
+                (speech_states * (~speech_padding_mask).float().unsqueeze(-1)).sum(dim=1) / 
+                speech_lens.unsqueeze(-1)
+            ) # B x D
+
+            text_padding_mask = encoder_out[-1]["encoder_padding_mask"][0] # B x T
+            text_lens = encoder_out[1]["src_lengths"][0]
+            text_avg = (
+                (text_states * (~text_padding_mask).float().unsqueeze(-1)).sum(dim=1) / 
+                text_lens
+            ) # B x D
+        else:
+            raise NotImplementedError
+
+        if distance_loss == "l2":
+            cost = (text_avg - speech_avg).norm(dim=-1)
+
+        return cost
+
+
+    def match_length_by_interpolate(self, encoder_out, distance_loss="l2"):
+        # T X B X D -> B x T x D
+        speech_states = encoder_out[0]["encoder_out"][0].transpose(0, 1)
+        text_states = encoder_out[-1]["encoder_out"][0].transpose(0, 1)
+        scale_factor = speech_states.size()[1] / text_states.size()[1]
+        text_states_interpolate = F.interpolate(
+            text_states.transpose(1, 2), scale_factor=scale_factor, mode="linear"
+        ) # B x D x T
+
+        if distance_loss == "l2":
+            cost = (text_states_interpolate.transpose(1,2) - speech_states).norm(dim=-1)
+        elif distance_loss == "kl":
+            text_states_interpolate = utils.log_softmax(text_states_interpolate.transpose(1,2), dim=-1)
+            speech_states = utils.log_softmax(speech_states, dim=-1)
+            cost = F.kl_div(
+                speech_states, 
+                text_states_interpolate, 
+                reduction="batchmean",
+                log_target=True
+            )
+        else:
+            raise NotImplementedError
+
+        return cost
         
 
-    def cross_attentive_loss(self, encoder_out, 
-        teacher_masking=[], student_masking=[], eps=1e-6,
+    def match_length_by_cross_attentive(self, 
+        encoder_out, 
+        eps=1e-6,
         cross_attentive_loss_with_norm=True,
+        distance_loss="l2"
     ):
-        x = encoder_out[0]["encoder_out"][0].transpose(0, 1)  # from T X B X D to B X T X D
-        y = encoder_out[1]["encoder_out"][0].transpose(0, 1)
+        assert distance_loss in ["l2", "kl"]
+        student_masking = encoder_out[0]["encoder_padding_mask"] # speech encoder states
+        teacher_masking = encoder_out[-1]["encoder_padding_mask"] # text encoder states
+        
+        y = encoder_out[0]["encoder_out"][0].transpose(0, 1)
+        x = encoder_out[-1]["encoder_out"][0].transpose(0, 1)  # from T X B X D to B X T X D
         if cross_attentive_loss_with_norm:
             x = x / (x.norm(dim=2, keepdim=True) + eps)
             y = y / (y.norm(dim=2, keepdim=True) + eps)
@@ -837,7 +949,17 @@ class CtcWassersteinCriterion(CtcCriterion):
 
         # no gradient for teacher state
         x_reconstruct_from_x = torch.bmm(x_weights, x).detach()
-        cost = (x_reconstruct_from_x - x_reconstruct_from_y).norm(dim=2)
+        if distance_loss == "l2":
+            cost = (x_reconstruct_from_x - x_reconstruct_from_y).norm(dim=2)
+        elif distance_loss == "kl":
+            x_reconstruct_from_x = utils.log_softmax(x_reconstruct_from_x, dim=-1)
+            x_reconstruct_from_y = utils.log_softmax(x_reconstruct_from_y, dim=-1)
+            cost = F.kl_div(
+                x_reconstruct_from_y, 
+                x_reconstruct_from_x, 
+                reduction="batchmean",
+                log_target=True
+            )
         if teacher_masking != []:
             cost = cost.masked_fill(teacher_masking[0], 0)
 
@@ -860,7 +982,7 @@ class CtcWassersteinCriterion(CtcCriterion):
         wass_loss_st_ctc_sum = utils.item(sum(log.get("wass_loss_st_ctc", 0) for log in logging_outputs))
         wass_loss_mt_sum = utils.item(sum(log.get("wass_loss_mt", 0) for log in logging_outputs))
         dtw_loss_sum = utils.item(sum(log.get("dtw_loss", 0) for log in logging_outputs))
-        cross_attn_loss = utils.item(sum(log.get("cross_attn_loss", 0) for log in logging_outputs))
+        match_loss = utils.item(sum(log.get("match_loss", 0) for log in logging_outputs))
         ntokens = utils.item(sum(log.get("ntokens", 0) for log in logging_outputs))
         ot_position_weight = utils.item(sum(log.get("ot_position_weight", 0.0) for log in logging_outputs) / len(logging_outputs))
         # wass_pos_cost = sum(log.get("wass_pos_cost", 0) for log in logging_outputs)
@@ -923,9 +1045,9 @@ class CtcWassersteinCriterion(CtcCriterion):
             metrics.log_scalar(
                 "dtw_loss", dtw_loss_sum / sample_size / math.log(2), sample_size, round=3
             )
-        if cross_attn_loss != 0:
+        if match_loss != 0:
             metrics.log_scalar(
-                "cross_attn_loss", cross_attn_loss / sample_size / math.log(2), sample_size, round=3
+                "match_loss", match_loss / sample_size / math.log(2), sample_size, round=3
             )
         metrics.log_scalar("reduced_speech_output", reduced_speech_output)
         metrics.log_scalar("ntokens", ntokens)
@@ -1012,4 +1134,3 @@ class CtcWassersteinCriterion(CtcCriterion):
         to True will improves distributed training speed.
         """
         return True
-     
