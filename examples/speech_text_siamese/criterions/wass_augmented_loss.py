@@ -855,16 +855,25 @@ class CtcWassersteinCriterion(CtcCriterion):
         # T X B X D -> B x T x D
         speech_states = encoder_out[0]["encoder_out"][0].transpose(0, 1)
         text_states = encoder_out[-1]["encoder_out"][0].transpose(0, 1)
+        B, T, D = speech_states.size()
 
         if avg_method == "avg":
-            speech_padding_mask = encoder_out[0]["encoder_padding_mask"][0] # B x T
+            speech_padding_mask = encoder_out[0]["encoder_padding_mask"]
+            if len(speech_padding_mask) > 0:
+                speech_padding_mask = speech_padding_mask[0] # B x T
+            else:
+                speech_padding_mask = torch.ones((B, T, 1), device=speech_states.device)
             speech_lens = encoder_out[0]["input_lengths"][0] # torch.Size([B])
             speech_avg = (
                 (speech_states * (~speech_padding_mask).float().unsqueeze(-1)).sum(dim=1) / 
                 speech_lens.unsqueeze(-1)
             ) # B x D
 
-            text_padding_mask = encoder_out[-1]["encoder_padding_mask"][0] # B x T
+            text_padding_mask = encoder_out[-1]["encoder_padding_mask"]
+            if len(text_padding_mask) > 0:
+                text_padding_mask = text_padding_mask[0] # B x T
+            else:
+                text_padding_mask = torch.ones((B, T, 1), device=speech_states.device)
             text_lens = encoder_out[1]["src_lengths"][0]
             text_avg = (
                 (text_states * (~text_padding_mask).float().unsqueeze(-1)).sum(dim=1) / 
@@ -882,16 +891,20 @@ class CtcWassersteinCriterion(CtcCriterion):
     def match_length_by_interpolate(self, encoder_out, distance_loss="l2"):
         # T X B X D -> B x T x D
         speech_states = encoder_out[0]["encoder_out"][0].transpose(0, 1)
+        B, S, D = speech_states.size()
         text_states = encoder_out[-1]["encoder_out"][0].transpose(0, 1)
         scale_factor = speech_states.size()[1] / text_states.size()[1]
+        
         text_states_interpolate = F.interpolate(
             text_states.transpose(1, 2), scale_factor=scale_factor, mode="linear"
-        ) # B x D x T
+        ).transpose(1,2) # B x T x D
+        if S != text_states_interpolate.size()[1]:
+            text_states_interpolate = text_states_interpolate[:, :S, :]
 
         if distance_loss == "l2":
-            cost = (text_states_interpolate.transpose(1,2) - speech_states).norm(dim=-1)
+            cost = (text_states_interpolate - speech_states).norm(dim=-1)
         elif distance_loss == "kl":
-            text_states_interpolate = utils.log_softmax(text_states_interpolate.transpose(1,2), dim=-1)
+            text_states_interpolate = utils.log_softmax(text_states_interpolate, dim=-1)
             speech_states = utils.log_softmax(speech_states, dim=-1)
             cost = F.kl_div(
                 speech_states, 
