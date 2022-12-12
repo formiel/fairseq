@@ -1261,7 +1261,8 @@ class CtcWassersteinCriterion(CtcCriterion):
 
 
 class Discriminator(nn.Module):
-
+    """Adapted from https://github.com/facebookresearch/UnsupervisedMT/blob/main/NMT/src/model/discriminator.py
+    """
     def __init__(self, input_dim, 
             num_outputs=2, dis_layers=3, dis_hidden_dim=1024, dis_dropout=0.1):
         """
