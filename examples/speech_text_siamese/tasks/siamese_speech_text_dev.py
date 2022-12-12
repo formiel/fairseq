@@ -7,7 +7,7 @@ import os
 import logging
 from pathlib import Path
 import numpy as np
-
+import torch
 from fairseq.data import (
     Dictionary, 
     data_utils, 
@@ -161,6 +161,75 @@ class SiameseSpeechTextToTextTaskDev(SpeechTextJointToTextTask):
             f"target dictionary size ({data_cfg.vocab_filename}): " f"{len(tgt_dict):,}")
 
         return cls(args, src_dict, tgt_dict)
+
+    # def train_step(
+    #     self, sample, model, criterion, optimizer, update_num, ignore_grad=False,
+    #     discriminator=None, dis_optimizer=None
+    # ):
+    #     """
+    #     Do forward and backward, and return the loss as computed by *criterion*
+    #     for the given *model* and *sample*.
+
+    #     Args:
+    #         sample (dict): the mini-batch. The format is defined by the
+    #             :class:`~fairseq.data.FairseqDataset`.
+    #         model (~fairseq.models.BaseFairseqModel): the model
+    #         criterion (~fairseq.criterions.FairseqCriterion): the criterion
+    #         optimizer (~fairseq.optim.FairseqOptimizer): the optimizer
+    #         update_num (int): the current update
+    #         ignore_grad (bool): multiply loss by 0 if this is set to True
+
+    #     Returns:
+    #         tuple:
+    #             - the loss
+    #             - the sample size, which is used as the denominator for the
+    #               gradient
+    #             - logging outputs to display while training
+    #     """
+    #     model.eval()
+
+    #     # for _ in range(self.num_discriminator_steps):
+    #     #     # The model/encoder output
+    #     #     with torch.no_grad():
+    #     #         net_input = sample["net_input"]
+    #     #         text_mode = True if "src_tokens" not in net_input else False
+    #     #         masked_tokens = None
+    #     #         if sample["masked_target"] is not None:
+    #     #             masked_tokens = sample["masked_target"].ne(self.pad_idx)
+
+    #     #         net_output, encoder_out = model(
+    #     #             **net_input, 
+    #     #             masked_tokens=masked_tokens,
+    #     #             use_encoder_outputs=True
+    #     #         )
+    #     #         speech_states = encoder_out[0]["encoder_out"][0] # S x B x D
+    #     #         text_states = encoder_out[-1]["encoder_out"][0] # T x B x D
+    #     #         S, B, D = speech_states.size()
+    #     #         T, _, _ = text_states.size()
+
+    #     #     # discriminator
+    #     #     encoded = [speech_states, text_states]
+    #     #     dis_inputs = [x.view(-1, D) for x in encoded] # [SB x D, TB x D]
+    #     #     ntokens = [S*B, T*B]
+    #     #     encoded = torch.cat(dis_inputs, 0) # (SB + TB, D)
+    #     #     predictions = self.discriminator(encoded)
+
+    #     #     fake_y = torch.cat([torch.zeros(sz).fill_(i) for i, sz in enumerate(ntokens)])
+    #     #     fake_y = fake_y.contiguous().long().cuda()
+    #     #     dis_loss = F.cross_entropy(predictions, fake_y)
+            
+    #     #     discriminator_step(model, sample)
+
+    #     model.train()
+    #     model.set_num_updates(update_num)
+    #     with torch.autograd.profiler.record_function("forward"):
+    #         with torch.cuda.amp.autocast(enabled=(isinstance(optimizer, AMPOptimizer))):
+    #             loss, sample_size, logging_output = criterion(model, sample)
+    #     if ignore_grad:
+    #         loss *= 0
+    #     with torch.autograd.profiler.record_function("backward"):
+    #         optimizer.backward(loss)
+    #     return loss, sample_size, logging_output
 
     def load_monolingual_dataset(self, split, epoch=1, combine=False, **kwargs):
         dataset = None

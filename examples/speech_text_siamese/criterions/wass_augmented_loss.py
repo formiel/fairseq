@@ -333,6 +333,7 @@ class CtcWassersteinCriterion(CtcCriterion):
                 "wass_loss_embed": 0.0,
                 "dtw_loss": 0.0, 
                 "cross_attn_loss": 0.0,
+                "match_loss": 0.0,
                 }
         if not text_mode:
             if self.attn_weight_speech > 0.0:
