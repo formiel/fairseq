@@ -5,10 +5,12 @@
 # can be found in the PATENTS file in the same directory.
 
 import math
+import numpy as np
 import logging
 from dataclasses import dataclass, field
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from fairseq import metrics, utils, modules
 from fairseq.criterions import register_criterion
@@ -105,6 +107,10 @@ class CtcWassersteinCriterionConfig(CtcCriterionConfig):
         metadata={"help": "loss = ctc_weight * ctc_loss + l2_weight * l2_loss"},
     )
     kl_weight: float = field(
+        default=0.0,
+        metadata={"help": "loss = ctc_weight * ctc_loss + kl_weight * kl_loss"},
+    )
+    adversarial_weight: float = field(
         default=0.0,
         metadata={"help": "loss = ctc_weight * ctc_loss + kl_weight * kl_loss"},
     )
@@ -216,6 +222,14 @@ class CtcWassersteinCriterionConfig(CtcCriterionConfig):
         default=False,
         metadata={"help": "learn OT position weight"},
     )
+    num_discriminator_steps: int = field(
+        default=1,
+        metadata={"help": "number of discriminator steps"},
+    )
+    detach_text_enc: bool = field(
+        default=False,
+        metadata={"help": "Normalize before computing OT"},
+    )
 
 
 @register_criterion("wasserstein_augmented_loss", dataclass=CtcWassersteinCriterionConfig)
@@ -233,14 +247,24 @@ class CtcWassersteinCriterion(CtcCriterion):
         self.ot_weight_mt = cfg.ot_weight_mt
         self.dtw_weight = cfg.dtw_weight
         self.match_weight = 0.0
+        self.detach_text_enc = cfg.detach_text_enc
+        self.discriminator = None
         if "l2" in self.match_loss_type:
             assert cfg.l2_weight > 0.0
-            assert not cfg.kl_weight > 0.0
+            assert not (cfg.kl_weight > 0.0 or cfg.adversarial_weight > 0.0) 
             self.match_weight = cfg.l2_weight
         if "kl" in self.match_loss_type:
             assert cfg.kl_weight > 0.0
-            assert not cfg.l2_weight > 0.0
+            assert not (cfg.l2_weight > 0.0 or cfg.adversarial_weight > 0.0)
             self.match_weight = cfg.kl_weight
+        if "adversarial" in self.match_loss_type:
+            logging.info(f"***** INIT DISCRIMINATOR *****")
+            assert cfg.adversarial_weight > 0.0
+            assert not (cfg.l2_weight > 0.0 or cfg.kl_weight > 0.0)
+            self.match_weight = cfg.adversarial_weight
+            self.discriminator = Discriminator(input_dim=512) #TODO: bad hard-coded arg!
+            self.num_discriminator_steps = cfg.num_discriminator_steps
+            self.step_counter = 0
         self.eps = cfg.label_smoothing
         self.gamma = cfg.gamma
         self.copy_mechanism = cfg.copy_mechanism
@@ -301,8 +325,7 @@ class CtcWassersteinCriterion(CtcCriterion):
                             blur=self.ot_blur,
                             scaling=self.ot_scaling)
 
-
-    def forward(self, model, sample, reduce=True):
+    def _forward_main(self, model, sample, reduce=True):
         net_input = sample["net_input"]
         text_mode = True if "src_tokens" not in net_input else False
         masked_tokens = None
@@ -320,6 +343,38 @@ class CtcWassersteinCriterion(CtcCriterion):
         else:
             sample_size = (net_input["src_tokens"].size(0) 
                                 if self.sentence_avg else sample["ntokens"])
+        extra = (text_mode, masked_tokens, net_input)
+
+        return net_output, encoder_out, sample_size, extra
+
+    def forward(self, model, sample, reduce=True):
+        
+        if self.discriminator is not None:
+            self.step_counter += 1
+
+            # Discriminator forward
+            if self.step_counter % (self.num_discriminator_steps + 1) != 0:
+                model.eval()
+                with torch.no_grad():
+                    net_output, encoder_out, sample_size, _ = self._forward_main(model, sample, reduce=reduce)
+                
+                discr_loss = self.discriminative_loss(encoder_out)
+                loss = self.match_weight * discr_loss
+                
+                extra = {"discr_loss": discr_loss}
+                logging_output = {
+                    "loss": utils.item(loss.data) if loss != 0.0 else 0.0,  # * sample['ntokens'],
+                    "discr_loss": utils.item(extra["discr_loss"].data),
+                    "ntokens": sample["ntokens"],
+                    "nsentences": sample["id"].numel(),
+                    "sample_size": net_input["src_tokens"].size(0) if self.sentence_avg else sample["ntokens"],
+                }
+
+                return loss, sample_size, logging_output
+
+        # Generator forward        
+        net_output, encoder_out, sample_size, extra = self._forward_main(model, sample, reduce=reduce)
+        text_mode, masked_tokens, net_input = extra
         
         loss = 0.0
         extra = {"ce_loss_speech": 0.0, "nll_loss_speech": 0.0,
@@ -421,7 +476,30 @@ class CtcWassersteinCriterion(CtcCriterion):
                 )
                 loss += self.match_weight * match_loss
                 extra["match_loss"] = match_loss
+            elif "adversarial" in self.match_loss_type:
+                speech_states = encoder_out[0]["encoder_out"][0] # S x B x D
+                text_states = encoder_out[-1]["encoder_out"][0] # T x B x D
+                S, B, D = speech_states.size()
+                T, _, _ = text_states.size()
+                encoded = [speech_states, text_states]
+                # dis_inputs = [x.view(-1, D) for x in encoded] # [SB x D, TB x D]
+                # ntokens = [S*B, T*B]
+                # encoded = torch.cat(dis_inputs, 0) # (SB + TB, D)
+                # predictions = self.discriminator(encoded)
 
+                # fake_y = torch.cat([torch.zeros(sz).fill_(1 - i) for i, sz in enumerate(ntokens)])
+                # fake_y = fake_y.contiguous().long().cuda()
+
+                choice = np.random.randint(0, 2)
+                dis_inputs = encoded[choice].view(-1, D)
+                predictions = self.discriminator(dis_inputs)
+                fake_y = torch.LongTensor(predictions.size(0)).random_(1, 2)
+                fake_y = (fake_y + choice) % 2
+                fake_y = fake_y.cuda()
+
+                gen_loss = F.cross_entropy(predictions, fake_y)
+                loss += self.match_weight * gen_loss
+                extra["generator_loss"] = gen_loss
             if self.ot_weight_mt > 0.0 or self.ot_weight_st > 0.0:
                 if self.ot_weight_mt > 0.0:
                     assert model.encoder.text_encoder_aux is not None
@@ -492,13 +570,13 @@ class CtcWassersteinCriterion(CtcCriterion):
             "ce_loss_text": utils.item(extra["ce_loss_text"].data) if extra["ce_loss_text"] != 0.0 else 0.0,
             "nll_loss_text": utils.item(extra["nll_loss_text"].data) if extra["nll_loss_text"] != 0.0 else 0.0,
             "ctc_loss": utils.item(extra["ctc_loss"].data) if extra["ctc_loss"] != 0.0 else 0.0,
-            "mlm_loss": utils.item(extra["mlm_loss"].data) if extra["mlm_loss"] != 0.0 else 0.0,
+            # "mlm_loss": utils.item(extra["mlm_loss"].data) if extra["mlm_loss"] != 0.0 else 0.0,
             "wass_loss": utils.item(extra["wass_loss"].data) if extra["wass_loss"] != 0.0 else 0.0,
-            "wass_loss_embed": utils.item(extra["wass_loss_embed"].data) if extra["wass_loss_embed"] != 0.0 else 0.0,
-            "wass_loss_st": utils.item(extra["wass_loss_st"].data) if extra["wass_loss_st"] != 0.0 else 0.0,
-            "wass_loss_st_ctc": utils.item(extra["wass_loss_st_ctc"].data) if extra["wass_loss_st_ctc"] != 0.0 else 0.0,
-            "wass_loss_mt": utils.item(extra["wass_loss_mt"].data) if extra["wass_loss_mt"] != 0.0 else 0.0,
-            "dtw_loss": utils.item(extra["dtw_loss"].data) if extra["dtw_loss"] != 0.0 else 0.0,
+            # "wass_loss_embed": utils.item(extra["wass_loss_embed"].data) if extra["wass_loss_embed"] != 0.0 else 0.0,
+            # "wass_loss_st": utils.item(extra["wass_loss_st"].data) if extra["wass_loss_st"] != 0.0 else 0.0,
+            # "wass_loss_st_ctc": utils.item(extra["wass_loss_st_ctc"].data) if extra["wass_loss_st_ctc"] != 0.0 else 0.0,
+            # "wass_loss_mt": utils.item(extra["wass_loss_mt"].data) if extra["wass_loss_mt"] != 0.0 else 0.0,
+            # "dtw_loss": utils.item(extra["dtw_loss"].data) if extra["dtw_loss"] != 0.0 else 0.0,
             "match_loss": utils.item(extra["match_loss"].data) if extra["match_loss"] != 0.0 else 0.0,
             "ntokens": sample["ntokens"],
             "nsentences": sample["id"].numel(),
@@ -508,6 +586,8 @@ class CtcWassersteinCriterion(CtcCriterion):
             # "ctc_weight": self.ctc_weight,
             # "reduced_speech_output": net_output[-1].get("reduced_speech_output", 0.0),
         }
+        if self.discriminator is not None:
+            logging_output["generator_loss"] = utils.item(extra["generator_loss"].data)
 
         if not model.training and self.ctc_weight > 0.0:
             logging_output = self.compute_wer(
@@ -749,6 +829,9 @@ class CtcWassersteinCriterion(CtcCriterion):
                     text_pos[text_pos > 1] = 1e9
                     speech_out = torch.cat((speech_out, speech_pos.unsqueeze(-1)), dim=-1)
                     text_out = torch.cat((text_out, text_pos.unsqueeze(-1)), dim=-1)
+                
+                if self.detach_text_enc:
+                    text_out = text_out.detach()
 
                 with torch.cuda.amp.autocast(enabled=False):
                     wass_loss = ot_loss(
@@ -849,6 +932,27 @@ class CtcWassersteinCriterion(CtcCriterion):
                         num_classes=lprobs.size()[-1]) # src_txt_tokens: BxT
             # logging.info(f"target: {target.size()}")
             return sdtw(lprobs, target).sum()
+
+
+    def discriminative_loss(self, encoder_out):
+        speech_states = encoder_out[0]["encoder_out"][0] # S x B x D
+        text_states = encoder_out[-1]["encoder_out"][0] # T x B x D
+        S, B, D = speech_states.size()
+        T, _, _ = text_states.size()
+
+        # discriminator
+        encoded = [speech_states, text_states]
+        dis_inputs = [x.view(-1, D) for x in encoded] # [SB x D, TB x D]
+        ntokens = [S*B, T*B]
+        encoded = torch.cat(dis_inputs, 0) # (SB + TB, D)
+        predictions = self.discriminator(encoded)
+
+        dis_target = torch.cat([torch.zeros(sz).fill_(i) for i, sz in enumerate(ntokens)])
+        dis_target = dis_target.contiguous().long().cuda()
+
+        loss = F.cross_entropy(predictions, dis_target)
+        # loss = F.binary_cross_entropy_with_logits(predictions, dis_target)
+        return loss
 
 
     def match_length_by_average(self, encoder_out, distance_loss="l2", avg_method="avg"):
@@ -1002,6 +1106,8 @@ class CtcWassersteinCriterion(CtcCriterion):
         wass_loss_mt_sum = utils.item(sum(log.get("wass_loss_mt", 0) for log in logging_outputs))
         dtw_loss_sum = utils.item(sum(log.get("dtw_loss", 0) for log in logging_outputs))
         match_loss = utils.item(sum(log.get("match_loss", 0) for log in logging_outputs))
+        discr_loss = utils.item(sum(log.get("discr_loss", 0) for log in logging_outputs))
+        generator_loss = utils.item(sum(log.get("generator_loss", 0) for log in logging_outputs))
         ntokens = utils.item(sum(log.get("ntokens", 0) for log in logging_outputs))
         ot_position_weight = utils.item(sum(log.get("ot_position_weight", 0.0) for log in logging_outputs) / len(logging_outputs))
         # wass_pos_cost = sum(log.get("wass_pos_cost", 0) for log in logging_outputs)
@@ -1067,6 +1173,14 @@ class CtcWassersteinCriterion(CtcCriterion):
         if match_loss != 0:
             metrics.log_scalar(
                 "match_loss", match_loss / sample_size / math.log(2), sample_size, round=3
+            )
+        if discr_loss != 0:
+            metrics.log_scalar(
+                "discr_loss", match_loss / sample_size / math.log(2), sample_size, round=3
+            )
+        if generator_loss != 0:
+            metrics.log_scalar(
+                "generator_loss", match_loss / sample_size / math.log(2), sample_size, round=3
             )
         metrics.log_scalar("reduced_speech_output", reduced_speech_output)
         metrics.log_scalar("ntokens", ntokens)
@@ -1153,3 +1267,36 @@ class CtcWassersteinCriterion(CtcCriterion):
         to True will improves distributed training speed.
         """
         return True
+
+
+class Discriminator(nn.Module):
+    """Adapted from https://github.com/facebookresearch/UnsupervisedMT/blob/main/NMT/src/model/discriminator.py
+    """
+    def __init__(self, input_dim, 
+            num_outputs=2, dis_layers=3, dis_hidden_dim=1024, dis_dropout=0.1):
+        """
+        Discriminator initialization.
+        """
+        super(Discriminator, self).__init__()
+        self.num_outputs = num_outputs
+        self.input_dim = input_dim
+        self.dis_layers = dis_layers
+        self.dis_hidden_dim = dis_hidden_dim
+        self.dis_dropout = dis_dropout
+
+        layers = []
+        for i in range(self.dis_layers + 1):
+            if i == 0:
+                input_dim = self.input_dim
+            else:
+                input_dim = self.dis_hidden_dim
+            output_dim = self.dis_hidden_dim if i < self.dis_layers else self.num_outputs
+
+            layers.append(nn.Linear(input_dim, output_dim))
+            if i < self.dis_layers:
+                layers.append(nn.LeakyReLU(0.2))
+                layers.append(nn.Dropout(self.dis_dropout))
+        self.layers = nn.Sequential(*layers)
+
+    def forward(self, input):
+        return self.layers(input)

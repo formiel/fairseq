@@ -49,7 +49,7 @@ class MUSTC(Dataset):
     """
 
     SPLITS = ["train", "dev", "tst-COMMON", "tst-HE"]
-    LANGUAGES = ["de", "es", "fr", "it", "nl", "pt", "ro", "ru"]
+    LANGUAGES = ["de", "es", "fr", "it", "nl", "pt", "ro", "ru", "ar", "cs", "fa", "tr", "vi", "zh"]
 
     def __init__(self, root: str, lang: str, split: str, speed_pertub=1.0) -> None:
         assert split in self.SPLITS and lang in self.LANGUAGES

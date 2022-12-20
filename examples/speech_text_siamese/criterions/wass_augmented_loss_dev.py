@@ -226,6 +226,10 @@ class CtcWassersteinCriterionConfig(CtcCriterionConfig):
         default=1,
         metadata={"help": "number of discriminator steps"},
     )
+    detach_text_enc: bool = field(
+        default=False,
+        metadata={"help": "Normalize before computing OT"},
+    )
 
 
 @register_criterion("wasserstein_augmented_loss_dev", dataclass=CtcWassersteinCriterionConfig)
@@ -243,6 +247,8 @@ class CtcWassersteinCriterion(CtcCriterion):
         self.ot_weight_mt = cfg.ot_weight_mt
         self.dtw_weight = cfg.dtw_weight
         self.match_weight = 0.0
+        self.detach_text_enc = cfg.detach_text_enc
+        self.discriminator = None
         if "l2" in self.match_loss_type:
             assert cfg.l2_weight > 0.0
             assert not (cfg.kl_weight > 0.0 or cfg.adversarial_weight > 0.0) 
@@ -346,25 +352,25 @@ class CtcWassersteinCriterion(CtcCriterion):
         if self.discriminator is not None:
             self.step_counter += 1
 
-        # Discriminator forward
-        if self.step_counter % (self.num_discriminator_steps + 1) != 0:
-            model.eval()
-            with torch.no_grad():
-                net_output, encoder_out, sample_size, _ = self._forward_main(model, sample, reduce=reduce)
-            
-            discr_loss = self.discriminative_loss(encoder_out)
-            loss = self.match_weight * discr_loss
-            
-            extra = {"discr_loss": discr_loss}
-            logging_output = {
-                "loss": utils.item(loss.data) if loss != 0.0 else 0.0,  # * sample['ntokens'],
-                "discr_loss": utils.item(extra["discr_loss"].data),
-                "ntokens": sample["ntokens"],
-                "nsentences": sample["id"].numel(),
-                "sample_size": net_input["src_tokens"].size(0) if self.sentence_avg else sample["ntokens"],
-            }
+            # Discriminator forward
+            if self.step_counter % (self.num_discriminator_steps + 1) != 0:
+                model.eval()
+                with torch.no_grad():
+                    net_output, encoder_out, sample_size, _ = self._forward_main(model, sample, reduce=reduce)
+                
+                discr_loss = self.discriminative_loss(encoder_out)
+                loss = self.match_weight * discr_loss
+                
+                extra = {"discr_loss": discr_loss}
+                logging_output = {
+                    "loss": utils.item(loss.data) if loss != 0.0 else 0.0,  # * sample['ntokens'],
+                    "discr_loss": utils.item(extra["discr_loss"].data),
+                    "ntokens": sample["ntokens"],
+                    "nsentences": sample["id"].numel(),
+                    "sample_size": net_input["src_tokens"].size(0) if self.sentence_avg else sample["ntokens"],
+                }
 
-            return loss, sample_size, logging_output
+                return loss, sample_size, logging_output
 
         # Generator forward        
         net_output, encoder_out, sample_size, extra = self._forward_main(model, sample, reduce=reduce)
@@ -823,6 +829,9 @@ class CtcWassersteinCriterion(CtcCriterion):
                     text_pos[text_pos > 1] = 1e9
                     speech_out = torch.cat((speech_out, speech_pos.unsqueeze(-1)), dim=-1)
                     text_out = torch.cat((text_out, text_pos.unsqueeze(-1)), dim=-1)
+                
+                if self.detach_text_enc:
+                    text_out = text_out.detach()
 
                 with torch.cuda.amp.autocast(enabled=False):
                     wass_loss = ot_loss(
