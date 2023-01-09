@@ -76,11 +76,13 @@ class CTCDecoder(FairseqDecoder):
         self,
         encoder_out: Optional[Dict[str, List[Tensor]]],
     ):
-        if encoder_out["severed_encoder_out"][0] is not None:
-            x = encoder_out["severed_encoder_out"][0]
-            # logging.info(f"x: {x.size()}")
-        else:
+        if "severed_encoder_out" not in encoder_out: # backward comptability
             x = encoder_out["encoder_out"][0]
+        else:
+            if encoder_out["severed_encoder_out"][0] is not None:
+                x = encoder_out["severed_encoder_out"][0]
+            else:
+                x = encoder_out["encoder_out"][0]
         x = x.transpose(0, 1) # B x T x D
         x = self.proj(self.dropout_module(x))
         return x.transpose(0, 1), {"attn": [], "inner_states": None}
