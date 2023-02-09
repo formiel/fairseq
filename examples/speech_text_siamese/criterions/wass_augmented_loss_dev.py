@@ -289,8 +289,9 @@ class CtcWassersteinCriterion(CtcCriterion):
         self.norm_before_ot = cfg.norm_before_ot
         self.ot_position_weight = [cfg.ot_position_weight]
         self.ot_position_weight_trainable = cfg.ot_position_weight_trainable
+        logging.info(f"** ot_position_weight = {cfg.ot_position_weight} **")
         if self.norm_before_ot or (cfg.ot_position_weight > 0.0):
-            # assert self.do_bs1
+            assert self.do_bs1
             logging.info(f"** self.do_bs1 = {self.do_bs1} **")
         if self.ot_position_weight_trainable and cfg.ot_position_weight > 0.0:
             logging.info("** Learn OT position weight **")

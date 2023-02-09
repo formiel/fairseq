@@ -1109,8 +1109,10 @@ class SiameseST2TTransformerModel(FairseqEncoderDecoderModel):
                 if not ("encoder_attn" in n) and not ("layer_norm" in n and not "self_attn_layer_norm" in n):
                     logging.info(f"- freezing {n}")
                     p.requires_grad = False
-        
-        if num_outputs >= 2:
+
+        if num_outputs == 0:
+            decoder = DummyDecoder(task.source_dictionary)
+        elif num_outputs >= 2:
             decoder = MultiOutputDecoder(task.target_dictionary,
                                          speech_decoder, 
                                          ctc_module, 
