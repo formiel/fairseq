@@ -45,7 +45,7 @@ We follow the steps for data preparation provided by [`fairseq S2T`](https://git
 
 The commands to prepare data for MuST-C, for example, are as follows.
 
-* Prepare the `.tsv` files for the **ST task**. 
+* Prepare the `.tsv` files for the *ST task*. 
 ```bash
 python examples/speech_to_text/prep_mustc_data.py \
         --data-root ${MUSTC_ROOT} --task st \
@@ -56,7 +56,7 @@ python examples/speech_to_text/prep_mustc_data.py \
 ```
 This results in `${SPLIT}_st.tsv` files (where `${SPLIT}` is `train`, `dev`, `tst-COMMON`, and `tst-HE`) together with the configuration and vocabulary files. Each `.tsv` file has the following collumns: `id   audio   n_frames    tgt_text    speaker src_text    src_lang    tgt_lang`.
 
-* Prepare the `.tsv` files for the **ASR pre-training task** using SentencePiece vocabulary.
+* Prepare the `.tsv` files for the *ASR pre-training task* using SentencePiece vocabulary.
 ```bash
 python examples/speech_to_text/prep_mustc_data.py \
         --data-root ${MUSTC_ROOT} --task asr \
@@ -67,7 +67,7 @@ python examples/speech_to_text/prep_mustc_data.py \
 ```
 This command produces similar files as the above, but target text (`tgt_text`) is the transcripts instead of translation and the suffixes of the files are `_asr` instead of `_st`. 
 
-* Get the phoneme representations of source text for the **ASR pre-training task** using phoneme vocabulary. 
+* Get the phoneme representations of source text for the *ASR pre-training task* using phoneme vocabulary. 
     - First extract the source text from the field `src_text` of the `.tsv` files obtained from the step above. This can be done in Python for example as below.
     ```python
     from examples.speech_to_text.data_utils import load_df_from_tsv
