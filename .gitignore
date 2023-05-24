@@ -134,4 +134,5 @@ experimental/*
 
 # Weights and Biases logs
 wandb/
+*_dev.py
 _*
