@@ -14,10 +14,10 @@ This is the codebase for the paper [Pre-training for Speech Translation: CTC Mee
 ## 1.1. Optimal Transport for Pre-training
 Our main idea is to train the speech encoder to generate representations that are close to those produced by a text encoder. The challenge here is that, given the same sentence, its speech features typically have a *much longer sequence length* than its text features, which makes it difficult to *compare* them. The Wasserstein distance from optimal transport (OT) turns out to be a suitable solution.
 
-![siamese_pt](figures/speech_text_alignment.png)
+![speech_text_alignment](figures/speech_text_alignment.png)
 
 ## 1.2. Main results
-![results_in_figure](figures/all_results_in_figures.png)
+![all_results_in_figures](figures/all_results_in_figures.png)
 
 The two tables below show the detailed results on MuST-C test set and summary of the results for CoVoST-2 test sets.
 
