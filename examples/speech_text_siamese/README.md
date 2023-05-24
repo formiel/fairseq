@@ -17,7 +17,7 @@ Our main idea is to train the speech encoder to generate representations that ar
 ![speech_text_alignment](figures/speech_text_alignment.png)
 
 ## 1.2. Main results
-![results_in_figures](figures/results_in_figures.png)
+![results_in_figures](figures/all_results_in_figure.png)
 
 The two tables below show the detailed results on MuST-C test set and summary of the results for CoVoST-2 test sets.
 
