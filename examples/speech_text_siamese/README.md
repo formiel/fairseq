@@ -1,6 +1,6 @@
 # Pre-training for Speech Translation: CTC Meets Optimal Transport
 
-This is the codebase for the paper [Pre-training for Speech Translation: CTC Meets Optimal Transport](https://arxiv.org/abs/2301.11716), accepted at Fortieth International Conference on Machine Learning (ICML 2023, oral presentation). Our implementation is based on [fairseq](https://github.com/facebookresearch/fairseq).
+This is the codebase for the paper [Pre-training for Speech Translation: CTC Meets Optimal Transport](https://arxiv.org/abs/2301.11716), accepted at Fortieth International Conference on Machine Learning (ICML 2023, oral presentation). Our implementation is based on [fairseq](https://github.com/facebookresearch/fairseq) and `fairseq S2T` toolkit.
 
 # Table of Contents
 1. [Overview](#1-overview)
