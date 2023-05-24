@@ -21,7 +21,6 @@ Our main idea is to train the speech encoder to generate representations that ar
 
 The two tables below show the detailed results on MuST-C test set and summary of the results for CoVoST-2 test sets.
 
-**Table 1: Performance on MuST-C test set.**
 <table>
     <thead>
       <tr>
@@ -136,8 +135,8 @@ The two tables below show the detailed results on MuST-C test set and summary of
   </tbody>
 </table>
 
+**Table 1: Performance on MuST-C test set.**
 
-**Table 2: BLEU on CoVoST-2 set.** `X`<sup>**</sup>`->En` denotes the average excluding those of very low-resource, as discussed in Section 6.3 of the paper and those not reported in Table 3 Wang et al. [1]. See Tables 18 and 13 (Appendix E) in the paper for detailed results. The reported results are obtained using large model for `En->X` and medium model for `X->En`, which is better than the large one (Wang et al., 2020).
 
 <table>
     <tr>
@@ -173,6 +172,9 @@ The two tables below show the detailed results on MuST-C test set and summary of
 </table>
 [1] Wang et al., 2020. Covost 2 and massively
 multilingual speech-to-text translation.
+
+**Table 2: BLEU on CoVoST-2 set.** `X`<sup>**</sup>`->En` denotes the average excluding those of very low-resource, as discussed in Section 6.3 of the paper and those not reported in Table 3 Wang et al. [1]. See Tables 18 and 13 (Appendix E) in the paper for detailed results. The reported results are obtained using large model for `En->X` and medium model for `X->En`, which is better than the large one (Wang et al., 2020).
+
 
 # 2. Pre-trained models
 All pre-trained models, including [MT](#21-mt-models), [ASR](#22-asr-models), and [ST](#23-st-models), are made publicly available for download. 
