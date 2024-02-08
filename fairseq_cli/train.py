@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # We need to setup root logger before importing any fairseq libraries.
 logging.basicConfig(
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    format="%(asctime)s | %(levelname)s | %(name)s | %(lineno)d | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     level=os.environ.get("LOGLEVEL", "INFO").upper(),
     stream=sys.stdout,
