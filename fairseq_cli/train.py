@@ -13,6 +13,8 @@ import math
 import os
 import sys
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections import deque
+from time import time
 
 # We need to setup root logger before importing any fairseq libraries.
 logging.basicConfig(
@@ -42,6 +44,9 @@ from fairseq.trainer import Trainer
 
 
 def main(cfg: FairseqConfig) -> None:
+    # record the starting time for time limit
+    start_time = time()
+
     if isinstance(cfg, argparse.Namespace):
         cfg = convert_namespace_to_omegaconf(cfg)
 
@@ -192,6 +197,11 @@ def main(cfg: FairseqConfig) -> None:
 
     train_meter = meters.StopwatchMeter()
     train_meter.start()
+    # We use the average running time of the last 3 epochs as an estimate for the next epoch
+    epoch_time_queue = deque(maxlen=3)
+    time_limit = getattr(cfg.common, "time_limit", -1)
+    reach_time_limit = False
+
     while epoch_itr.next_epoch_idx <= max_epoch:
         if lr <= cfg.optimization.stop_min_lr:
             logger.info(
@@ -201,10 +211,47 @@ def main(cfg: FairseqConfig) -> None:
             )
             break
 
+        # Record the start time
+        start_epoch_time = time()
+
         # train for one epoch
         valid_losses, should_stop = train(cfg, trainer, task, epoch_itr)
         if should_stop:
             break
+        
+        # check for time limit if remaining time not enough to train one epoch
+        if time_limit > 0: # time_limit should be in minutes, e.g. 1195 means 19 hours and 55 minutes
+            # epoch time in minutes
+            epoch_time = (time() - start_epoch_time)/60
+            # average duration of the last 3 epochs
+            epoch_time_queue.append(epoch_time)
+            avg_time = sum(epoch_time_queue)/len(epoch_time_queue)
+            # if the next epoch likely surpasses the time limit, then stop here
+            estimated_next_total_time = (time() - start_time)/60 + avg_time
+            # Distributed training: taking the highest estimate from all processes
+            if cfg.common.model_parallel_size > 1:
+                estimated_times = [
+                    torch.tensor([0.0], device="cuda:0") for _ in range(
+                        cfg.distributed_training.distributed_world_size
+                    )
+                ]
+                torch.distributed.all_gather(
+                    estimated_times, torch.tensor([estimated_next_total_time], device="cuda:0")
+                )
+                max_estimated_time = torch.cat(estimated_times).max().item()
+            else:
+                max_estimated_time = estimated_next_total_time
+
+            if max_estimated_time > time_limit:
+                logger.info(
+                f"Stopping training because estimated time after next epoch "
+                f"({round(max_estimated_time, 2)} minutes) "
+                f"is greater than time limit ({time_limit} minutes)."
+            )
+                reach_time_limit = True
+                break
+            else:
+                logger.info(f"Training is within time limit. Continue ...")
 
         # only use first validation loss to update the learning rate
         lr = trainer.lr_step(epoch_itr.epoch, valid_losses[0])
@@ -217,7 +264,10 @@ def main(cfg: FairseqConfig) -> None:
             disable_iterator_cache=task.has_sharded_data("train"),
         )
     train_meter.stop()
-    logger.info("done training in {:.1f} seconds".format(train_meter.sum))
+    if not reach_time_limit:
+        logger.info("done training in {:.1f} seconds".format(train_meter.sum))
+    else:
+        logger.info(f"Should resume training as this job reaches time limit.")
 
     # ioPath implementation to wait for all asynchronous file writes to complete.
     if cfg.checkpoint.write_checkpoints_asynchronously:

@@ -250,6 +250,13 @@ class CommonConfig(FairseqDataclass):
             "help": "path to run plasma_store, defaults to /tmp/plasma. Paths outside /tmp tend to fail."
         },
     )
+    time_limit: int = field(
+        default=-1,
+        metadata={
+            "help": "Time limit (in minutes) for each training job. If set, then training will be \
+            stopped if the estimated time for next epoch exceeds the remaining time"
+        },
+    )
 
 
 @dataclass
