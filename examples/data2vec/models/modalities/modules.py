@@ -340,7 +340,8 @@ class AltAttention(nn.Module):
         self.scale = qk_scale or head_dim ** -0.5
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
-        self.attn_drop = nn.Dropout(attn_drop)
+        # self.attn_drop = nn.Dropout(attn_drop)
+        self.attn_drop = attn_drop # using pytorch 2's sdpa
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
@@ -366,30 +367,34 @@ class AltAttention(nn.Module):
 
         dtype = q.dtype
 
-        if self.cosine_attention:
-            # cosine attention
-            attn = F.normalize(q, dim=-1) @ F.normalize(k, dim=-1).transpose(-2, -1)
-            logit_scale = torch.clamp(
-                self.logit_scale, max=torch.log(torch.tensor(1.0 / 0.01))
-            ).exp()
-            attn = attn * logit_scale
-        else:
-            q = q * self.scale
-            attn = q @ k.transpose(-2, -1)
+        # if self.cosine_attention:
+        #     # cosine attention
+        #     attn = F.normalize(q, dim=-1) @ F.normalize(k, dim=-1).transpose(-2, -1)
+        #     logit_scale = torch.clamp(
+        #         self.logit_scale, max=torch.log(torch.tensor(1.0 / 0.01))
+        #     ).exp()
+        #     attn = attn * logit_scale
+        # else:
+        #     q = q * self.scale
+        #     attn = q @ k.transpose(-2, -1) # B x C//H x L x L
 
-        if alibi_bias is not None:
-            attn = attn.type_as(alibi_bias)
-            attn[:, : alibi_bias.size(1)] += alibi_bias
+        # if alibi_bias is not None:
+        #     attn = attn.type_as(alibi_bias)
+        #     attn[:, : alibi_bias.size(1)] += alibi_bias
 
-        if padding_mask is not None and padding_mask.any():
-            attn = attn.masked_fill(
-                padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool),
-                float("-inf"),
-            )
+        # if padding_mask is not None and padding_mask.any():
+        #     attn = attn.masked_fill(
+        #         padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool),
+        #         float("-inf"),
+        #     )
 
-        attn = attn.softmax(dim=-1, dtype=torch.float32).to(dtype=dtype)
-        attn = self.attn_drop(attn)
-        x = (attn @ v).transpose(1, 2)  #
+        # attn = attn.softmax(dim=-1, dtype=torch.float32).to(dtype=dtype)
+        # attn = self.attn_drop(attn)
+        # x = (attn @ v).transpose(1, 2)  #
+        
+        # Using pytorch 2's sdpa instead of the above 
+        x = F.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop)
+
         x = x.reshape(B, N, C)
         x = self.proj(x)
         x = self.proj_drop(x)
