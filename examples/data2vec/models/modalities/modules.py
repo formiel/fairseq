@@ -341,9 +341,10 @@ class AltAttention(nn.Module):
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         # self.attn_drop = nn.Dropout(attn_drop)
-        self.attn_drop = attn_drop # using pytorch 2's sdpa
+        self.attn_drop = attn_drop
         self.proj = nn.Linear(dim, dim)
-        self.proj_drop = nn.Dropout(proj_drop)
+        # self.proj_drop = nn.Dropout(proj_drop)
+        self.proj_drop = proj_drop
 
         self.cosine_attention = cosine_attention
 
@@ -352,7 +353,7 @@ class AltAttention(nn.Module):
                 torch.log(10 * torch.ones((num_heads, 1, 1))), requires_grad=True
             )
 
-    def forward(self, x, padding_mask=None, alibi_bias=None):
+    def forward(self, x, padding_mask=None, alibi_bias=None, fast=True):
         B, N, C = x.shape
         qkv = (
             self.qkv(x)
@@ -367,37 +368,49 @@ class AltAttention(nn.Module):
 
         dtype = q.dtype
 
-        # if self.cosine_attention:
-        #     # cosine attention
-        #     attn = F.normalize(q, dim=-1) @ F.normalize(k, dim=-1).transpose(-2, -1)
-        #     logit_scale = torch.clamp(
-        #         self.logit_scale, max=torch.log(torch.tensor(1.0 / 0.01))
-        #     ).exp()
-        #     attn = attn * logit_scale
-        # else:
-        #     q = q * self.scale
-        #     attn = q @ k.transpose(-2, -1) # B x C//H x L x L
+        if not fast:
+            if self.cosine_attention:
+                # cosine attention
+                attn = F.normalize(q, dim=-1) @ F.normalize(k, dim=-1).transpose(-2, -1)
+                logit_scale = torch.clamp(
+                    self.logit_scale, max=torch.log(torch.tensor(1.0 / 0.01))
+                ).exp()
+                attn = attn * logit_scale
+            else:
+                q = q * self.scale
+                attn = q @ k.transpose(-2, -1) # B x C//H x L x L
 
-        # if alibi_bias is not None:
-        #     attn = attn.type_as(alibi_bias)
-        #     attn[:, : alibi_bias.size(1)] += alibi_bias
+            if alibi_bias is not None:
+                attn = attn.type_as(alibi_bias)
+                attn[:, : alibi_bias.size(1)] += alibi_bias
 
-        # if padding_mask is not None and padding_mask.any():
-        #     attn = attn.masked_fill(
-        #         padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool),
-        #         float("-inf"),
-        #     )
+            if padding_mask is not None and padding_mask.any():
+                attn = attn.masked_fill(
+                    padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool),
+                    float("-inf"),
+                )
 
-        # attn = attn.softmax(dim=-1, dtype=torch.float32).to(dtype=dtype)
-        # attn = self.attn_drop(attn)
-        # x = (attn @ v).transpose(1, 2)  #
-        
-        # Using pytorch 2's sdpa instead of the above 
-        x = F.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop)
+            attn = attn.softmax(dim=-1, dtype=torch.float32).to(dtype=dtype)
+            # attn = self.attn_drop(attn)
+            attn = F.dropout(attn, p=self.attn_drop)
+            x = (attn @ v).transpose(1, 2)
+        else:
+            # Using pytorch 2's sdpa
+            assert not self.cosine_attention, "Not support cosine attention yet"
+            # Integrate padding_mask and alibi_bias
+            alibi_bias = alibi_bias.masked_fill(
+                    padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool),
+                    float("-inf"),
+                )
+            x = F.scaled_dot_product_attention(q, k, v, 
+                                attn_mask=alibi_bias, 
+                                dropout_p=self.attn_drop,
+                                scale=self.scale).transpose(1, 2)
 
         x = x.reshape(B, N, C)
         x = self.proj(x)
-        x = self.proj_drop(x)
+        # x = self.proj_drop(x)
+        x = F.dropout(x, p=self.proj_drop)
         return x
 
 
@@ -420,9 +433,11 @@ class EncDecAttention(nn.Module):
 
         self.q_proj = nn.Linear(q_dim, q_dim, bias=qkv_bias)
         self.kv_proj = nn.Linear(kv_dim, 2 * q_dim, bias=qkv_bias)
-        self.attn_drop = nn.Dropout(attn_drop)
+        # self.attn_drop = nn.Dropout(attn_drop)
+        self.attn_drop = attn_drop
         self.proj = nn.Linear(q_dim, q_dim)
-        self.proj_drop = nn.Dropout(proj_drop)
+        # self.proj_drop = nn.Dropout(proj_drop)
+        self.proj_drop = proj_drop
 
         self.cosine_attention = cosine_attention
 
@@ -431,7 +446,7 @@ class EncDecAttention(nn.Module):
                 torch.log(10 * torch.ones((num_heads, 1, 1))), requires_grad=True
             )
 
-    def forward(self, q, kv, padding_mask=None, alibi_bias=None):
+    def forward(self, q, kv, padding_mask=None, alibi_bias=None, fast=True):
         B, N, C = q.shape
 
         q = (
@@ -451,33 +466,48 @@ class EncDecAttention(nn.Module):
 
         dtype = q.dtype
 
-        if self.cosine_attention:
-            # cosine attention
-            attn = F.normalize(q, dim=-1) @ F.normalize(k, dim=-1).transpose(-2, -1)
-            logit_scale = torch.clamp(
-                self.logit_scale, max=torch.log(torch.tensor(1.0 / 0.01))
-            ).exp()
-            attn = attn * logit_scale
+        if not fast:
+            if self.cosine_attention:
+                # cosine attention
+                attn = F.normalize(q, dim=-1) @ F.normalize(k, dim=-1).transpose(-2, -1)
+                logit_scale = torch.clamp(
+                    self.logit_scale, max=torch.log(torch.tensor(1.0 / 0.01))
+                ).exp()
+                attn = attn * logit_scale
+            else:
+                q = q * self.scale
+                attn = q @ k.transpose(-2, -1)
+
+            if alibi_bias is not None:
+                attn = attn.type_as(alibi_bias)
+                attn[:, : alibi_bias.size(1)] += alibi_bias
+
+            if padding_mask is not None and padding_mask.any():
+                attn = attn.masked_fill(
+                    padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool),
+                    float("-inf"),
+                )
+
+            attn = attn.softmax(dim=-1, dtype=torch.float32).to(dtype=dtype)
+            # attn = self.attn_drop(attn)
+            attn = F.dropout(attn, p=self.attn_drop)
+            x = (attn @ v).transpose(1, 2)  #
         else:
-            q = q * self.scale
-            attn = q @ k.transpose(-2, -1)
+            assert not self.cosine_attention, "Not support cosine attention yet"
+            # Integrate padding_mask and alibi_bias
+            alibi_bias = alibi_bias.masked_fill(
+                    padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool),
+                    float("-inf"),
+                )
+            x = F.scaled_dot_product_attention(q, k, v, 
+                                attn_mask=alibi_bias, 
+                                dropout_p=self.attn_drop,
+                                scale=self.scale).transpose(1, 2)
 
-        if alibi_bias is not None:
-            attn = attn.type_as(alibi_bias)
-            attn[:, : alibi_bias.size(1)] += alibi_bias
-
-        if padding_mask is not None and padding_mask.any():
-            attn = attn.masked_fill(
-                padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool),
-                float("-inf"),
-            )
-
-        attn = attn.softmax(dim=-1, dtype=torch.float32).to(dtype=dtype)
-        attn = self.attn_drop(attn)
-        x = (attn @ v).transpose(1, 2)  #
         x = x.reshape(B, N, C)
         x = self.proj(x)
-        x = self.proj_drop(x)
+        # x = self.proj_drop(x)
+        x = F.dropout(x, p=self.proj_drop)
         return x
 
 

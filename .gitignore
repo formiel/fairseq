@@ -145,4 +145,5 @@ _*
 *dev.py
 
 # experimental configurations for project
-examples/pantagruel/configs/*
+examples/pantagruel/configs
+examples/pantagruel/debug
