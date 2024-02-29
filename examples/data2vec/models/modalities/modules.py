@@ -402,9 +402,12 @@ class AltAttention(nn.Module):
                 alibi_bias = alibi_bias.masked_fill(
                         padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool),
                         float("-inf"),
-                    )
+                    ).to(dtype=dtype)
+            else:
+                if alibi_bias is not None:
+                    alibi_bias = alibi_bias.to(dtype=dtype)
             x = F.scaled_dot_product_attention(q, k, v, 
-                                attn_mask=alibi_bias.to(dtype=dtype), 
+                                attn_mask=alibi_bias, 
                                 dropout_p=self.attn_drop,
                                 scale=self.scale).transpose(1, 2)
 
@@ -500,9 +503,12 @@ class EncDecAttention(nn.Module):
                 alibi_bias = alibi_bias.masked_fill(
                         padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool),
                         float("-inf"),
-                    )
+                    ).to(dtype=dtype)
+            else:
+                if alibi_bias is not None:
+                    alibi_bias = alibi_bias.to(dtype=dtype)
             x = F.scaled_dot_product_attention(q, k, v, 
-                                attn_mask=alibi_bias.to(dtype=dtype), 
+                                attn_mask=alibi_bias, 
                                 dropout_p=self.attn_drop,
                                 scale=self.scale).transpose(1, 2)
 
