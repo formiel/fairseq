@@ -398,19 +398,22 @@ class AltAttention(nn.Module):
             # Using pytorch 2's sdpa
             assert not self.cosine_attention, "Not support cosine attention yet"
             # Integrate padding_mask and alibi_bias
-            attn_mask = padding_mask
             if padding_mask is not None and padding_mask.any():
                 if alibi_bias is not None:
-                    attn_mask = alibi_bias.masked_fill(
+                    padding_mask = alibi_bias.masked_fill(
                             padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool),
                             float("-inf"),
-                        )
-                attn_mask = attn_mask.to(dtype=dtype)
+                        ).to(dtype=dtype)
+                else:
+                    padding_mask = padding_mask.unsqueeze(1).unsqueeze(2).to(
+                        torch.bool).to(dtype=dtype)
             else:
                 if alibi_bias is not None:
-                    attn_mask = alibi_bias.to(dtype=dtype)
+                    padding_mask = alibi_bias.to(dtype=dtype)
+                else:
+                    padding_mask = None
             x = F.scaled_dot_product_attention(q, k, v, 
-                                attn_mask=attn_mask, 
+                                attn_mask=padding_mask, 
                                 dropout_p=self.attn_drop,
                                 scale=self.scale).transpose(1, 2)
 
@@ -502,19 +505,22 @@ class EncDecAttention(nn.Module):
         else:
             assert not self.cosine_attention, "Not support cosine attention yet"
             # Integrate padding_mask and alibi_bias
-            attn_mask = padding_mask
             if padding_mask is not None and padding_mask.any():
                 if alibi_bias is not None:
-                    attn_mask = alibi_bias.masked_fill(
+                    padding_mask = alibi_bias.masked_fill(
                             padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool),
                             float("-inf"),
-                        )
-                attn_mask = attn_mask.to(dtype=dtype)
+                        ).to(dtype=dtype)
+                else:
+                    padding_mask = padding_mask.unsqueeze(1).unsqueeze(2).to(
+                        torch.bool).to(dtype=dtype)
             else:
                 if alibi_bias is not None:
-                    attn_mask = alibi_bias.to(dtype=dtype)
+                    padding_mask = alibi_bias.to(dtype=dtype)
+                else:
+                    padding_mask = None
             x = F.scaled_dot_product_attention(q, k, v, 
-                                attn_mask=attn_mask, 
+                                attn_mask=padding_mask, 
                                 dropout_p=self.attn_drop,
                                 scale=self.scale).transpose(1, 2)
 
