@@ -242,6 +242,7 @@ def main(cfg: FairseqConfig) -> None:
             else:
                 max_estimated_time = estimated_next_total_time
 
+            logger.info(f"Average training time for 1 epoch: {avg_time}")
             if max_estimated_time > time_limit:
                 logger.info(
                 f"Stopping training because estimated time after next epoch "
