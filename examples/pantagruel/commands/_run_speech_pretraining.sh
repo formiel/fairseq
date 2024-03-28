@@ -1,0 +1,163 @@
+#!/bin/bash
+
+###############################################################################
+###############################################################################
+##### SPEECH
+##### Task: pre-training 
+##### Dataset: French MLS
+##### Server: Jean Zay
+###############################################################################
+###############################################################################
+
+# 1. Prepare manifest file including list of audio files to be input to model training 
+DATA_DIR=/gpfsscratch/rech/ahm/umz16dj/Data/mls_french_jz
+DST_DIR=/gpfswork/rech/ahm/umz16dj/Data/MLS_French
+SPLITS="train dev test"
+for SPLT in $SPLITS; do
+    echo "Processing ${SPLT}"
+    python examples/wav2vec/wav2vec_manifest.py $DATA_DIR/${SPLT}/audio --valid-percent 0 --dest ${DST_DIR} --ext flac
+    mv $DST_DIR/train.tsv $DST_DIR/${SPLT}.tsv
+    wc -l $DST_DIR/${SPLT}.tsv
+done
+
+# 2. Run PRE-TRAINING
+TASK=pretraining
+MODALITY=speech
+USER_DIR=$FAIRSEQ/examples/data2vec
+TIME_LIMIT=110
+
+MASTER_PORT=$(shuf -i 20000-65000 -n 1)
+# CONFIG=base_mls1k
+CONFIG=base_audio_only_task_ngpu16_fr_maxtok2.8M_lr1.5e-3
+GPUS=16
+
+# CONFIG=large_mls1k
+# GPUS=32
+
+EXPNAME="${CONFIG}" # ===== CHECK THIS =====
+DATA_DIR=$WORK/Data/MLS_French
+CONFIG_DIR=$FAIRSEQ/examples/pantagruel/configs/${MODALITY}/${TASK}
+TENSORBOARD_DIR=$WORK/experiments/fairseq_tensorboard/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
+SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
+
+submit run gpu_p5 $GPUS 2 1 $EXPNAME "fairseq-hydra-train --config-dir ${CONFIG_DIR} --config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=${USER_DIR} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUS} distributed_training.distributed_port=${MASTER_PORT}"
+# # base_audio_only_task_ngpu16_fr:
+# COMPLETED 
+# bsz: 1M x 16gpus x 1freq, lr=7.5e-4
+# (16h on 16gpus with eff bsz: max_tok 1M x 16gpus x frq1) (25k: 14m)
+# (good, evaluated downstream performance for ASR task, better than LeBenchmark large)
+# (loss still decreases, could further improve by tuning hyper-params)
+# (Will tune later, not now!)
+# job 676472: [2024-02-16 17:33:16,173] - [2024-02-17 05:09:50,470]: 41795s ~ 697min
+# job 676473: [2024-02-17 05:13:12,214] - [2024-02-17 16:53:14,154]: 42003s ~ 700min
+# job 676474: [2024-02-18 09:43:35,313] - [2024-02-18 17:40:25,294]: 28610s ~ 477min
+# total: 697+700+477 = 1874m (31 hours)
+
+# # base_audio_only_task_ngpu8_fr_frq8_bsz (28min for 760updates)
+# (watching 38G)
+# (looking good compared to the original hyper-params)
+# (not finised, but took so long to run)
+#
+# # base_audio_only_task_ngpu8_fr_frq8_bsz_lr7.5e-3
+# (stopped because of low pred var)
+#
+# # base_audio_only_task_ngpu8_fr_frq8_bsz_lr3.75e-3
+# (gradient overflow)
+#
+# # base_audio_only_task_ngpu16_frq2_bsz89.6M
+
+
+# # large_audio_only_task_ngpu48_fr
+# (looking good compared to base arch's loss)
+# (24m for 5365 updates)=> 44h for 600k updates
+# (403m for 25k steps from 175k-200k) => 160 for 600k updates
+# path: experiments/fairseq_checkpoints/pantagruel/large_audio_only_task_ngpu48_fr
+USER_DIR=$FAIRSEQ/examples/data2vec
+CONFIG=large_audio_only_task_ngpu48_fr
+CONFIG_DIR=$FAIRSEQ/examples/pantagruel/configs/speech/pretraining
+GPUS=48
+DATA_DIR=$WORK/Data/MLS_French
+submit run gpu_p5 $GPUS 20 5 $CONFIG "fairseq-hydra-train --config-dir ${CONFIG_DIR} --config-name $CONFIG.yaml task.data=${DATA_DIR} common.user_dir=${USER_DIR}"
+# 806301: [2024-02-26 15:27:50,992] - [2024-02-27 01:15:16,226]
+# 806302: [2024-02-28 00:28:07,471] - [2024-02-28 10:15:54,650]
+# 806303: [2024-02-29 20:54:38,946] - [2024-03-01 06:44:33,462]
+# 806304: [2024-03-03 03:02:40,716] - [2024-03-03 12:53:04,346]
+# 901780: [2024-03-05 16:35:03,886] - [2024-03-06 11:09:54,880]
+# 901781: [2024-03-07 20:21:17,864] - [2024-03-08 16:06:30,243]
+# 901782 (after 901781)
+# job 4: 901783 (after 901782)
+
+# large_audio_only_task_ngpu32_freq2_fr_bsz_lr 
+# (same as LB-1K-large, but pred_var too low and training stopped)
+# (run and stopped)
+
+# large_audio_only_task_ngpu32_freq2_fr_bsz_lr2.5e-3
+# (error)
+
+###############################################################################
+###############################################################################
+##### SPEECH
+##### Task: pre-training 
+##### Dataset: French MLS
+##### Server: Adastra
+###############################################################################
+###############################################################################
+
+# 1. After copying preprocessed data from JZ to Adastra
+# The raw data in $SCRATCH (JZ) is put under $WORK/Data/raw (Ada)
+# while the preprocessed data in $WORK (JZ) is put under $WORK/Data/preprocessed (Ada)
+# we need to modify the root path in tsv manifest files
+
+SPLITS="train train-debug dev dev-debug test"
+for SPLIT in $SPLITS; do
+    bash $FAIRSEQ/examples/pantagruel/scripts/_modify_paths.sh /lus/work/CT10/c1615074/tphle/Data/prepared/MLS_French/${SPLIT}.tsv
+done
+
+# 2. Run training
+TASK=pretraining
+MODALITY=speech
+USER_DIR=$FAIRSEQ/examples/data2vec
+TIME_LIMIT=1430
+
+MASTER_PORT=$(shuf -i 20000-40000 -n 1)
+# CONFIG=base_mls1k
+# CONFIG=base_audio_only_task
+# CONFIG=base_audio_only_task_ngpu16_fr_adastra
+# CONFIG=base_audio_only_task_ngpu16_fr_adastra_maxtok1.4M_lr1e-3
+# CONFIG=large_audio_only_task_ngpu48_fr_adastra
+CONFIG=large_audio_only_task_ngpu64_fr_bsz89.6M_adastra
+
+# CONFIG=large_mls1k
+# GPUS=32
+
+EXPNAME="${CONFIG}" # ===== CHECK THIS =====
+DATA_DIR=$WORK/Data/prepared/MLS_French
+CONFIG_DIR=$FAIRSEQ/examples/pantagruel/configs/${MODALITY}/${TASK}
+TENSORBOARD_DIR=$WORK/experiments/fairseq_tensorboard/pantagruel/adastra/${MODALITY}/${TASK}/${EXPNAME}
+SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/adastra/${MODALITY}/${TASK}/${EXPNAME}
+
+# # working with 8 GPUs of 1 node
+# torchrun ${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} \
+# --config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=${USER_DIR} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUS} distributed_training.distributed_port=${MASTER_PORT} 
+
+# submitted using 2 nodes
+# GPUs=16
+# GPUs=48
+GPUs=64
+HOURS=24
+JOBS=4
+JOBNAME=$EXPNAME
+submit run mi250 ${GPUs} ${HOURS} ${JOBS} ${JOBNAME} "${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} \
+--config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=${USER_DIR} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUs} distributed_training.distributed_port=${MASTER_PORT}"
+# base_audio_only_task_ngpu16_fr_adastra 
+# (exact same training settings as "base_audio_only_task_ngpu16_fr" trained on JZ)
+# 25k: 26m 
+# job 0: 704391 [2024-03-06 07:47:50,532] - 
+# job 1: 704392 (after 704391)
+
+# base_audio_only_task_ngpu16_fr_adastra_maxtok1.4M_lr1e-3
+# job 0: 704393 [2024-03-06 08:08:57,336] - [2024-03-07 07:51:48,894]: 112977updates
+
+# large_audio_only_task_ngpu48_fr_adastra (failed)
+
+# large_audio_only_task_ngpu64_fr_bsz89.6M_adastra (failed)

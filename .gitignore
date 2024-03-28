@@ -140,10 +140,7 @@ nohup.out
 multirun
 outputs
 
-# user-added folders for experiments
-_*
-*dev.py
-
-# experimental configurations for project
-examples/pantagruel/configs
-examples/pantagruel/debug
+# old user-added folders for experiments
+_configs*/*
+_models/*
+_tools*/*

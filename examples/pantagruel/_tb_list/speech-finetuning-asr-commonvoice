@@ -1,0 +1,8 @@
+base_commonvoice_fr.ltr
+base_commonvoice_hparams_fr.ltr
+base_commonvoice_hparams_bsz_fr.ltr
+base_commonvoice_hparams_bszx4_fr.ltr
+base_commonvoice_full_fr.ltr
+large_commonvoice_ngpu16_fr.ltr
+base_commonvoice_w2v_transf_decoder_fr.ltr
+

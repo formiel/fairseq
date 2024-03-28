@@ -1,0 +1,138 @@
+#!/bin/bash
+
+###############################################################################
+###############################################################################
+##### JEAN ZAY
+###############################################################################
+###############################################################################
+PARTITION=gpu_p13
+TASK=pretraining
+MODALITY=text
+USER_DIR=$FAIRSEQ/examples/data2vec
+TIME_LIMIT=1190
+
+GPUS=16
+MASTER_PORT=$(shuf -i 20000-45000 -n 1)
+CONFIG=base_wikipedia_fr
+
+# WIKINAME=enwiki_20240201
+WIKINAME=frwiki_20190701
+EXPNAME="${CONFIG}_${WIKINAME}_${PARTITION}_gpus${GPUS}"
+# DATA_DIR=/gpfswork/rech/ahm/umz16dj/Data/wikitext-103/data-bin/debug
+DATA_DIR=$SCRATCH/Data/Wikipedia/${WIKINAME}/data-bin/byteBPE
+CONFIG_DIR=$FAIRSEQ/examples/pantagruel/configs/${MODALITY}/${TASK}
+
+TENSORBOARD_DIR=$WORK/experiments/fairseq_tensorboard/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
+SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
+
+submit run ${PARTITION} $GPUS 20 5 $EXPNAME "fairseq-hydra-train --config-dir ${CONFIG_DIR} --config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=$USER_DIR common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUS} distributed_training.distributed_port=${MASTER_PORT}"
+
+# base_wikipedia_enwiki_20240201: watch 10G
+# training, evaluated on RTE: OK
+# TODO: re-train with gpt2_bpe tokenizer 
+
+# base_wikipedia_frwiki_20190701
+# `Minimum loss scale reached (0.0001). Your loss is probably exploding`
+
+# base_wikipedia_bszx3_frwiki_20190701
+# base_wikipedia_bszx10_frwiki_20190701
+# base_wikipedia_fr_frwiki_20190701_gpu_p13_gpus16
+
+
+###############################################################################
+###############################################################################
+##### Adastra
+###############################################################################
+###############################################################################
+PARTITION=mi250
+TASK=pretraining
+MODALITY=text
+USER_DIR=$FAIRSEQ/examples/data2vec
+# TIME_LIMIT=1430
+TIME_LIMIT=1190
+# TOKENIZER=gpt2_bpe
+TOKENIZER=byteBPE
+HOURS=20
+JOBS=4
+
+GPUs=16
+MASTER_PORT=$(shuf -i 20000-40000 -n 1)
+# CONFIG=base_wikipedia
+CONFIG=base_wikipedia_lr1.2e-3
+
+# WIKINAME=enwiki_20240201
+WIKINAME=frwiki_20190701
+EXPNAME="${CONFIG}_${WIKINAME}_${TOKENIZER}_${PARTITION}_gpus${GPUs}"
+DATA_DIR=$WORK/Data/prepared/Wikipedia/${WIKINAME}/data-bin-v1/${TOKENIZER}
+CONFIG_DIR=$FAIRSEQ/examples/pantagruel/configs/${MODALITY}/${TASK}
+
+TENSORBOARD_DIR=$WORK/experiments/fairseq_tensorboard/pantagruel/adastra/${MODALITY}/${TASK}/${EXPNAME}
+SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/adastra/${MODALITY}/${TASK}/${EXPNAME}
+
+# # working with 8 GPUs of 1 node
+# torchrun ${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} \
+# --config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=${USER_DIR} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUS} distributed_training.distributed_port=${MASTER_PORT} 
+
+# submitted using 2 nodes
+submit run ${PARTITION} ${GPUs} ${HOURS} ${JOBS} ${EXPNAME} "${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} --config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=${USER_DIR} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUs} distributed_training.distributed_port=${MASTER_PORT}"
+
+# base_wikipedia_bszx10_frwiki_20190701_adastra
+# (exact same config as base_wikipedia_bszx10_frwiki_20190701)
+# (not look as good as English model)
+
+# base_wikipedia_fr_lr6e-5_frwiki_20190701_mi250_gpus16
+# (not look as good as English model)
+
+# base_wikipedia-4g_frwiki_20190701_mi250_gpus256
+# job 0: 715073
+# job 0: 715671
+# job 1: 715672 (after 715671)
+
+# base_wikipedia-4g-freq4_frwiki_20190701_mi250_gpus64
+# job 0: 715371
+# job 1: 715372 (after 715371)
+
+# base_wikipedia-2_frwiki_20190701_mi250_gpus8
+# base_wikipedia-2_frwiki_20190701_mi250_gpus16
+# base_wikipedia-2_frwiki_20190701_mi250_gpus32
+# base_wikipedia-2_frwiki_20190701_mi250_gpus64
+
+# base_wikipedia-2-lr1e-4_frwiki_20190701_mi250_gpus8
+# base_wikipedia-2-lr1e-4_frwiki_20190701_mi250_gpus16
+# base_wikipedia-2-lr1e-4_frwiki_20190701_mi250_gpus32
+
+# base_wikipedia-3_frwiki_20190701_mi250_gpus16
+# base_wikipedia-3_frwiki_20190701_mi250_gpus32
+
+# base_wikipedia_enwiki_20240201_gpt2_bpe_mi250_gpus16 (look better than byteBPE)
+# job 0: 720601 (failed: c10::DistBackendError)
+# job 1: 720602 (after 720601)
+# job 0: 721070 (PENDING)
+# job 1: 721071 (after 721070)
+
+# base_wikipedia_enwiki_20240201_byteBPE_mi250_gpus16
+# job 0: 720606 (looking good, similar to the one trained on JZ)
+# job 1: 720607 (after 720606) (pending)
+
+# base_wikipedia_frwiki_20190701_gpt2_bpe_mi250_gpus16
+# job 0: 720608 (looking good)
+# job 1: 720609 (after 720608)
+# /lus/work/CT10/c1615074/tphle/experiments/fairseq_checkpoints/pantagruel/adastra/text/pretraining/base_wikipedia_frwiki_20190701_gpt2_bpe_mi250_gpus16
+
+# base_wikipedia_frwiki_20190701_byteBPE_mi250_gpus16
+# job 0: 723568
+# job 1: 723569 (after 723568)
+# job 2: 723570 (after 723569)
+# job 3: 723571 (after 723570)
+# /lus/home/CT10/c1615074/tphle/experiments/fairseq_checkpoints/pantagruel/adastra/text/pretraining/base_wikipedia_frwiki_20190701_byteBPE_mi250_gpus16/
+
+# base_wikipedia_frwiki_20190701_gpt2_bpe_mi250_gpus64
+# /lus/home/CT10/c1615074/tphle/experiments/fairseq_checkpoints/pantagruel/adastra/text/pretraining/base_wikipedia_frwiki_20190701_gpt2_bpe_mi250_gpus64
+
+# base_wikipedia_frwiki_20190701_byteBPE_mi250_gpus64
+# /lus/home/CT10/c1615074/tphle/experiments/fairseq_checkpoints/pantagruel/adastra/text/pretraining/base_wikipedia_frwiki_20190701_byteBPE_mi250_gpus64
+
+# base_wikipedia_lr1.2e-3_frwiki_20190701_gpt2_bpe_mi250_gpus16
+# base_wikipedia_lr1.2e-3_frwiki_20190701_gpt2_bpe_mi250_gpus64
+# base_wikipedia_lr1.2e-3_frwiki_20190701_byteBPE_mi250_gpus16
+# base_wikipedia_lr1.2e-3_frwiki_20190701_byteBPE_mi250_gpus64

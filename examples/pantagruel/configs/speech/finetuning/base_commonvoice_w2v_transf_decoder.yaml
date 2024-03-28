@@ -1,0 +1,81 @@
+# @package _group_
+
+common:
+  fp16: true
+  log_format: json
+  log_interval: 200
+  tensorboard_logdir: ???
+  time_limit: ???
+
+checkpoint:
+  # save_interval: 50
+  save_interval_updates: 10000
+  keep_interval_updates: 1
+  # no_epoch_checkpoints: true
+  best_checkpoint_metric: wer
+  keep_best_checkpoints: 10
+  keep_last_epochs: 20
+  # patience: 10
+  save_dir: ???
+
+task:
+  _name: audio_finetuning
+  data: ???
+  normalize: true
+  labels: ???
+  autoregressive: true
+  eval_wer: true
+  eval_wer_config: {"beam": 5}
+  # eval_bleu: true
+  # eval_bleu_detok: space
+  # eval_bleu_detok_args: '{"beam": 4, "lenpen": 0.6}'
+  # eval_bleu_print_samples: true
+
+dataset:
+  num_workers: 6
+  max_tokens: 3200000
+  skip_invalid_size_inputs_valid_test: true
+  # validate_after_updates: 10000
+  # validate_interval: 50
+  # valid_subset: dev_other
+  # valid_subset: dev-debug
+  # train_subset: train-debug
+  valid_subset: dev
+  train_subset: train
+
+distributed_training:
+  ddp_backend: legacy_ddp
+  distributed_world_size: 8
+
+criterion:
+  _name: label_smoothed_cross_entropy
+
+optimization:
+  max_update: 320000
+  lr: [0.0001]
+  sentence_avg: true
+  update_freq: [1]
+
+optimizer:
+  _name: adam
+  adam_betas: (0.9,0.98)
+  adam_eps: 1e-08
+
+lr_scheduler:
+  _name: tri_stage
+  phase_ratio: [0.1, 0.4, 0.5]
+  final_lr_scale: 0.05
+
+model:
+  _name: wav2vec_seq2seq
+  w2v_path: ???
+  decoder_embed_dim: 512
+  autoregressive: true
+  apply_mask: true
+  mask_prob: 0.5
+  mask_channel_prob: 0.1
+  mask_channel_length: 64
+  layerdrop: 0.1
+  activation_dropout: 0.1
+  feature_grad_mult: 0.0
+  freeze_finetune_updates: 0
