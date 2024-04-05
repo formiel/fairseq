@@ -42,18 +42,6 @@ rsync -zarvm tphle@adastra-ccfr.cines.fr:/lus/work/CT10/c1615074/tphle/Data/raw/
         umz16dj@jean-zay.idris.fr:/gpfsscratch/rech/ahm/umz16dj/Data/mTEDx/fr-en/data/train/wav_splits/If92mr3B_Og_0031.wav
 
 
-
-
-# Installation and run other code
-git clone https://github.com/NVIDIA/apex
-git checkout 3fe10b5597ba14a748ebb271a6ab97c09c5701ac
-cd apex
-pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation --config-settings "--build-option=--cpp_ext" --config-settings "--build-option=--cuda_ext" ./ |& tee installation_3fe10_apex_cmd.log
-
-pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation --config-settings "--build-option=--cpp_ext" --config-settings "--build-option=--cuda_ext" ./ --config-settings="global-option=--deprecated_fused_adam" --config-settings="global-option=--xentropy" \
-  --config-settings="--global-option=--fast_multihead_attn" ./ |& tee installation_3fe10.log
-
-
 # Common errors
 ```python
 from omegaconf import open_dict
@@ -290,23 +278,75 @@ submit run gpu_p5 $GPUS 2 6 $CONFIG "fairseq-hydra-train --config-dir ${CONFIG_D
 ```
 
 
-```bash
-# Vợ git pull thằng slurmx về rồi dùng submit2.sh thày vì submit 
-# submit2 dùng cho cả JZ và Adastra luôn vợ hấy
-# Thay cái submit.sh trong alias thành submit2.sh là được
-# Với dùng submit run mi250 ${GPUs} 20 1 $NAME "main_finetune.py …` (lưu ý là không phải `python -W ignore -u main_finetune.py` như submitv1)
-# Không cần gọi python vì trong torchrun đã có python luôn rồi 
-```
-
-# Sending data from Jean Zay to Adastra
-```bash
-ssh jean-zay-ccfr.idris.fr
-scp -r $WORK/Data/* tphle@adastra-ccfr.cines.fr:/lus/work/CT10/c1615074/tphle/DataW/
-```
-
-# Installation
+# Notes
+- No need to call python as it is already included in torchrun
 - If using 1 fairseq: should put PYTHONPATH and FAIRSEQ in bash_profile
-- On Adastra: these variables are put in  loadenv.sh and loadpy39.sh (Bên Adastra thì anh bỏ trong loadenv.sh với loadpy39.sh, hai môi trường khác nhau mỗi thằng trỏ tới mỗi bản )
 
-# Data received
+
+# Data structure in each server
+## JEAN ZAY
+$HOME/Data -> $WORK/Data (should pay attention to data on $SCRATCH)
+- CommonVoice: used to evaluate the French-based speech model (clips in manifest tsv files point to $DSDIR)
+- covost2: used for both ST and pantagruel
+  + covost2/fr
+    * fr.tar.gz -> /gpfsstore/rech/yul/umz16dj/COVOST2/fr.tar.gz
+    * clips_wav -> /gpfsscratch/rech/ahm/umz16dj/Data/covost2/raw/fr/clips_wav
+    * ssl-encoder (including data for finetuning SSL encoder)
+- Flaubert1_data
+- flue_data
+- glue_data
+- LibriSpeech:
+  + raw -> /gpfsscratch/rech/ahm/umz16dj/Data/LibriSpeech_raw
+- MLS_French:
+  + raw -> /gpfsssd/scratch/rech/ahm/umz16dj/Data/mls_french_jz
+- mTEDx: currently used for pantaguem with subset fr-en
+  + raw -> /gpfsscratch/rech/ahm/umz16dj/Data/mTEDx/fr-en
+- mustc: dictionaries work well with Siamese project (haven't checked with adapters yet, but need to re-factor adaptor code anyway). Should use this dictionary when re-training dual-decoder!
+- Wikipedia -> $SCRATCH/Data/Wikipedia
+- wikitext-103
+- wmt14_en_de
+- wmt14_en_fr
+- wmt17_en_de
+
+$SCRATCH/Data
+- BookCorpus: bookcorpus.txt (4GB), downloaded from HuggingFace, in lower-case and space tokenized
+- CommonVoice: the raw data of cv-corpus-6.1-2020-12-11 copied from $DSDIR, but currently not used, to check and remove to save space and avoid confusion
+  + clips
+  + clips_wav
+- CommonVoice.tar.gz
+- covost2
+- covost2.tar.gz
+- glue_data
+- LibriSpeech_raw
+- mls_french: data provided by Solène, with $SPLIT.json included audio and corresponding transcripts 
+- mls_french_jz: copied from JZ, don't need to use this, to check and remove to save space and avoid confusion 
+- mls_french_jz.tar.gz
+- mTEDx: raw data, should be kept!!!
+- mTEDx.tar.gz
+- mustc: included en-fr/dev/waveform which were used for analysis in the PhD defense, the samples are cut based on segment and then these wave forms 
+- Wikipedia: VERY important raw data, should be kept!!!
+
+## Adastra
+HOME=/lus/home/CT10/c1615074/tphle
+WORK=/lus/scratch/CT10/c1615074/tphle
+$HOME/Data -> $WORK/Data
+- prepared
+  + CommonVoice: not run fine-tuning on Adastra yet!
+  + LibriSpeech
+  + MLS_French
+  + Wikipedia
+  + covost2
+  + flue_data
+  + glue_data
+  + mTEDx
+  + mustc
+- raw
+  + CommonVoice.tar.gz
+  + covost2.tar.gz
+  + mTEDx.tar.gz
+  + mls_french_jz.tar.gz
+$SCRATCH/Data
+- LibriSpeech_raw
+- mTEDx
+- mustc
 
