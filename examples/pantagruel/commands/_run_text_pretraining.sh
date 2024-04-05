@@ -29,7 +29,7 @@ submit run ${PARTITION} $GPUS 20 5 $EXPNAME "fairseq-hydra-train --config-dir ${
 
 # base_wikipedia_enwiki_20240201: watch 10G
 # training, evaluated on RTE: OK
-# TODO: re-train with gpt2_bpe tokenizer 
+# TODO: re-train with gpt2_bpe tokenizer: no need, checked the length of encoded tokens using different tokenizers already
 
 # base_wikipedia_frwiki_20190701
 # `Minimum loss scale reached (0.0001). Your loss is probably exploding`

@@ -16,8 +16,9 @@ rsync -chavzP --stats \
         umz16dj@jean-zay.idris.fr:/linkhome/rech/genlig01/umz16dj/code/fairspeech/
 
 rsync -chavzP --stats \
-        /Users/hang/Downloads/pantagruel/dict.txt \
-        umz16dj@jean-zay.idris.fr:/gpfswork/rech/ahm/umz16dj/pretrained_models/roberta/camembert/camembert-base-wikipedia-4gb/
+        umz16dj@jean-zay.idris.fr:/gpfsscratch/rech/ahm/umz16dj/Data/mTEDx/fr-en/data/train/wav_splits/If92mr3B_Og_0028.wav \
+        /Users/hang/Downloads/pantagruel/
+        
         
         
 grep -n "京" /gpfswork/rech/ahm/umz16dj/Data/CommonVoice/fr/train.wrd
@@ -37,8 +38,9 @@ ssh adastra-ccfr.cines.fr
 rsync -zarvm /lus/home/CT10/c1615074/tphle/experiments/fairseq_tensorboard/pantagruel/adastra umz16dj@jean-zay.idris.fr:/linkhome/rech/genlig01/umz16dj/experiments/fairseq_tensorboard/pantagruel/
 
 ssh jean-zay-ccfr.idris.fr
-rsync -zarvm /gpfswork/rech/ahm/umz16dj/Data/mTEDx/fr-en/* tphle@adastra-ccfr.cines.fr:/lus/work/CT10/c1615074/tphle/Data/prepared/mTEDx/fr-en/ 
-rsync -zarvm /linkhome/rech/genlig01/umz16dj/experiments/fairseq_checkpoints/pantagruel/speech/pretraining/base_audio_only_task_ngpu16_fr/checkpoint_best.pt  tphle@adastra-ccfr.cines.fr:/lus/home/CT10/c1615074/tphle/experiments/fairseq_checkpoints/pantagruel/adastra/speech/pretraining/base_audio_only_task_ngpu16_fr/
+rsync -zarvm tphle@adastra-ccfr.cines.fr:/lus/work/CT10/c1615074/tphle/Data/raw/mTEDx/fr-en/data/train/wav_splits/If92mr3B_Og_0031.wav  \
+        umz16dj@jean-zay.idris.fr:/gpfsscratch/rech/ahm/umz16dj/Data/mTEDx/fr-en/data/train/wav_splits/If92mr3B_Og_0031.wav
+
 
 
 
@@ -302,4 +304,9 @@ ssh jean-zay-ccfr.idris.fr
 scp -r $WORK/Data/* tphle@adastra-ccfr.cines.fr:/lus/work/CT10/c1615074/tphle/DataW/
 ```
 
-tototo
+# Installation
+- If using 1 fairseq: should put PYTHONPATH and FAIRSEQ in bash_profile
+- On Adastra: these variables are put in  loadenv.sh and loadpy39.sh (Bên Adastra thì anh bỏ trong loadenv.sh với loadpy39.sh, hai môi trường khác nhau mỗi thằng trỏ tới mỗi bản )
+
+# Data received
+
