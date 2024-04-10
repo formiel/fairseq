@@ -9,18 +9,18 @@
 # 1. Prepare data: same as speech-only and text-only pretraining
 
 # 2. Run PRE-TRAINING
-PARTITION=gpu_p2
+PARTITION=mi250
 TASK=pretraining
 MODALITY=speech-text
 USER_DIR=$FAIRSEQ/examples/data2vec
-# TIME_LIMIT=1430
-TIME_LIMIT=1190
-HOURS=2
-JOBS=1
+TIME_LIMIT=590
+# TIME_LIMIT=25
+HOURS=10
+JOBS=5
 
 MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 # CONFIG=base_speech_text_en
-CONFIG=base_speech_text_en_bsz8frq4
+CONFIG=base_speech_text_en_bsz8frq8
 GPUs=16
 
 ## Data
@@ -35,7 +35,7 @@ AUDIO_DATA=$DATA_ROOT/LibriSpeech
 TEXT_DATA=$DATA_ROOT/Wikipedia/enwiki_20240201/data-bin/byteBPE
 
 # ===== CHECK THIS =====
-SUFFIX=_debug
+SUFFIX=
 EXPNAME="${CONFIG}_${PARTITION}_gpus${GPUs}${SUFFIX}"
 
 # Jean zay and Adastra
@@ -50,9 +50,12 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 ##### Jean Zay #####
 ####################
 # base_speech_text_en_gpu_p5_gpus1_debug_full: finished and save first checkpoint at 10k updates
-# base_speech_text_en_gpu_p5_gpus8_debug: 1440658, can run without error 
-# base_speech_text_en_bsz8frq4_gpu_p2_gpus16_debug: 1445080
-# base_speech_text_en_gpu_p5_gpus16: 1432598
+# base_speech_text_en_gpu_p5_gpus8_debug: ok
+# base_speech_text_en_bsz8frq4_gpu_p2_gpus16_debug: ok
+
+# base_speech_text_en_bsz8frq8_gpu_p2_gpus32: 1446934
+
+# base_speech_text_en_gpu_p5_gpus16 (bsz=16, freq=4, lr=3e-4, local_grad_mult=2.5 for speech, 1.0 for text)
 # job 0: 1433334
 # job 1: 1433335 (after 1433334)
 # job 2: 1433336 (after 1433335)
@@ -61,6 +64,14 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 
 ##### Adastra #####
 ###################
-# base_speech_text_en_200k_mi250_gpus8
-# job 0: 788390
+# base_speech_text_en_bsz8frq8_mi250_gpus8_debug: ok
+# base_speech_text_en_bsz8frq8_mi250_gpus16_debug: ok
+
+# base_speech_text_en_bsz8frq8_mi250_gpus16
+# job 0: 790417
+# job 1: 790418 (after 790417)
+# job 2: 790420 (after 790418)
+# job 3: 790421 (after 790420)
+# job 4: 790422 (after 790421)
+
 
