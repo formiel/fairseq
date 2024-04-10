@@ -6,7 +6,8 @@ common:
   log_interval: 200
   tensorboard_logdir: ???
   min_loss_scale: 1e-6
-  fp16_no_flatten_grads: true
+  fp16_no_flatten_grads: false
+  memory_efficient_fp16: true
   time_limit: ???
   # user_dir: ${env:PWD}/examples/data2vec
 
@@ -26,13 +27,13 @@ task:
   text_ratio: 1
   # update_freq: [4]
   audio:
-    data: /gpfswork/rech/ahm/umz16dj/Data/MLS_French
+    data: ???
     max_sample_size: 320000
     min_sample_size: 32000
     normalize: true
     precompute_mask_config: {}
   text:
-    data: /gpfswork/rech/ahm/umz16dj/Data/Wikipedia/frwiki_20190701/data-bin/byteBPE
+    data: ???
     sample_break_mode: none
     tokens_per_sample: 512
     include_target_tokens: true
@@ -44,8 +45,9 @@ task:
   
 dataset:
   num_workers: 6
-  max_tokens: 1000000
-  batch_size: 16
+  # max_tokens: 500000
+  batch_size: 8
+  ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
   validate_interval: 1
   required_batch_size_multiple: 1
@@ -54,6 +56,7 @@ dataset:
   # valid_subset: valid
 
 distributed_training:
+  find_unused_parameters: true
   distributed_world_size: ???
   ddp_backend: legacy_ddp
   distributed_port: ???
@@ -69,11 +72,12 @@ criterion:
     - masked_pct
 
 optimization:
+  clip_norm: 1
   max_update: 400000
-  lr: [0.0001]
+  lr: [0.0003]
   debug_param_names: true
   # max_update: 1000000
-  # update_freq: [2]
+  update_freq: [4]
 
 optimizer:
   _name: adam
@@ -98,7 +102,7 @@ model:
   ema_decay: 0.999
   ema_end_decay: 0.99999
   ema_anneal_end_step: 75000
-  ema_encoder_only: true # speech: false
+  ema_encoder_only: false # speech: false, text: true
 
   average_top_k_layers: 8
   instance_norm_target_layer: true
@@ -130,6 +134,7 @@ model:
       prenet_dropout: 0.1
       learned_alibi_scale: true
       learned_alibi_scale_per_head: true
+      local_grad_mult: 2.5
       decoder:
         input_dropout: 0.1
         decoder_dim: 384
@@ -141,6 +146,7 @@ model:
       mask_length: 1
       mask_noise_std: 0.01
       prenet_depth: 0
+      local_grad_mult: 1.0
       decoder:
         input_dropout: 0.1
         decoder_dim: 768

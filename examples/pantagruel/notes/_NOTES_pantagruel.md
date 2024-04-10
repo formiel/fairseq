@@ -14,6 +14,9 @@ cp -rp $mff_CCFRWORK/Data $ahm_CCFRWORK/
 rsync -chavzP --stats \
         /Users/hang/github/formiel/fairspeech/ \
         umz16dj@jean-zay.idris.fr:/linkhome/rech/genlig01/umz16dj/code/fairspeech/
+rsyncpass -zarvm --exclude="*.git*" \
+        /Users/hang/github/formiel/fairspeech/ \
+        adastra:/lus/home/CT10/c1615074/tphle/code/fairspeech/
 
 rsync -chavzP --stats \
         umz16dj@jean-zay.idris.fr:/gpfsscratch/rech/ahm/umz16dj/Data/mTEDx/fr-en/data/train/wav_splits/If92mr3B_Og_0028.wav \
@@ -25,7 +28,7 @@ grep -n "京" /gpfswork/rech/ahm/umz16dj/Data/CommonVoice/fr/train.wrd
 > 197038: Seconde exposition du groupe des Étoiles 星星, Musée des Beaux Arts de Pékin 北京美术馆. 
 sed -n '52p'
 
-rsync -chavzP --stats --exclude "*debug*" \
+rsync -chavzP --stats --exclude "*debug*" --exclude "*base_speech_mls1k*" \
         umz16dj@jean-zay.idris.fr:/linkhome/rech/genlig01/umz16dj/experiments/fairseq_tensorboard/* \
         /Users/hang/tensorboard/
 
