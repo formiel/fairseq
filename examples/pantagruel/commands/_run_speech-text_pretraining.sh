@@ -9,18 +9,19 @@
 # 1. Prepare data: same as speech-only and text-only pretraining
 
 # 2. Run PRE-TRAINING
-PARTITION=gpu_p5
+PARTITION=mi250
 TASK=pretraining
 MODALITY=speech-text
 USER_DIR=$FAIRSEQ/examples/data2vec
 TIME_LIMIT=590
 # TIME_LIMIT=25
-HOURS=10
-JOBS=5
+HOURS=1
+JOBS=1
 
 MASTER_PORT=$(shuf -i 20000-30000 -n 1)
-CONFIG=base_speech_text_en_bsz16frq16
-GPUs=16
+# CONFIG=base_speech_text_en_bsz16frq16
+CONFIG=base_speech_text_en_bsz1frq1
+GPUs=1
 
 ## Data
 if [[ $PARTITION != "mi250" ]]; then
@@ -34,7 +35,7 @@ AUDIO_DATA=$DATA_ROOT/LibriSpeech
 TEXT_DATA=$DATA_ROOT/Wikipedia/enwiki_20240201/data-bin/byteBPE
 
 # ===== CHECK THIS =====
-SUFFIX=
+SUFFIX=_debug
 EXPNAME="${CONFIG}_${PARTITION}_gpus${GPUs}${SUFFIX}"
 
 if [[ $SUFFIX == *"debug" ]]; then
