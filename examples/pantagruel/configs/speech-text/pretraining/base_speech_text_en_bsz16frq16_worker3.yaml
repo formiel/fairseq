@@ -3,7 +3,7 @@
 common:
   fp16: true
   log_format: json
-  log_interval: 5
+  log_interval: 500
   tensorboard_logdir: ???
   min_loss_scale: 1e-6
   fp16_no_flatten_grads: false
@@ -14,7 +14,7 @@ common:
 
 checkpoint:
   # save_interval: 1
-  # save_interval_updates: 10000
+  save_interval_updates: 10000
   # keep_interval_updates: 1
   # no_epoch_checkpoints: true
   keep_best_checkpoints: 10
@@ -47,7 +47,7 @@ task:
 dataset:
   num_workers: 3
   # max_tokens: 500000
-  batch_size: 1
+  batch_size: 16
   # ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
   # validate_interval: 1
@@ -78,7 +78,7 @@ optimization:
   lr: [0.0003]
   debug_param_names: true
   # max_update: 1000000
-  update_freq: [1]
+  update_freq: [16]
 
 optimizer:
   _name: adam

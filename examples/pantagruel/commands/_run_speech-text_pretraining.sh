@@ -15,13 +15,16 @@ MODALITY=speech-text
 USER_DIR=$FAIRSEQ/examples/data2vec
 TIME_LIMIT=590
 # TIME_LIMIT=25
-HOURS=1
+HOURS=0.25
 JOBS=1
+GPUs=16
+SUFFIX=_debug
 
 MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 # CONFIG=base_speech_text_en_bsz16frq16
 CONFIG=base_speech_text_en_bsz1frq1
-GPUs=1
+# CONFIG=base_speech_text_en_bsz16frq16_worker1
+
 
 ## Data
 if [[ $PARTITION != "mi250" ]]; then
@@ -35,7 +38,6 @@ AUDIO_DATA=$DATA_ROOT/LibriSpeech
 TEXT_DATA=$DATA_ROOT/Wikipedia/enwiki_20240201/data-bin/byteBPE
 
 # ===== CHECK THIS =====
-SUFFIX=_debug
 EXPNAME="${CONFIG}_${PARTITION}_gpus${GPUs}${SUFFIX}"
 
 if [[ $SUFFIX == *"debug" ]]; then
@@ -67,30 +69,25 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 # job 0: 1433334 (val loss seems to increase)
 
 # base_speech_text_en_bsz16frq16_gpu_p5_gpus16
-# job 0: 1507445
-# job 0: 1507452
-# job 1: 1507453 (after 1507452)
-# job 2: 1507457 (after 1507453)
-# job 3: 1507458 (after 1507457)
-# job 4: 1507459 (after 1507458)
+# job 0: 1507733
+# job 0: 1507746
+# job 1: 1507749 (after 1507746)
+# job 2: 1507750 (after 1507749)
+# job 3: 1507752 (after 1507750)
+# job 4: 1507754 (after 1507752)
 
 ##### Adastra #####
 ###################
-# base_speech_text_en_bsz8frq8_mi250_gpus8_debug: ok
-# base_speech_text_en_bsz8frq8_mi250_gpus16_debug: ok
+# base_speech_text_en_bsz16frq16_worker3_mi250_gpus32
+# job 0: 810871
+# job 1: 810872 (after 810871)
+# job 2: 810873 (after 810872)
+# job 3: 810874 (after 810873)
+# job 4: 810875 (after 810874)
 
-# base_speech_text_en_bsz8frq8_mi250_gpus16
-# job 0: 790417 #FloatingPointError: Minimum loss scale reached (1e-06). Your loss is probably exploding. Try lowering the learning rate, using gradient clipping or increasing the batch size.
-
-# base_speech_text_en_bsz8frq8_mi250_gpus32
-# job 0: 790834 #FloatingPointError: Minimum loss scale reached (1e-06). Your loss is probably exploding. Try lowering the learning rate, using gradient clipping or increasing the batch size.
-
-# base_speech_text_en_bsz8frq8_mi250_gpus64
-# job 0: 791411 Minimum loss scale reached (1e-06).
-
-# base_speech_text_en_bsz8frq32_mi250_gpus64
-# job 0: s
-# job 1: 795186 (after 795184)
-# job 2: 795188 (after 795186)
-# job 3: 795190 (after 795188)
-# job 4: 795192 (after 795190)
+# base_speech_text_en_bsz16frq16_worker1_mi250_gpus32
+# job 0: 810881
+# job 1: 810882 (after 810881)
+# job 2: 810883 (after 810882)
+# job 3: 810884 (after 810883)
+# job 4: 810885 (after 810884)
