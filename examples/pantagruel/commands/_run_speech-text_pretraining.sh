@@ -15,15 +15,15 @@ MODALITY=speech-text
 USER_DIR=$FAIRSEQ/examples/data2vec
 TIME_LIMIT=590
 # TIME_LIMIT=25
-HOURS=0.25
-JOBS=1
-GPUs=16
-SUFFIX=_debug
+HOURS=10
+JOBS=5
+GPUs=32
+SUFFIX=
 
 MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 # CONFIG=base_speech_text_en_bsz16frq16
-CONFIG=base_speech_text_en_bsz1frq1
-# CONFIG=base_speech_text_en_bsz16frq16_worker1
+# CONFIG=base_speech_text_en_bsz1frq1
+CONFIG=base_speech_text_en_bsz8frq32_worker3
 
 
 ## Data
@@ -78,16 +78,9 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 
 ##### Adastra #####
 ###################
-# base_speech_text_en_bsz16frq16_worker3_mi250_gpus32
-# job 0: 810871
-# job 1: 810872 (after 810871)
-# job 2: 810873 (after 810872)
-# job 3: 810874 (after 810873)
-# job 4: 810875 (after 810874)
-
-# base_speech_text_en_bsz16frq16_worker1_mi250_gpus32
-# job 0: 810881
-# job 1: 810882 (after 810881)
-# job 2: 810883 (after 810882)
-# job 3: 810884 (after 810883)
-# job 4: 810885 (after 810884)
+# base_speech_text_en_bsz8frq32_worker3_mi250_gpus32
+# job 0: 811322
+# job 1: 811323 (after 811322)
+# job 2: 811324 (after 811323)
+# job 3: 811325 (after 811324)
+# job 4: 811326 (after 811325)

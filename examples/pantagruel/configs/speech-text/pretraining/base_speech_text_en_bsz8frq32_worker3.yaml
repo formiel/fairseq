@@ -45,9 +45,9 @@ task:
     d2v2_multi: True
   
 dataset:
-  num_workers: 1
+  num_workers: 3
   # max_tokens: 500000
-  batch_size: 16
+  batch_size: 8
   # ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
   # validate_interval: 1
@@ -78,7 +78,7 @@ optimization:
   lr: [0.0003]
   debug_param_names: true
   # max_update: 1000000
-  update_freq: [16]
+  update_freq: [32]
 
 optimizer:
   _name: adam
