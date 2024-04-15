@@ -9,7 +9,7 @@
 # 1. Prepare data: same as speech-only and text-only pretraining
 
 # 2. Run PRE-TRAINING
-PARTITION=mi250
+PARTITION=gpu_p5
 TASK=pretraining
 MODALITY=speech-text
 USER_DIR=$FAIRSEQ/examples/data2vec
@@ -19,9 +19,8 @@ HOURS=10
 JOBS=5
 
 MASTER_PORT=$(shuf -i 20000-30000 -n 1)
-# CONFIG=base_speech_text_en_bsz16frq16
-CONFIG=base_speech_text_en_bsz8frq32
-GPUs=64
+CONFIG=base_speech_text_en_bsz16frq16
+GPUs=16
 
 ## Data
 if [[ $PARTITION != "mi250" ]]; then
@@ -38,12 +37,20 @@ TEXT_DATA=$DATA_ROOT/Wikipedia/enwiki_20240201/data-bin/byteBPE
 SUFFIX=
 EXPNAME="${CONFIG}_${PARTITION}_gpus${GPUs}${SUFFIX}"
 
+if [[ $SUFFIX == *"debug" ]]; then
+    AUDIO_DATA=$AUDIO_DATA/debug
+    TEXT_DATA=$TEXT_DATA/debug/data-bin
+fi
+
 # Jean zay and Adastra
 CONFIG_DIR=$FAIRSEQ/examples/pantagruel/configs/${MODALITY}/${TASK}
 TENSORBOARD_DIR=$WORK/experiments/fairseq_tensorboard/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
 SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
 
 echo "=== EXP_NAME: ${EXPNAME} ==="
+
+export TMPDIR=$SCRATCH/tmp
+mkdir -p $TMPDIR
 
 submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} --config-name $CONFIG common.time_limit=${TIME_LIMIT} common.user_dir=${USER_DIR} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} task.audio.data=$AUDIO_DATA task.text.data=$TEXT_DATA distributed_training.distributed_world_size=${GPUs} distributed_training.distributed_port=${MASTER_PORT}"
 
@@ -58,13 +65,13 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 # base_speech_text_en_gpu_p5_gpus16 (bsz=16, freq=4, lr=3e-4, local_grad_mult=2.5 for speech, 1.0 for text)
 # job 0: 1433334 (val loss seems to increase)
 
-# base_speech_text_en_bsz16frq16_gpu_p5_gpus32
-# job 0: 1457298
-# job 1: 1457299 (after 1457298)
-# job 2: 1457300 (after 1457299)
-# job 3: 1457302 (after 1457300)
-# job 4: 1457303 (after 1457302)
-
+# base_speech_text_en_bsz16frq16_gpu_p5_gpus16
+# job 0: 1507445
+# job 0: 1507452
+# job 1: 1507453 (after 1507452)
+# job 2: 1507457 (after 1507453)
+# job 3: 1507458 (after 1507457)
+# job 4: 1507459 (after 1507458)
 
 ##### Adastra #####
 ###################

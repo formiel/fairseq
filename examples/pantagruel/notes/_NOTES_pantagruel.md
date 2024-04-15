@@ -41,8 +41,9 @@ ssh adastra-ccfr.cines.fr
 rsync -zarvm /lus/home/CT10/c1615074/tphle/experiments/fairseq_tensorboard/pantagruel/adastra umz16dj@jean-zay.idris.fr:/linkhome/rech/genlig01/umz16dj/experiments/fairseq_tensorboard/pantagruel/
 
 ssh jean-zay-ccfr.idris.fr
-rsync -zarvm tphle@adastra-ccfr.cines.fr:/lus/work/CT10/c1615074/tphle/Data/raw/mTEDx/fr-en/data/train/wav_splits/If92mr3B_Og_0031.wav  \
-        umz16dj@jean-zay.idris.fr:/gpfsscratch/rech/ahm/umz16dj/Data/mTEDx/fr-en/data/train/wav_splits/If92mr3B_Og_0031.wav
+rsync -zarvm /gpfswork/rech/ahm/umz16dj/Data/Wikipedia/enwiki_20240201/data-bin/byteBPE/debug \
+        tphle@adastra-ccfr.cines.fr:/lus/work/CT10/c1615074/tphle/Data/prepared/Wikipedia/enwiki_20240201/data-bin/byteBPE/
+        
 
 
 # Common errors
