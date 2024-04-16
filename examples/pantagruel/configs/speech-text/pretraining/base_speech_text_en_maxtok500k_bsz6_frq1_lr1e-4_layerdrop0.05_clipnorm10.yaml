@@ -3,7 +3,7 @@
 common:
   fp16: true
   log_format: json
-  log_interval: 500
+  log_interval: 200
   tensorboard_logdir: ???
   min_loss_scale: 1e-6
   fp16_no_flatten_grads: false
@@ -14,7 +14,7 @@ common:
 
 checkpoint:
   # save_interval: 1
-  save_interval_updates: 10000
+  save_interval_updates: 5000
   # keep_interval_updates: 1
   # no_epoch_checkpoints: true
   keep_best_checkpoints: 10
@@ -45,9 +45,10 @@ task:
     d2v2_multi: True
   
 dataset:
-  num_workers: 3
-  # max_tokens: 500000
-  batch_size: 8
+  num_workers: 1
+  max_tokens: 500000
+  # batch_size: 16
+  batch_size: 6
   # ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
   # validate_interval: 1
@@ -73,12 +74,12 @@ criterion:
     - masked_pct
 
 optimization:
-  clip_norm: 1
+  clip_norm: 10.0
   max_update: 400000
-  lr: [0.0003]
+  lr: [0.0001]
   debug_param_names: true
   # max_update: 1000000
-  update_freq: [32]
+  update_freq: [1]
 
 optimizer:
   _name: adam
@@ -89,6 +90,10 @@ optimizer:
 lr_scheduler:
   _name: cosine
   warmup_updates: 8000
+  warmup_init_lr: 1e-7
+  lr_shrink: 1
+  min_lr: 1e-9
+  lr_period_updates: 24000
 
 model:
   _name: data2vec_multi
@@ -113,6 +118,16 @@ model:
   layerdrop: 0.05
   norm_eps: 1e-5
 
+  # shared_decoder:
+  #   input_dropout: 0.1
+  #   decoder_dim: 384
+  #   decoder_groups: 16
+  #   decoder_kernel: 7
+  #   decoder_layers: 5
+  #   decoder_residual: false
+  #   projection_layers: 2
+  #   projection_ratio: 2.0
+
   # supported_modality: 'AUDIO'
 
   modalities:
@@ -135,7 +150,7 @@ model:
       prenet_dropout: 0.1
       learned_alibi_scale: true
       learned_alibi_scale_per_head: true
-      local_grad_mult: 2.5
+      # local_grad_mult: 2.5
       decoder:
         input_dropout: 0.1
         decoder_dim: 384
@@ -147,7 +162,7 @@ model:
       mask_length: 1
       mask_noise_std: 0.01
       prenet_depth: 0
-      local_grad_mult: 1.0
+      # local_grad_mult: 1.0
       decoder:
         input_dropout: 0.1
         decoder_dim: 768

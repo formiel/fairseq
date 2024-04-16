@@ -78,7 +78,7 @@ DATA_DIR=$WORK/Data/LibriSpeech
 USER_DIR=$FAIRSEQ/examples/data2vec
 CONFIG=base_audio_only_task_ngpu16_reproduce_en_torch2sdpa_stable
 submit run gpu_p5 $GPUS 12 3 $CONFIG "fairseq-hydra-train --config-dir ${CONFIG_DIR} --config-name $CONFIG.yaml +task.data=${DATA_DIR} common.user_dir=$USER_DIR"
-# job 0: 665909
+# job 0: 664469, 665909
 # job 1: 665910 (after 665909)
 # job 2: 665911 (after 665910)
 ```

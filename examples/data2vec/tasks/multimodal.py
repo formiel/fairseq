@@ -82,8 +82,8 @@ class MultimodalPretrainingTask(FairseqTask):
                     datasetname=name,
                     dataset=task.dataset(split),
                     max_positions=task.max_positions(),
-                    max_tokens=self.cfg.max_tokens,
-                    max_sentences=self.cfg.batch_size,
+                    max_tokens=self.cfg.max_tokens if name.name.lower()=="audio" else None,
+                    max_sentences=self.cfg.batch_size if name.name.lower()=="text" else None,
                 )
                 datasets.append(ds)
                 self.mult_ratios.append(ratio)

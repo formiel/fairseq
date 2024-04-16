@@ -17,13 +17,12 @@ TIME_LIMIT=590
 # TIME_LIMIT=25
 HOURS=10
 JOBS=5
-GPUs=32
+GPUs=16
 SUFFIX=
 
 MASTER_PORT=$(shuf -i 20000-30000 -n 1)
-# CONFIG=base_speech_text_en_bsz16frq16
-# CONFIG=base_speech_text_en_bsz1frq1
-CONFIG=base_speech_text_en_bsz8frq32_worker3
+CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4
+CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_layerdrop0.05_clipnorm10
 
 
 ## Data
@@ -59,28 +58,64 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 
 ##### Jean Zay #####
 ####################
-# base_speech_text_en_gpu_p5_gpus1_debug_full: finished and save first checkpoint at 10k updates
-# base_speech_text_en_gpu_p5_gpus8_debug: ok
-# base_speech_text_en_bsz8frq4_gpu_p2_gpus16_debug: ok
+# speech-only pre-training: 
+# lr: 0.00075 loaded 280531, skipped 710 samples
+# max tokens per device = 1000000 and max sentences per device = None
+# trained on 16 GPUs
+# grouped total_num_itrs = 3876
 
-# base_speech_text_en_bsz8frq8_gpu_p2_gpus32: 1446934 (GPU usage looking good with max usage observed: 31.7GB)
+# text-only pre-training: 
+# max tokens per device = None and max sentences per device = 6
+# lr: 0.0003 
+# trained on 16 GPUs
+# grouped total_num_itrs = 96111
 
-# base_speech_text_en_gpu_p5_gpus16 (bsz=16, freq=4, lr=3e-4, local_grad_mult=2.5 for speech, 1.0 for text)
-# job 0: 1433334 (val loss seems to increase)
-
-# base_speech_text_en_bsz16frq16_gpu_p5_gpus16
-# job 0: 1507733
-# job 0: 1507746
-# job 1: 1507749 (after 1507746)
-# job 2: 1507750 (after 1507749)
-# job 3: 1507752 (after 1507750)
-# job 4: 1507754 (after 1507752)
 
 ##### Adastra #####
 ###################
-# base_speech_text_en_bsz8frq32_worker3_mi250_gpus32
-# job 0: 811322
-# job 1: 811323 (after 811322)
-# job 2: 811324 (after 811323)
-# job 3: 811325 (after 811324)
-# job 4: 811326 (after 811325)
+# base_speech_text_en_bsz8frq1_mi250_gpus64: 
+# speech: loaded 280531, skipped 710 samples
+# dataset Modality.AUDIO batch number is 35066
+# dataset Modality.TEXT batch number is 1153330 
+# trained on 64 GPUs
+# grouped total_num_itrs = 18567
+
+# base_speech_text_en_maxtok500k_bsz6_mi250_gpus16 (lr=3e-4)
+# max tokens per device = 500000 and max sentences per device = 6
+# dataset Modality.AUDIO batch number is 140455 (140455/16=8778) 
+# dataset Modality.TEXT batch number is 1537774 (1537774/16=96111)
+# grouped total_num_itrs = 104888
+# job 0: 812422
+
+# base_speech_text_en_maxtok500k_bsz6_frq1_mi250_gpus16
+# job 0: 813835, then pred_var_AUDIO is 0.00991882011294365 < 0.01
+
+# base_speech_text_en_maxtok500k_bsz6_frq1_layerdrop0.05_mi250_gpus16
+# job 0: 814742
+
+# base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_mi250_gpus16
+# job 0: 814635 (done)
+# job 0: 814819
+# job 1: 814820 (after 814819)
+# job 2: 814821 (after 814820)
+# job 3: 814822 (after 814821)
+# job 4: 814823 (after 814822)
+
+# base_speech_text_en_maxtok500k_bsz6_frq1_gradclip10_mi250_gpus16
+# job 0: 814745
+
+# base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_layerdrop0.05_clipnorm10_mi250_gpus16
+# job 0: 814849
+# job 1: 814850 (after 814849)
+# job 2: 814851 (after 814850)
+# job 3: 814852 (after 814851)
+# job 4: 814853 (after 814852)
+
+# base_speech_text_en_maxtok500k_bsz6_frq2_mi250_gpus16 (lr=3e-5, frq=2)
+# job 0: 814141
+
+# base_speech_text_en_maxtok500k_bsz6_frq1_audio10_mi250_gpus16 (FloatingPointError: Minimum loss scale reached (1e-06). Your loss is probably exploding. Try lowering the learning rate, using gradient clipping or increasing the batch size.)
+# job 0: 814734
+
+# base_speech_text_en_maxtok500k_bsz6_frq1_mi250_gpus32
+# job 0: 814726

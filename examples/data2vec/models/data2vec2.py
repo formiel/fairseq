@@ -430,10 +430,10 @@ class Data2VecMultiModel(BaseFairseqModel):
 
         # modality: TEXT, source dtype: torch.int64
         # modality: AUDIO, source dtype: torch.float16
-        # dummy_source_text = torch.randint(len(self.task.text_task.dictionary) - 1, (1, self.task.text_task.cfg.tokens_per_sample), dtype=torch.int64, device=source.device)
-        # dummy_source_audio = torch.randn((1, self.task.audio_task.cfg.max_sample_size), dtype=torch.float16, device=source.device)
-        dummy_source_text = torch.zeros((1, self.task.text_task.cfg.tokens_per_sample), dtype=torch.int64, device=source.device)
-        dummy_source_audio = torch.zeros((1, self.task.audio_task.cfg.max_sample_size), dtype=torch.float16, device=source.device)
+        dummy_source_text = torch.randint(len(self.task.text_task.dictionary) - 1, (1, self.task.text_task.cfg.tokens_per_sample), dtype=torch.int64, device=source.device)
+        dummy_source_audio = torch.randn((1, self.task.audio_task.cfg.max_sample_size), dtype=torch.float16, device=source.device)
+        # dummy_source_text = torch.zeros((1, self.task.text_task.cfg.tokens_per_sample), dtype=torch.int64, device=source.device, requires_grad=False)
+        # dummy_source_audio = torch.zeros((1, self.task.audio_task.cfg.max_sample_size), dtype=torch.float16, device=source.device, requires_grad=False)
 
         x = extractor_out["x"]
         for name in remaining_extractor_names:
