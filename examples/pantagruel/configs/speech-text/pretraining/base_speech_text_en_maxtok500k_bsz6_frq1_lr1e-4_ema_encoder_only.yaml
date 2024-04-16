@@ -24,7 +24,7 @@ checkpoint:
 
 task:
   _name: multimodal_pretraining
-  audio_ratio: 10
+  audio_ratio: 1
   text_ratio: 1
   # update_freq: [4]
   audio:
@@ -76,7 +76,7 @@ criterion:
 optimization:
   clip_norm: 1
   max_update: 400000
-  lr: [0.0003]
+  lr: [0.0001]
   debug_param_names: true
   # max_update: 1000000
   update_freq: [1]
@@ -108,7 +108,7 @@ model:
   ema_decay: 0.999
   ema_end_decay: 0.99999
   ema_anneal_end_step: 75000
-  ema_encoder_only: false # speech: false, text: true
+  ema_encoder_only: true # speech: false, text: true
 
   average_top_k_layers: 8
   instance_norm_target_layer: true

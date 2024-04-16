@@ -23,6 +23,8 @@ SUFFIX=
 MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4
 CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_layerdrop0.05_clipnorm10
+CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_layerdrop0.05_clipnorm10_ema_encoder_only
+CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_ema_encoder_only
 
 
 ## Data
@@ -106,10 +108,12 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 
 # base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_layerdrop0.05_clipnorm10_mi250_gpus16
 # job 0: 814849
-# job 1: 814850 (after 814849)
-# job 2: 814851 (after 814850)
-# job 3: 814852 (after 814851)
-# job 4: 814853 (after 814852)
+
+# base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_layerdrop0.05_clipnorm10_ema_encoder_only_mi250_gpus16
+# job 0: 815031
+
+# base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_ema_encoder_only_mi250_gpus16
+# job 0: 815209 (Watchdog caught collective operation timeout: WorkNCCL)
 
 # base_speech_text_en_maxtok500k_bsz6_frq2_mi250_gpus16 (lr=3e-5, frq=2)
 # job 0: 814141

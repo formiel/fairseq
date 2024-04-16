@@ -74,9 +74,9 @@ criterion:
     - masked_pct
 
 optimization:
-  clip_norm: 1
+  clip_norm: 10.0
   max_update: 400000
-  lr: [0.0003]
+  lr: [0.0001]
   debug_param_names: true
   # max_update: 1000000
   update_freq: [1]
@@ -108,7 +108,7 @@ model:
   ema_decay: 0.999
   ema_end_decay: 0.99999
   ema_anneal_end_step: 75000
-  ema_encoder_only: false # speech: false, text: true
+  ema_encoder_only: true # speech: false, text: true
 
   average_top_k_layers: 8
   instance_norm_target_layer: true
@@ -144,13 +144,13 @@ model:
       mask_noise_std: 0.01
       mask_dropout: 0
       add_masks: false
-      ema_local_encoder: false
       use_alibi_encoder: true
       prenet_layerdrop: 0.05
       prenet_dropout: 0.1
       learned_alibi_scale: true
       learned_alibi_scale_per_head: true
       # local_grad_mult: 2.5
+      # ema_local_encoder: false
       decoder:
         input_dropout: 0.1
         decoder_dim: 384
@@ -163,6 +163,7 @@ model:
       mask_noise_std: 0.01
       prenet_depth: 0
       # local_grad_mult: 1.0
+      # ema_local_encoder: true
       decoder:
         input_dropout: 0.1
         decoder_dim: 768

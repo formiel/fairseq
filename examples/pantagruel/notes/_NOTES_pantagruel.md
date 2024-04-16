@@ -33,7 +33,7 @@ rsync -chavzP --stats --exclude "*debug*" --exclude "*base_speech_mls1k*" \
         /Users/hang/tensorboard/
 
 rsyncpass -zarvm --max-size=100M --exclude="*debug*" \
-        adastra:/lus/home/CT10/c1615074/tphle/experiments/fairseq_tensorboard/* \
+        adastra://lus/work/CT10/c1615074/tphle/experiments/fairseq_tensorboard/* \
         /Users/hang/tensorboard/
 
 

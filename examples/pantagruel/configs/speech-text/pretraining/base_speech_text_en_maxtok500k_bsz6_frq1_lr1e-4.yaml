@@ -76,10 +76,10 @@ criterion:
 optimization:
   clip_norm: 1
   max_update: 400000
-  lr: [0.0003]
-  # debug_param_names: true
+  lr: [0.0001]
+  debug_param_names: true
   # max_update: 1000000
-  update_freq: [2]
+  update_freq: [1]
 
 optimizer:
   _name: adam
@@ -117,6 +117,16 @@ model:
 
   layerdrop: 0.0
   norm_eps: 1e-5
+
+  # shared_decoder:
+  #   input_dropout: 0.1
+  #   decoder_dim: 384
+  #   decoder_groups: 16
+  #   decoder_kernel: 7
+  #   decoder_layers: 5
+  #   decoder_residual: false
+  #   projection_layers: 2
+  #   projection_ratio: 2.0
 
   # supported_modality: 'AUDIO'
 
