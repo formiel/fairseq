@@ -22,9 +22,8 @@ SUFFIX=
 
 MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4
-# CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_layerdrop0.05_clipnorm10
-# CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_layerdrop0.05_clipnorm10_ema_encoder_only
-# CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_ema_encoder_only
+CONFIG=base_speech_text_en_maxtok100k_bsz16_frq1_lr3e-4_maxupdate1M
+CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M
 
 
 ## Data
@@ -72,6 +71,12 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 # trained on 16 GPUs
 # grouped total_num_itrs = 96111
 
+# base_speech_text_en_maxtok100k_bsz16_frq1_lr3e-4_maxupdate1M_gpu_p5_gpus16
+# job 0: 1535531
+# job 1: 1535532 (after 1535531)
+# job 2: 1535533 (after 1535532)
+# job 3: 1535534 (after 1535533)
+# job 4: 1535535 (after 1535534)
 
 ##### Adastra #####
 ###################
@@ -95,15 +100,6 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 # base_speech_text_en_maxtok500k_bsz6_frq1_layerdrop0.05_mi250_gpus16
 # job 0: 814742
 
-# base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_mi250_gpus16
-# job 0: 814635 (done)
-# job 0: 814819 (done)
-# job 0: 816914
-# job 1: 816915 (after 816914)
-# job 2: 816916 (after 816915)
-# job 3: 816917 (after 816916)
-# job 4: 816918 (after 816917)
-
 # base_speech_text_en_maxtok500k_bsz6_frq1_gradclip10_mi250_gpus16
 # job 0: 814745
 
@@ -124,3 +120,19 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 
 # base_speech_text_en_maxtok500k_bsz6_frq1_mi250_gpus32
 # job 0: 814726
+
+# base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_mi250_gpus16
+# job 0: 814635 (done)
+# job 0: 814819 (done)
+# job 0: 816914
+# job 1: 816915 (after 816914)
+# job 2: 816916 (after 816915)
+# job 3: 816917 (after 816916)
+# job 4: 816918 (after 816917)
+
+# base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_mi250_gpus16
+# job 0: 817219
+# job 1: 817220 (after 817219)
+# job 2: 817221 (after 817220)
+# job 3: 817222 (after 817221)
+# job 4: 817223 (after 817222)
