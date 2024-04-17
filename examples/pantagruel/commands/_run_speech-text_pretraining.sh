@@ -13,12 +13,13 @@ PARTITION=mi250
 TASK=pretraining
 MODALITY=speech-text
 USER_DIR=$FAIRSEQ/examples/data2vec
-TIME_LIMIT=590
+# TIME_LIMIT=1190
+TIME_LIMIT=1430
 # TIME_LIMIT=25
-HOURS=5
+HOURS=24
 JOBS=1
 GPUs=16
-SUFFIX=_no_dummy
+SUFFIX=_dummy_ops_in_encoder_decoder
 
 MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 # CONFIG=base_speech_text_en_debug
@@ -122,14 +123,21 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 # base_speech_text_en_maxtok500k_bsz6_frq1_mi250_gpus32
 # job 0: 814726
 
+### Models not having errors ###
+##### Dummy operations in modality-specific encoders before transformer blocks: with or without
 # base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_mi250_gpus16
 # job 0: 814635 (done)
 # job 0: 814819 (done)
-# job 0: 816914
-# job 1: 816915 (after 816914)
-# job 2: 816916 (after 816915)
-# job 3: 816917 (after 816916)
-# job 4: 816918 (after 816917)
+# job 0: 816914 (done)
+# job 0: 817922 (running)
+
+# base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_mi250_gpus16
+# job 0: 817219 (running)
 
 # base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_mi250_gpus16_no_dummy
-# job 0: 817506
+# job 0: 817506 (done)
+# job 0: 817917 (running)
+
+##### Dummy operations in modality-specific encoders and decoder
+# base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_mi250_gpus16_dummy_ops_in_encoder_decoder
+# job 0: 817926 (running)
