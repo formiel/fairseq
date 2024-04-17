@@ -9,7 +9,7 @@ common:
   fp16_no_flatten_grads: false
   # memory_efficient_fp16: true
   # fp16_scale_tolerance: 0.25
-  time_limit: ???
+  # time_limit: ???
   # user_dir: ${env:PWD}/examples/data2vec
 
 checkpoint:
@@ -80,6 +80,7 @@ optimization:
   debug_param_names: true
   # max_update: 1000000
   update_freq: [1]
+  stop_time_hours: ???
 
 optimizer:
   _name: adam

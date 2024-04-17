@@ -22,9 +22,9 @@ SUFFIX=
 
 MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4
-CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_layerdrop0.05_clipnorm10
-CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_layerdrop0.05_clipnorm10_ema_encoder_only
-CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_ema_encoder_only
+# CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_layerdrop0.05_clipnorm10
+# CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_layerdrop0.05_clipnorm10_ema_encoder_only
+# CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_ema_encoder_only
 
 
 ## Data
@@ -56,7 +56,7 @@ echo "=== EXP_NAME: ${EXPNAME} ==="
 export TMPDIR=$SCRATCH/tmp
 mkdir -p $TMPDIR
 
-submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} --config-name $CONFIG common.time_limit=${TIME_LIMIT} common.user_dir=${USER_DIR} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} task.audio.data=$AUDIO_DATA task.text.data=$TEXT_DATA distributed_training.distributed_world_size=${GPUs} distributed_training.distributed_port=${MASTER_PORT}"
+submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} --config-name $CONFIG common.user_dir=${USER_DIR} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} task.audio.data=$AUDIO_DATA task.text.data=$TEXT_DATA distributed_training.distributed_world_size=${GPUs} distributed_training.distributed_port=${MASTER_PORT} optimization.stop_time_hours=${TIME_LIMIT}"
 
 ##### Jean Zay #####
 ####################
@@ -97,11 +97,12 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 
 # base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_mi250_gpus16
 # job 0: 814635 (done)
-# job 0: 814819
-# job 1: 814820 (after 814819)
-# job 2: 814821 (after 814820)
-# job 3: 814822 (after 814821)
-# job 4: 814823 (after 814822)
+# job 0: 814819 (done)
+# job 0: 816914
+# job 1: 816915 (after 816914)
+# job 2: 816916 (after 816915)
+# job 3: 816917 (after 816916)
+# job 4: 816918 (after 816917)
 
 # base_speech_text_en_maxtok500k_bsz6_frq1_gradclip10_mi250_gpus16
 # job 0: 814745
