@@ -9,7 +9,7 @@
 # 1. Prepare data: same as speech-only and text-only pretraining
 
 # 2. Run PRE-TRAINING
-PARTITION=gpu_p5
+PARTITION=mi250
 TASK=pretraining
 MODALITY=speech-text
 USER_DIR=$FAIRSEQ/examples/data2vec
@@ -19,14 +19,14 @@ TIME_LIMIT=590
 HOURS=10
 JOBS=5
 GPUs=16
-SUFFIX=_no_dummy
+SUFFIX=_dummy_random
 
 MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 # CONFIG=base_speech_text_en_debug
 # CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4
 # CONFIG=base_speech_text_en_maxtok100k_bsz16_frq1_lr3e-4_maxupdate1M
-# CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M
-CONFIG=base_speech_text_en_maxtok1000k_bsz16_frq1_lr3e-4_wo_lr_cycles_maxupdate1M
+CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M
+# CONFIG=base_speech_text_en_maxtok1000k_bsz16_frq1_lr3e-4_wo_lr_cycles_maxupdate1M
 
 
 ## Data
@@ -97,35 +97,8 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 # grouped total_num_itrs = 104888
 # job 0: 812422
 
-# base_speech_text_en_maxtok500k_bsz6_frq1_mi250_gpus16
-# job 0: 813835, then pred_var_AUDIO is 0.00991882011294365 < 0.01
 
-# base_speech_text_en_maxtok500k_bsz6_frq1_layerdrop0.05_mi250_gpus16
-# job 0: 814742
-
-# base_speech_text_en_maxtok500k_bsz6_frq1_gradclip10_mi250_gpus16
-# job 0: 814745
-
-# base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_layerdrop0.05_clipnorm10_mi250_gpus16
-# job 0: 814849
-
-# base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_layerdrop0.05_clipnorm10_ema_encoder_only_mi250_gpus16
-# job 0: 815031
-
-# base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_ema_encoder_only_mi250_gpus16
-# job 0: 815209 (Watchdog caught collective operation timeout: WorkNCCL)
-
-# base_speech_text_en_maxtok500k_bsz6_frq2_mi250_gpus16 (lr=3e-5, frq=2)
-# job 0: 814141
-
-# base_speech_text_en_maxtok500k_bsz6_frq1_audio10_mi250_gpus16 (FloatingPointError: Minimum loss scale reached (1e-06). Your loss is probably exploding. Try lowering the learning rate, using gradient clipping or increasing the batch size.)
-# job 0: 814734
-
-# base_speech_text_en_maxtok500k_bsz6_frq1_mi250_gpus32
-# job 0: 814726
-
-### Models not having errors ###
-##### No dummy
+##### No dummy ops
 # base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_mi250_gpus16_no_dummy
 # job 0: 817506 (done)
 # job 0: 817917 (running)
@@ -143,5 +116,14 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 # job 0: 817219 (running)
 
 ##### Dummy operations in modality-specific encoders and decoder
+####### zero input tensors
 # base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_mi250_gpus16_dummy_ops_in_encoder_decoder
 # job 0: 817926 (running)
+
+####### random input tensors
+# base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_mi250_gpus16_dummy_random
+# job 0: 818323
+# job 1: 818324 (after 818323)
+# job 2: 818325 (after 818324)
+# job 3: 818326 (after 818325)
+# job 4: 818327 (after 818326)
