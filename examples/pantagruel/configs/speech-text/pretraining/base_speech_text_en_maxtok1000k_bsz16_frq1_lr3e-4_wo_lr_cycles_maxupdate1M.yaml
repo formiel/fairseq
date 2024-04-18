@@ -14,7 +14,7 @@ common:
 
 checkpoint:
   # save_interval: 1
-  save_interval_updates: 5000
+  save_interval_updates: 2500
   # keep_interval_updates: 1
   # no_epoch_checkpoints: true
   keep_best_checkpoints: 10
@@ -94,7 +94,7 @@ lr_scheduler:
   warmup_init_lr: 1e-7
   lr_shrink: 1
   min_lr: 1e-9
-  lr_period_updates: 24000
+  # lr_period_updates: 24000
 
 model:
   _name: data2vec_multi
