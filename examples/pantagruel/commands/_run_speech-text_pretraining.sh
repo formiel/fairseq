@@ -131,11 +131,6 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 # job 0: 817917 (running)
 
 # base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_mi250_gpus16_no_dummy
-# job 0: 818158
-# job 1: 818159 (after 818158)
-# job 2: 818160 (after 818159)
-# job 3: 818161 (after 818160)
-# job 4: 818162 (after 818161)
 
 ##### Dummy operations in modality-specific encoders before transformer blocks: with or without
 # base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_mi250_gpus16
