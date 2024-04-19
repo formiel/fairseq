@@ -428,22 +428,22 @@ class Data2VecMultiModel(BaseFairseqModel):
             precomputed_mask=precomputed_mask,
         )
 
-        # modality: TEXT, source dtype: torch.int64
-        # modality: AUDIO, source dtype: torch.float16
-        dummy_source_text = torch.randint(len(self.task.text_task.dictionary) - 1, (1, self.task.text_task.cfg.tokens_per_sample), dtype=torch.int64, device=source.device)
-        dummy_source_audio = torch.randn((1, self.task.audio_task.cfg.max_sample_size), dtype=torch.float16, device=source.device)
-        # dummy_source_text = torch.zeros((1, self.task.text_task.cfg.tokens_per_sample), dtype=torch.int64, device=source.device)
-        # dummy_source_audio = torch.zeros((1, self.task.audio_task.cfg.max_sample_size), dtype=torch.float16, device=source.device)
-
         x = extractor_out["x"]
-        x_dummies = []
-        encoder_mask_dummies = []
-        for name in remaining_extractor_names:
-            dummy = dummy_source_audio if name.lower() == "audio" else dummy_source_text
-            dummy_outs = self.modality_encoders[name](dummy, None, False, False)
-            x_dummies.append(dummy_outs["x"])
-            encoder_mask_dummies.append(dummy_outs["encoder_mask"])
-            x += 0 * dummy_outs["x"].mean(dim=1).unsqueeze(1)
+        x_dummies, encoder_mask_dummies = None, None
+        if len(remaining_extractor_names) > 0:
+            # modality: TEXT, source dtype: torch.int64
+            # modality: AUDIO, source dtype: torch.float16
+            dummy_source_text = torch.randint(len(self.task.text_task.dictionary) - 1, (1, self.task.text_task.cfg.tokens_per_sample), dtype=torch.int64, device=source.device)
+            dummy_source_audio = torch.randn((1, self.task.audio_task.cfg.max_sample_size), dtype=torch.float16, device=source.device)
+            # dummy_source_text = torch.zeros((1, self.task.text_task.cfg.tokens_per_sample), dtype=torch.int64, device=source.device)
+            # dummy_source_audio = torch.zeros((1, self.task.audio_task.cfg.max_sample_size), dtype=torch.float16, device=source.device)
+            x_dummies, encoder_mask_dummies = [], []
+            for name in remaining_extractor_names:
+                dummy = dummy_source_audio if name.lower() == "audio" else dummy_source_text
+                dummy_outs = self.modality_encoders[name](dummy, None, False, False)
+                x_dummies.append(dummy_outs["x"])
+                encoder_mask_dummies.append(dummy_outs["encoder_mask"])
+                x += 0 * dummy_outs["x"].mean(dim=1).unsqueeze(1)
         encoder_mask = extractor_out["encoder_mask"]
         masked_padding_mask = extractor_out["padding_mask"]
         masked_alibi_bias = extractor_out.get("alibi_bias", None)
@@ -511,18 +511,18 @@ class Data2VecMultiModel(BaseFairseqModel):
                 feature_extractor.decoder,
                 encoder_mask,
             )
-            for name, x_dummy, encoder_mask_dummy in zip(
-                remaining_extractor_names, x_dummies, encoder_mask_dummies
-            ):
-                remaining_extractor = self.modality_encoders[name]
-                dummy_out = self.forward_decoder(
-                            x_dummy,
-                            remaining_extractor,
-                            remaining_extractor.decoder,
-                            encoder_mask_dummy,
-                            )
-                # logging.info(f"dummy_out: {dummy_out.size()}")
-                dx += 0 * dummy_out.mean(dim=1).unsqueeze(1)
+            if x_dummies is not None and encoder_mask_dummies is not None:
+                for name, x_dummy, encoder_mask_dummy in zip(
+                    remaining_extractor_names, x_dummies, encoder_mask_dummies
+                ):
+                    remaining_extractor = self.modality_encoders[name]
+                    dummy_out = self.forward_decoder(
+                                x_dummy,
+                                remaining_extractor,
+                                remaining_extractor.decoder,
+                                encoder_mask_dummy,
+                                )
+                    dx += 0 * dummy_out.mean(dim=1).unsqueeze(1)
 
             xs.append(dx)
             orig_x = x

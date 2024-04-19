@@ -9,7 +9,7 @@
 # 1. Prepare data: same as speech-only and text-only pretraining
 
 # 2. Run PRE-TRAINING
-PARTITION=mi250
+PARTITION=gpu_p5
 TASK=pretraining
 MODALITY=speech-text
 USER_DIR=$FAIRSEQ/examples/data2vec
@@ -27,6 +27,7 @@ MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 # CONFIG=base_speech_text_en_maxtok100k_bsz16_frq1_lr3e-4_maxupdate1M
 CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M
 # CONFIG=base_speech_text_en_maxtok1000k_bsz16_frq1_lr3e-4_wo_lr_cycles_maxupdate1M
+CONFIG=base_speech_text_en_maxtok1000k_bsz16_frq1_lr3e-4_wo_lr_cycles_maxupdate1M
 
 
 ## Data
@@ -74,12 +75,12 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 # trained on 16 GPUs
 # grouped total_num_itrs = 96111
 
-# base_speech_text_en_maxtok1000k_bsz16_frq1_lr3e-4_wo_lr_cycles_maxupdate1M_gpu_p5_gpus16_no_dummy
-# job 0: 1548165
-# job 1: 1548166 (after 1548165)
-# job 2: 1548167 (after 1548166)
-# job 3: 1548168 (after 1548167)
-# job 4: 1548170 (after 1548168)
+# base_speech_text_en_maxtok1000k_bsz16_frq1_lr3e-4_wo_lr_cycles_maxupdate1M_gpu_p5_gpus16_dummy_random
+# job 0: 1552709
+# job 1: 1552710 (after 1552709)
+# job 2: 1552711 (after 1552710)
+# job 3: 1552712 (after 1552711)
+# job 4: 1552713 (after 1552712)
 
 ##### Adastra #####
 ###################
@@ -122,7 +123,7 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 
 ####### random input tensors
 # base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_mi250_gpus16_dummy_random
-# job 0: 818323
+# job 0: 818323 (running)
 # job 1: 818324 (after 818323)
 # job 2: 818325 (after 818324)
 # job 3: 818326 (after 818325)
