@@ -9,17 +9,17 @@
 # 1. Prepare data: same as speech-only and text-only pretraining
 
 # 2. Run PRE-TRAINING
-PARTITION=gpu_p5
+PARTITION=mi250
 TASK=pretraining
 MODALITY=speech-text
 USER_DIR=$FAIRSEQ/examples/data2vec
 # TIME_LIMIT=1190
 # TIME_LIMIT=1430
-TIME_LIMIT=590
-HOURS=10
-JOBS=5
+TIME_LIMIT=710
+HOURS=5
+JOBS=1
 GPUs=16
-SUFFIX=_dummy_random
+SUFFIX=_apex
 
 MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 # CONFIG=base_speech_text_en_debug
@@ -27,7 +27,7 @@ MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 # CONFIG=base_speech_text_en_maxtok100k_bsz16_frq1_lr3e-4_maxupdate1M
 CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M
 # CONFIG=base_speech_text_en_maxtok1000k_bsz16_frq1_lr3e-4_wo_lr_cycles_maxupdate1M
-CONFIG=base_speech_text_en_maxtok1000k_bsz16_frq1_lr3e-4_wo_lr_cycles_maxupdate1M
+# CONFIG=base_speech_text_en_maxtok1000k_bsz16_frq1_lr3e-4_wo_lr_cycles_maxupdate1M
 
 
 ## Data
@@ -123,8 +123,17 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 
 ####### random input tensors
 # base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_mi250_gpus16_dummy_random
-# job 0: 818323 (running)
-# job 1: 818324 (after 818323)
-# job 2: 818325 (after 818324)
-# job 3: 818326 (after 818325)
-# job 4: 818327 (after 818326)
+# job 0: 818323 (done) (10h/1job)
+# job 1: 818324 (done) (10h/1job)
+# job 2: 818325 (done) (10h/1job)
+# job 0: 827245 (done)
+# job 1: 827246 (after 827245)
+# job 2: 827247 (after 827246)
+# job 3: 827248 (after 827247)
+# job 4: 827249 (after 827248)
+
+# base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_mi250_gpus16_apex_fp16_memory
+# job 0: 822611
+
+# base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_mi250_gpus16_apex
+# job 0: 828194
