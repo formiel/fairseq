@@ -30,12 +30,12 @@ submit run ${PARTITION} $GPUS 20 5 $EXPNAME "fairseq-hydra-train --config-dir ${
 # base_wikipedia_enwiki_20240201: watch 10G
 # training, evaluated on RTE: OK
 # TODO: re-train with gpt2_bpe tokenizer: no need, checked the length of encoded tokens using different tokenizers already
-# experiments/stdlogs/run/base_wikipedia_875663.log
-# experiments/stdlogs/run/base_wikipedia_875657.log
-# experiments/stdlogs/run/base_wikipedia_875666.log
-# experiments/stdlogs/run/base_wikipedia_861275.log
-# experiments/stdlogs/run/base_wikipedia_875671.log
-# experiments/stdlogs/run/base_wikipedia_875660.log
+# experiments/stdlogs/run/base_wikipedia_875663.log: [2024-03-03 02:30:44,975] -> [2024-03-03 21:46:03,186]
+# experiments/stdlogs/run/base_wikipedia_875657.log: -> [2024-03-02 07:17:07,154]
+# experiments/stdlogs/run/base_wikipedia_875666.log: -> [2024-03-04 21:21:30,669]
+# experiments/stdlogs/run/base_wikipedia_861275.log: -> [2024-03-01 03:11:05,521]
+# experiments/stdlogs/run/base_wikipedia_875660.log: -> [2024-03-03 02:30:18,319]
+# experiments/stdlogs/run/base_wikipedia_875671.log: -> [2024-03-06 01:03:49,264] (done training epoch 11 @ 1000000 updates) (4h for 25k steps)
 
 # base_wikipedia_frwiki_20190701
 # `Minimum loss scale reached (0.0001). Your loss is probably exploding`

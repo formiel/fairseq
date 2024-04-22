@@ -19,7 +19,7 @@ TIME_LIMIT=710
 HOURS=5
 JOBS=1
 GPUs=16
-SUFFIX=_apex
+SUFFIX=
 
 MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 # CONFIG=base_speech_text_en_debug
@@ -28,6 +28,7 @@ MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M
 # CONFIG=base_speech_text_en_maxtok1000k_bsz16_frq1_lr3e-4_wo_lr_cycles_maxupdate1M
 # CONFIG=base_speech_text_en_maxtok1000k_bsz16_frq1_lr3e-4_wo_lr_cycles_maxupdate1M
+CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_ema_encoder_only
 
 
 ## Data
@@ -137,3 +138,6 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 
 # base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_mi250_gpus16_apex
 # job 0: 828194
+
+# base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_ema_encoder_only_mi250_gpus16
+# job 0: 829704
