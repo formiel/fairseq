@@ -15,11 +15,11 @@ MODALITY=speech-text
 USER_DIR=$FAIRSEQ/examples/data2vec
 # TIME_LIMIT=1190
 # TIME_LIMIT=1430
-TIME_LIMIT=710
-HOURS=5
-JOBS=1
+TIME_LIMIT=720
+HOURS=12.5
+JOBS=5
 GPUs=16
-SUFFIX=
+SUFFIX=_dummy_random
 
 MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 # CONFIG=base_speech_text_en_debug
@@ -28,7 +28,7 @@ MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M
 # CONFIG=base_speech_text_en_maxtok1000k_bsz16_frq1_lr3e-4_wo_lr_cycles_maxupdate1M
 # CONFIG=base_speech_text_en_maxtok1000k_bsz16_frq1_lr3e-4_wo_lr_cycles_maxupdate1M
-CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_ema_encoder_only
+# CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_ema_encoder_only
 
 
 ## Data
@@ -132,6 +132,11 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 # job 2: 827247 (after 827246)
 # job 3: 827248 (after 827247)
 # job 4: 827249 (after 827248)
+# job 0: 831239
+# job 1: 831240 (after 831239)
+# job 2: 831241 (after 831240)
+# job 3: 831242 (after 831241)
+# job 4: 831243 (after 831242)
 
 # base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_mi250_gpus16_apex_fp16_memory
 # job 0: 822611
