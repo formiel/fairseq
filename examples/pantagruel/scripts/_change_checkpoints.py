@@ -41,11 +41,12 @@ def main():
                     cfg[k][subtask] = None
                     print(f"{subtask}: {cfg[k][subtask]}")
 
-    # for k in list(ckpt["model"].keys()):
-    #     if (k.startswith("modality_encoders.AUDIO")
-    #     ):
-    #         print(f"Deleting {k} from checkpoint")
-    #         del ckpt["model"][k]
+    if args.remove_modality == "audio":
+        for k in list(ckpt["model"].keys()):
+            if (k.startswith("modality_encoders.AUDIO")
+            ):
+                print(f"Deleting {k} from checkpoint")
+                del ckpt["model"][k]
             
     ckpt["cfg"] = cfg
     mod = "audio" if args.remove_modality == "text" else "text"
