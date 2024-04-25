@@ -1,3 +1,10 @@
+# pysync
+{
+        "localPath": "/Users/hang/github/formiel/fairspeech/",
+        "remotePath": "adastra:/lus/work/CT10/c1615074/tphle/code/fairspeech/"
+        },
+
+
 # Sync data
 rsync -chavzP --stats \
         /Users/hang/github/formiel/fairspeech/ \

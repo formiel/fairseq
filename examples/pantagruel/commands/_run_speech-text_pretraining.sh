@@ -12,24 +12,30 @@
 PARTITION=mi250
 TASK=pretraining
 MODALITY=speech-text
-USER_DIR=$FAIRSEQ/examples/data2vec
-# TIME_LIMIT=1190
-# TIME_LIMIT=1430
-TIME_LIMIT=720
-HOURS=12.5
-JOBS=5
+# USER_DIR=$FAIRSEQ/examples/data2vec
+USER_DIR=$FAIRSEQ/examples/pantagruel
+TIME_LIMIT=1190
+# TIME_LIMIT=740
+# TIME_LIMIT=10
+HOURS=20
+JOBS=1
 GPUs=16
-SUFFIX=_dummy_random
+# SUFFIX=_dummy_random
+SUFFIX=
 
 MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 # CONFIG=base_speech_text_en_debug
 # CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4
 # CONFIG=base_speech_text_en_maxtok100k_bsz16_frq1_lr3e-4_maxupdate1M
-CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M
+# CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M
 # CONFIG=base_speech_text_en_maxtok1000k_bsz16_frq1_lr3e-4_wo_lr_cycles_maxupdate1M
 # CONFIG=base_speech_text_en_maxtok1000k_bsz16_frq1_lr3e-4_wo_lr_cycles_maxupdate1M
 # CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_ema_encoder_only
 
+CONFIG=base_speech_text_en_debug
+CONFIG=base_speech_text_en_cnnx3_tokentype
+CONFIG=base_speech_text_en_cnnx2_tokentype
+CONFIG=base_speech_text_en_rep
 
 ## Data
 if [[ $PARTITION != "mi250" ]]; then
@@ -146,3 +152,20 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 
 # base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_ema_encoder_only_mi250_gpus16
 # job 0: 829704
+
+# base_speech_text_en_cnnx3_tokentype_mi250_gpus16
+# job 0: 834388
+# job 1: 834389 (after 834388)
+# job 2: 834390 (after 834389)
+# job 3: 834391 (after 834390)
+# job 4: 834392 (after 834391)
+
+# base_speech_text_en_cnnx2_tokentype_mi250_gpus16
+# job 0: 835838
+# job 1: 835839 (after 835838)
+# job 2: 835840 (after 835839)
+# job 3: 835841 (after 835840)
+# job 4: 835842 (after 835841)
+
+# base_speech_text_en_rep_mi250_gpus16
+# job 0: 835844

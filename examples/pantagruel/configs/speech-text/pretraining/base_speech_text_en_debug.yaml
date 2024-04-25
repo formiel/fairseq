@@ -3,27 +3,27 @@
 common:
   fp16: true
   log_format: json
-  log_interval: 200
-  tensorboard_logdir: ???
+  log_interval: 20
+  # tensorboard_logdir: ???
   min_loss_scale: 1e-6
   fp16_no_flatten_grads: false
   # memory_efficient_fp16: true
   # fp16_scale_tolerance: 0.25
   # time_limit: ???
-  # user_dir: ${env:PWD}/examples/data2vec
+  user_dir: ???
 
 checkpoint:
   # save_interval: 1
   # save_interval_updates: 5000
   # keep_interval_updates: 1
-  # no_epoch_checkpoints: true
-  keep_best_checkpoints: 10
-  keep_last_epochs: 20
+  no_epoch_checkpoints: true
+  # keep_best_checkpoints: 10
+  # keep_last_epochs: 20
   # patience: 10
   save_dir: ???
 
 task:
-  _name: multimodal_pretraining
+  _name: pantagruel_multimodal_pretraining
   audio_ratio: 1
   text_ratio: 1
   # update_freq: [4]
@@ -94,10 +94,10 @@ lr_scheduler:
   warmup_init_lr: 1e-7
   lr_shrink: 1
   min_lr: 1e-9
-  lr_period_updates: 24000
+  # lr_period_updates: 24000
 
 model:
-  _name: data2vec_multi
+  _name: pantagruel_multi
 
   loss_beta: 0
   loss_scale: null
@@ -119,6 +119,8 @@ model:
   layerdrop: 0.0
   norm_eps: 1e-5
 
+  use_token_type_embeddings: true
+
   # shared_decoder:
   #   input_dropout: 0.1
   #   decoder_dim: 384
@@ -133,7 +135,7 @@ model:
 
   modalities:
     audio:
-      feature_encoder_spec: '[(512, 10, 5)] + [(512, 3, 2)] * 4 + [(512,2,2)] + [(512,2,2)]'
+      feature_encoder_spec: '[(512, 10, 5)] + [(512, 3, 2)] * 4 + [(512,2,2)] + [(512,2,2)] + [(512,2,2)] + [(512,2,2)] + [(512,2,2)]'
       conv_pos_depth: 5
       conv_pos_width: 95
       conv_pos_groups: 16
