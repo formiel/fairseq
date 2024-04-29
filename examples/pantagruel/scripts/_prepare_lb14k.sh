@@ -37,7 +37,6 @@ DATASETS="mls_french_jz
           NCCFr 
           voxpopuli_unlabeled 
           voxpopuli_transcribed"
-DATASETS="audiocite_with_metadata"
 
 echo "Step 0: Create data folder with symlinks to raw audio folders"
 mkdir -p $RAW_DEST_DIR
@@ -57,5 +56,5 @@ echo "Step 1: Restructure data into TRAIN/VALID/TEST splits and create manifest 
 for DATA in $DATASETS; do
     python examples/pantagruel/scripts/data/prepare_audio_manifests.py --dataset $DATA \
         --audio-dir $RAW_DEST_DIR \
-        --output-dir $PREPARED_DEST_DIR
+        --output-dir $PREPARED_DEST_DIR |& tee $PREPARED_DEST_DIR/prepare_log_$DATA.log
 done
