@@ -142,14 +142,17 @@ def main():
     logging.info(f"n_train={n_train}, n_val={n_val}, n_test={n_test}")
     assert n_train + n_val + n_test == i+1
     SPLITS = ["train"]
+    DATA_DIR = [train_dir]
     if n_val > 0:
         SPLITS.append("valid")
+        DATA_DIR.append(valid_dir)
     if n_test > 0:
         SPLITS.append("test")
+        DATA_DIR.append(test_dir)
 
     # create zip file from each split under dataset_dir
-    for d in [train_dir, valid_dir, test_dir]:
-        logging.info(f"Creating zip for {d.as_posix()}")
+    for d in DATA_DIR:
+        logging.info(f"Creating zip for audio files in folder {d.as_posix()}")
         create_zip(
             data_root=d,
             zip_prefix=dataset_dir / f"waveforms_{d.name}",
@@ -161,7 +164,7 @@ def main():
     model_training_dir.mkdir(parents=True, exist_ok=True)
 
     for split in SPLITS:
-        logging.info(f"Writing manifest file for {split.upper()}")
+        logging.info(f"Writing manifest file for split:{split.upper()}")
         create_manifest_file(
             dataset_dir,
             model_training_dir,
