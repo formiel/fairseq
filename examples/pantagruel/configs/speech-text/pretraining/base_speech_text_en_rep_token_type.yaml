@@ -1,0 +1,177 @@
+# @package _group_
+
+common:
+  fp16: true
+  log_format: json
+  log_interval: 200
+  tensorboard_logdir: ???
+  min_loss_scale: 1e-6
+  fp16_no_flatten_grads: false
+  # memory_efficient_fp16: true
+  # fp16_scale_tolerance: 0.25
+  # time_limit: ???
+  user_dir: ???
+
+checkpoint:
+  # save_interval: 1
+  save_interval_updates: 5000
+  # keep_interval_updates: 1
+  # no_epoch_checkpoints: true
+  keep_best_checkpoints: 10
+  keep_last_epochs: 2
+  # patience: 10
+  save_dir: ???
+
+task:
+  _name: pantagruel_multimodal_pretraining
+  audio_ratio: 1
+  text_ratio: 1
+  # update_freq: [4]
+  audio:
+    data: ???
+    max_sample_size: 320000
+    min_sample_size: 32000
+    normalize: true
+    precompute_mask_config: {}
+  text:
+    data: ???
+    sample_break_mode: none
+    tokens_per_sample: 512
+    include_target_tokens: true
+    random_token_prob: 0
+    leave_unmasked_prob: 0
+    include_index: True
+    skip_masking: True
+    d2v2_multi: True
+  
+dataset:
+  num_workers: 1
+  max_tokens: 500000
+  # batch_size: 16
+  batch_size: 6
+  # ignore_unused_valid_subsets: true
+  skip_invalid_size_inputs_valid_test: true
+  # validate_interval: 1
+  # required_batch_size_multiple: 1
+  # disable_validation: true
+  # train_subset: train
+  # valid_subset: valid
+
+distributed_training:
+  # find_unused_parameters: true
+  distributed_world_size: ???
+  ddp_backend: legacy_ddp
+  distributed_port: ???
+
+criterion:
+  _name: model
+  log_keys:
+    - ema_decay
+    - target_var
+    - pred_var
+    - model_norm
+    - ema_norm
+    - masked_pct
+
+optimization:
+  clip_norm: 1
+  max_update: 1000000
+  lr: [0.0001]
+  debug_param_names: true
+  # max_update: 1000000
+  update_freq: [1]
+  stop_time_hours: ???
+
+optimizer:
+  _name: adam
+  adam_betas: [ 0.9,0.98 ]
+  adam_eps: 1e-06
+  weight_decay: 0.01
+
+lr_scheduler:
+  _name: cosine
+  warmup_updates: 8000
+  warmup_init_lr: 1e-7
+  lr_shrink: 1
+  min_lr: 1e-9
+  # lr_period_updates: 24000
+
+model:
+  _name: pantagruel_multi
+
+  loss_beta: 0
+  loss_scale: null
+
+  depth: 12
+  embed_dim: 768
+  clone_batch: 8
+
+  ema_decay: 0.999
+  ema_end_decay: 0.99999
+  ema_anneal_end_step: 75000
+  ema_encoder_only: false # speech: false, text: true
+
+  average_top_k_layers: 8
+  instance_norm_target_layer: true
+  layer_norm_target_layer: false
+  layer_norm_targets: false
+
+  layerdrop: 0.0
+  norm_eps: 1e-5
+
+  use_token_type_embeddings: true
+
+  # shared_decoder:
+  #   input_dropout: 0.1
+  #   decoder_dim: 384
+  #   decoder_groups: 16
+  #   decoder_kernel: 7
+  #   decoder_layers: 5
+  #   decoder_residual: false
+  #   projection_layers: 2
+  #   projection_ratio: 2.0
+
+  # supported_modality: 'AUDIO'
+
+  modalities:
+    audio:
+      feature_encoder_spec: '[(512, 10, 5)] + [(512, 3, 2)] * 4 + [(512,2,2)] + [(512,2,2)]'
+      conv_pos_depth: 5
+      conv_pos_width: 95
+      conv_pos_groups: 16
+      prenet_depth: 0
+      mask_prob: 0.5
+      mask_prob_adjust: 0.05
+      inverse_mask: false
+      mask_length: 5
+      mask_noise_std: 0.01
+      mask_dropout: 0
+      add_masks: false
+      ema_local_encoder: false
+      use_alibi_encoder: true
+      prenet_layerdrop: 0.05
+      prenet_dropout: 0.1
+      learned_alibi_scale: true
+      learned_alibi_scale_per_head: true
+      # local_grad_mult: 2.5
+      decoder:
+        input_dropout: 0.1
+        decoder_dim: 384
+        decoder_groups: 16
+        decoder_kernel: 7
+        decoder_layers: 4
+    text:
+      mask_prob: 0.48
+      mask_length: 1
+      mask_noise_std: 0.01
+      prenet_depth: 0
+      # local_grad_mult: 1.0
+      decoder:
+        input_dropout: 0.1
+        decoder_dim: 768
+        decoder_groups: 1
+        decoder_kernel: 9
+        decoder_layers: 5
+        decoder_residual: false
+        projection_layers: 2
+        projection_ratio: 2.0

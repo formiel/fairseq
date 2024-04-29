@@ -103,7 +103,7 @@ Hiện tại lúc import sẽ bị lỗi numpy, vợ chỉ cần chỉnh trong c
 Vì bản numpy mới không còn np.float nữa
 -->
 
-````bash
+```bash
 # installed in env
 . $OWN_HOMEDIR/loadpy39.sh
 cd $HOME/code/fairspeech_dd
@@ -121,4 +121,26 @@ pip install -e ./
 #     Can't uninstall 'fairseq'. No files were found to uninstall.
 # Successfully installed fairseq-1.0.0a0+fc3a4cc
 ```
-                                    
+
+# DATA
+- Dataset: mls_french_jz, number of audio files: 
+INFO:root:Total number of audio files: 263055
+INFO:root:n_train=258213, n_val=2416, n_test=2426
+(LB=263,055)
+
+- Dataset: audiocite_with_metadata, number of audio files: 818388
+- Dataset: studios-tamani-kalangou-french, number of audio files: 38332
+- Dataset: African_Accented_French, number of audio files: 16656 (LB=16,402)
+- Dataset: Att-HACK_SLR88, number of audio files: 36634 (LB=36,339)
+- Dataset: CaFE, number of audio files: 936 (LB=936)
+- Dataset: CFPP_corrected, number of audio files: 12577 (LB=9853)
+- Dataset: ESLO, number of audio files: 62918 (LB=62,918) xxx
+- Dataset: EPAC_flowbert, number of audio files: 623250 (LB=623,250) xxx
+- Dataset: GEMEP, number of audio files: 1260 (LB=1,236)
+- Dataset: MPF, number of audio files: 40579 (LB=19,527)
+- Dataset: Portmedia, number of audio files: 20264 (LB=19,627)
+- Dataset: TCOF_corrected, number of audio files: 84600 (LB=58,722)
+- Dataset: MaSS, number of audio files: 8219 (LB=8,219) xxx
+- Dataset: NCCFr, number of audio files: 29421 (LB=29,421) xxx
+- Dataset: voxpopuli_unlabeled, number of audio files: 570192 (LB=568,338)
+- Dataset: voxpopuli_transcribed, number of audio files: 77030 (LB=76.281)

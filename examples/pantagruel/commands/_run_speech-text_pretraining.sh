@@ -36,6 +36,7 @@ CONFIG=base_speech_text_en_debug
 CONFIG=base_speech_text_en_cnnx3_tokentype
 CONFIG=base_speech_text_en_cnnx2_tokentype
 CONFIG=base_speech_text_en_rep
+CONFIG=base_speech_text_en_rep_token_type
 
 ## Data
 if [[ $PARTITION != "mi250" ]]; then
@@ -169,3 +170,6 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 
 # base_speech_text_en_rep_mi250_gpus16
 # job 0: 835844
+
+# base_speech_text_en_rep_token_type_mi250_gpus16
+# job 0: 837088
