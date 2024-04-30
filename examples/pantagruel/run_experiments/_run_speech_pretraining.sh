@@ -117,15 +117,18 @@ done
 TASK=pretraining
 MODALITY=speech
 USER_DIR=$FAIRSEQ/examples/data2vec
-TIME_LIMIT=1430
+TIME_LIMIT=590
 
 MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=base_mls1k
 # CONFIG=base_audio_only_task
-# CONFIG=base_audio_only_task_ngpu16_fr_adastra
+CONFIG=base_audio_only_task_ngpu16_fr_adastra
 # CONFIG=base_audio_only_task_ngpu16_fr_adastra_maxtok1.4M_lr1e-3
 # CONFIG=large_audio_only_task_ngpu48_fr_adastra
-CONFIG=large_audio_only_task_ngpu64_fr_bsz89.6M_adastra
+# CONFIG=large_audio_only_task_ngpu64_fr_bsz89.6M_adastra
+
+# /lus/work/CT10/c1615074/tphle/experiments/stdlogs/run/base_audio_only_task_ngpu16_fr_adastra_704392
+
 
 # CONFIG=large_mls1k
 # GPUS=32
@@ -143,17 +146,21 @@ SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/adastra/${MODALITY}/${
 # submitted using 2 nodes
 # GPUs=16
 # GPUs=48
-GPUs=64
-HOURS=24
-JOBS=4
+GPUs=16
+HOURS=10
+JOBS=2
 JOBNAME=$EXPNAME
 submit run mi250 ${GPUs} ${HOURS} ${JOBS} ${JOBNAME} "${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} \
 --config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=${USER_DIR} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUs} distributed_training.distributed_port=${MASTER_PORT}"
 # base_audio_only_task_ngpu16_fr_adastra 
 # (exact same training settings as "base_audio_only_task_ngpu16_fr" trained on JZ)
 # 25k: 26m 
-# job 0: 704391 [2024-03-06 07:47:50,532] - 
-# job 1: 704392 (after 704391)
+# job 0: 704391 [2024-03-06 07:47:50,532] - [2024-03-07 07:12:42,795]: ~24h
+# job 1: 704392 [2024-03-07 07:58:31,000] - [2024-03-08 07:49:39,708]: ~24h
+# job 0: 845731 [2024-04-29 15:47:45,652] - [2024-04-30 01:07:44,119]: ~12h
+# job 1: 845732 (done training) [2024-04-30 01:23:43,862] - [2024-04-30 08:17:51,056]: ~7h (torch220 worked after installing torch23)
+# Total: 67 hours
+
 
 # base_audio_only_task_ngpu16_fr_adastra_maxtok1.4M_lr1e-3
 # job 0: 704393 [2024-03-06 08:08:57,336] - [2024-03-07 07:51:48,894]: 112977updates

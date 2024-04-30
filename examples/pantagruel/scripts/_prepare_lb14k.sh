@@ -20,8 +20,7 @@ SRC_DIR=/lus/work/CT10/lig3801/SHARED/pretraining_data/Modified/LeBenchmark/All_
 RAW_DEST_DIR=/lus/scratch/CT10/c1615074/tphle/Data/LeBenchmark_raw
 PREPARED_DEST_DIR=/lus/scratch/CT10/c1615074/tphle/Data/LeBenchmark_prepared
 # mls_french_jz: train/dev/test
-DATASETS="mls_french_jz
-          audiocite_with_metadata 
+DATASETS="audiocite_with_metadata 
           studios-tamani-kalangou-french 
           African_Accented_French 
           Att-HACK_SLR88 
@@ -38,17 +37,18 @@ DATASETS="mls_french_jz
           voxpopuli_unlabeled 
           voxpopuli_transcribed"
 
+
 echo "Step 0: Create data folder with symlinks to raw audio folders"
-mkdir -p $RAW_DEST_DIR
 for DATA in $DATASETS; do
-    if [[ $DATA != *"mls_french_jz"* ]] && [[ ! -d $RAW_DEST_DIR/$DATA ]]; then
-        echo "Creating directory for $DATA"
-        mkdir -p $RAW_DEST_DIR/$DATA
-        for subset_path in $SRC_DIR/$DATA/*; do
-            subset_name=$(basename $subset_path)
-            echo "full path: ${subset_path}, basename: ${subset_name}"
-            ln -s $subset_path $RAW_DEST_DIR/$DATA/$subset_name
-        done
+    if [[ $DATA != *"mls_french_jz"* ]] && [[ ! -L $RAW_DEST_DIR/$DATA ]]; then
+        echo "Creating symlinks to raw data for $DATA"
+        ln -s $SRC_DIR/$DATA $RAW_DEST_DIR/$DATA
+        # mkdir -p $RAW_DEST_DIR/$DATA
+        # for subset_path in $SRC_DIR/$DATA/*; do
+        #     subset_name=$(basename $subset_path)
+        #     echo "full path: ${subset_path}, basename: ${subset_name}"
+        #     ln -s $subset_path $RAW_DEST_DIR/$DATA/$subset_name
+        # done
     fi
 done
 
@@ -56,5 +56,5 @@ echo "Step 1: Restructure data into TRAIN/VALID/TEST splits and create manifest 
 for DATA in $DATASETS; do
     python examples/pantagruel/scripts/data/prepare_audio_manifests.py --dataset $DATA \
         --audio-dir $RAW_DEST_DIR \
-        --output-dir $PREPARED_DEST_DIR |& tee $PREPARED_DEST_DIR/prepare_log_$DATA.log
+        --output-dir $PREPARED_DEST_DIR |& tee $PREPARED_DEST_DIR/logs/prepare_log_$DATA.log
 done

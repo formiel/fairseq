@@ -21,6 +21,7 @@ from pathlib import Path
 import itertools
 import random
 import math
+import shutil
 
 import soundfile as sf
 
@@ -79,7 +80,7 @@ def main():
 
     # create directory to save output tsv and zipped audio files
     output_dir = Path(args.output_dir)
-    dataset_dir = output_dir / "restructured" / args.dataset # by datasets and splits
+    dataset_dir = output_dir / "zipped_audio" / args.dataset # by datasets and splits
     train_dir, valid_dir, test_dir = (
         dataset_dir / "train", dataset_dir / "valid", dataset_dir / "test"
     )
@@ -170,6 +171,10 @@ def main():
             model_training_dir,
             split,
         )
+
+    # clean files
+    for d in [train_dir, valid_dir, test_dir]:
+        shutil.rmtree(d)
 
 if __name__ == "__main__":
     main()
