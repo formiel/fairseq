@@ -116,8 +116,9 @@ done
 # 2. Run training
 TASK=pretraining
 MODALITY=speech
+FAIRSEQ=$HOME/code/fairspeech_torch23
 USER_DIR=$FAIRSEQ/examples/data2vec
-TIME_LIMIT=590
+TIME_LIMIT=1430
 
 MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=base_mls1k
@@ -133,7 +134,7 @@ CONFIG=base_audio_only_task_ngpu16_fr_adastra
 # CONFIG=large_mls1k
 # GPUS=32
 
-EXPNAME="${CONFIG}" # ===== CHECK THIS =====
+EXPNAME="${CONFIG}_torch23" # ===== CHECK THIS =====
 DATA_DIR=$WORK/Data/prepared/MLS_French
 CONFIG_DIR=$FAIRSEQ/examples/pantagruel/configs/${MODALITY}/${TASK}
 TENSORBOARD_DIR=$WORK/experiments/fairseq_tensorboard/pantagruel/adastra/${MODALITY}/${TASK}/${EXPNAME}
@@ -147,7 +148,7 @@ SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/adastra/${MODALITY}/${
 # GPUs=16
 # GPUs=48
 GPUs=16
-HOURS=10
+HOURS=24
 JOBS=2
 JOBNAME=$EXPNAME
 submit run mi250 ${GPUs} ${HOURS} ${JOBS} ${JOBNAME} "${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} \
@@ -161,6 +162,9 @@ submit run mi250 ${GPUs} ${HOURS} ${JOBS} ${JOBNAME} "${FAIRSEQ}/fairseq_cli/hyd
 # job 1: 845732 (done training) [2024-04-30 01:23:43,862] - [2024-04-30 08:17:51,056]: ~7h (torch220 worked after installing torch23)
 # Total: 67 hours
 
+# base_audio_only_task_ngpu16_fr_adastra_torch23
+# job 0: 851907 (not installed apex yet)
+# job 1: 851908 (after 851907) (installed apex)
 
 # base_audio_only_task_ngpu16_fr_adastra_maxtok1.4M_lr1e-3
 # job 0: 704393 [2024-03-06 08:08:57,336] - [2024-03-07 07:51:48,894]: 112977updates
