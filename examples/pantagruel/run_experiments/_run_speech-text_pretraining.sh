@@ -12,13 +12,14 @@
 PARTITION=mi250
 TASK=pretraining
 MODALITY=speech-text
+FAIRSEQ=$HOME/code/fairspeech
 # USER_DIR=$FAIRSEQ/examples/data2vec
 USER_DIR=$FAIRSEQ/examples/pantagruel
 TIME_LIMIT=1190
 # TIME_LIMIT=740
 # TIME_LIMIT=10
 HOURS=20
-JOBS=1
+JOBS=4
 GPUs=16
 # SUFFIX=_dummy_random
 SUFFIX=
@@ -33,10 +34,10 @@ MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 # CONFIG=base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_ema_encoder_only
 
 CONFIG=base_speech_text_en_debug
-CONFIG=base_speech_text_en_cnnx3_tokentype
+# CONFIG=base_speech_text_en_cnnx3_tokentype
 CONFIG=base_speech_text_en_cnnx2_tokentype
-CONFIG=base_speech_text_en_rep
-CONFIG=base_speech_text_en_rep_token_type
+# CONFIG=base_speech_text_en_rep
+# CONFIG=base_speech_text_en_rep_token_type
 
 ## Data
 if [[ $PARTITION != "mi250" ]]; then
@@ -160,6 +161,10 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 # job 2: 834390 (after 834389)
 # job 3: 834391 (after 834390)
 # job 4: 834392 (after 834391)
+# job 0: 849217
+# job 1: 849218 (after 849217)
+# job 2: 849219 (after 849218)
+# job 3: 849220 (after 849219)
 
 # base_speech_text_en_cnnx2_tokentype_mi250_gpus16
 # job 0: 835838
@@ -167,9 +172,17 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 # job 2: 835840 (after 835839)
 # job 3: 835841 (after 835840)
 # job 4: 835842 (after 835841)
+# job 0: 851766
+# job 1: 851767 (after 851766)
+# job 2: 851768 (after 851767)
+# job 3: 851769 (after 851768)
 
-# base_speech_text_en_rep_mi250_gpus16
+# base_speech_text_en_rep_mi250_gpus16 (potential difference with previous run: init bert weights)
 # job 0: 835844
+# job 0: 849221
+# job 1: 849222 (after 849221)
+# job 2: 849223 (after 849222)
+# job 3: 849224 (after 849223)
 
 # base_speech_text_en_rep_token_type_mi250_gpus16
 # job 0: 837088

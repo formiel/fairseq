@@ -14,7 +14,6 @@
 
 # First stage of the project: using only fully open data. The combination of MaSS + EPAC + NCCFr + GEMEP + Niger-Mali amounts to 1784 hours, which is 12.3% of LeBenchmark2 training data, so maybe we can first try excluding them and see how the performance turns out in comparison with LeBenchmark.
 
-STEP=$1
 
 SRC_DIR=/lus/work/CT10/lig3801/SHARED/pretraining_data/Modified/LeBenchmark/All_extracted
 RAW_DEST_DIR=/lus/scratch/CT10/c1615074/tphle/Data/LeBenchmark_raw
@@ -54,7 +53,10 @@ done
 
 echo "Step 1: Restructure data into TRAIN/VALID/TEST splits and create manifest files"
 for DATA in $DATASETS; do
-    python examples/pantagruel/scripts/data/prepare_audio_manifests.py --dataset $DATA \
+    bash $HOME/code/slurmx/tools/submit.sh run mi250 1 20 1 prepare_data_$DATA "python examples/pantagruel/scripts/data/prepare_audio_manifests.py --dataset $DATA \
         --audio-dir $RAW_DEST_DIR \
-        --output-dir $PREPARED_DEST_DIR |& tee $PREPARED_DEST_DIR/logs/prepare_log_$DATA.log
+        --output-dir $PREPARED_DEST_DIR" 
+        
+    # cp ${HOME}/experiments/stdlogs/run/${CONFIG}_*.log $PREPARED_DEST_DIR/logs/prepare_log_$DATA.log
 done
+# 851345 -> 851361
