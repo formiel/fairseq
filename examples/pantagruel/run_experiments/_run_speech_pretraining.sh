@@ -163,8 +163,8 @@ submit run mi250 ${GPUs} ${HOURS} ${JOBS} ${JOBNAME} "${FAIRSEQ}/fairseq_cli/hyd
 # Total: 67 hours
 
 # base_audio_only_task_ngpu16_fr_adastra_torch23
-# job 0: 851907 (not installed apex yet)
-# job 1: 851908 (after 851907) (installed apex)
+# job 0: 852754 (not install apex yet) (same speed as with torch22 (no flash attention))
+# job 1: 852755 (after 852754) (OSError: [Errno 12] Cannot allocate memory)
 
 # base_audio_only_task_ngpu16_fr_adastra_maxtok1.4M_lr1e-3
 # job 0: 704393 [2024-03-06 08:08:57,336] - [2024-03-07 07:51:48,894]: 112977updates

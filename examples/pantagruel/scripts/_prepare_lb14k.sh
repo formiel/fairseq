@@ -35,28 +35,36 @@ DATASETS="audiocite_with_metadata
           NCCFr 
           voxpopuli_unlabeled 
           voxpopuli_transcribed"
+DATASETS="MPF 
+          TCOF_corrected"
+FAIRSEQ=$HOME/code/fairspeech_torch23
 
 
-echo "Step 0: Create data folder with symlinks to raw audio folders"
 for DATA in $DATASETS; do
+    echo "------------- DATASET: ${DATA} -------------"
     if [[ $DATA != *"mls_french_jz"* ]] && [[ ! -L $RAW_DEST_DIR/$DATA ]]; then
         echo "Creating symlinks to raw data for $DATA"
         ln -s $SRC_DIR/$DATA $RAW_DEST_DIR/$DATA
-        # mkdir -p $RAW_DEST_DIR/$DATA
-        # for subset_path in $SRC_DIR/$DATA/*; do
-        #     subset_name=$(basename $subset_path)
-        #     echo "full path: ${subset_path}, basename: ${subset_name}"
-        #     ln -s $subset_path $RAW_DEST_DIR/$DATA/$subset_name
-        # done
     fi
+    bash $HOME/code/slurmx/tools/submit.sh run mi250 1 10 1 prepare_data_$DATA "$FAIRSEQ/examples/pantagruel/scripts/data/prepare_audio_manifests.py --dataset $DATA --audio-root $RAW_DEST_DIR --output-root $PREPARED_DEST_DIR --workers 1"
+    # python $FAIRSEQ/examples/pantagruel/scripts/data/prepare_audio_manifests.py --dataset $DATA --audio-root $RAW_DEST_DIR --output-root $PREPARED_DEST_DIR
 done
-
-echo "Step 1: Restructure data into TRAIN/VALID/TEST splits and create manifest files"
-for DATA in $DATASETS; do
-    bash $HOME/code/slurmx/tools/submit.sh run mi250 1 20 1 prepare_data_$DATA "python examples/pantagruel/scripts/data/prepare_audio_manifests.py --dataset $DATA \
-        --audio-dir $RAW_DEST_DIR \
-        --output-dir $PREPARED_DEST_DIR" 
-        
-    # cp ${HOME}/experiments/stdlogs/run/${CONFIG}_*.log $PREPARED_DEST_DIR/logs/prepare_log_$DATA.log
-done
-# 851345 -> 851361
+# 857817: voxpopuli_transcribed: OK (77387)
+# 861357: mls_french_jz
+# 861233 African_Accented_French OK (14483 + 1747 + 515  = 16745)
+# 861234 Att-HACK_SLR88 OK (36634)
+# 861235 CaFE OK (936)
+# 861236 CFPP_corrected
+# 861405 ESLO (62918)
+# 861238 GEMEP (1260)
+# 861239 MPF
+# 861408 Portmedia (20400) 
+# 861241 TCOF_corrected
+# 861410 MaSS OK (8219)
+# 861411 NCCFr (29421)
+# 861403 studios-tamani-kalangou-french OK (38332)
+# 861404 CFPP_corrected (12881)
+# 861406 EPAC_flowbert (R)
+# 861734 MPF error (zipping)
+# 861735 TCOF_corrected error
+# 861412 voxpopuli_unlabeled

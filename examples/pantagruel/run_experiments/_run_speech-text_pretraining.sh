@@ -35,8 +35,8 @@ MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 
 CONFIG=base_speech_text_en_debug
 # CONFIG=base_speech_text_en_cnnx3_tokentype
-CONFIG=base_speech_text_en_cnnx2_tokentype
-# CONFIG=base_speech_text_en_rep
+# CONFIG=base_speech_text_en_cnnx2_tokentype
+CONFIG=base_speech_text_en_rep
 # CONFIG=base_speech_text_en_rep_token_type
 
 ## Data

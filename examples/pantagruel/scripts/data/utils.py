@@ -4,11 +4,16 @@ Date: 26 April 2024
 """
 
 import glob
+import logging
 from pathlib import Path
 import math
 import zipfile
 from tqdm import tqdm
 import io
+import json
+import itertools
+import re
+from itertools import islice
 
 import soundfile as sf
 import torch
@@ -19,6 +24,80 @@ from fairseq.data.audio.audio_utils import (
     read_from_stored_zip,
     is_sf_audio_data,
 )
+TRAIN_FNAME = "train"
+VALID_FNAME = "valid"
+TEST_FNAME = "test"
+
+
+def process_audio_file(
+    audio_path: Path, dataset_dir: Path, 
+    rand=None, valid_percent=0.0,
+    max_chunk_duration=30
+):
+    """
+    Split or create symlink for an input audio path 
+    Output(s) is saved under dataset_dir / split, where split depend on audio_path
+    """
+    dest_dir = dataset_dir / TRAIN_FNAME
+    if "valid" in audio_path.as_posix() or "dev" in audio_path.as_posix():
+        dest_dir = dataset_dir / VALID_FNAME
+    elif "test" in audio_path.as_posix():
+        dest_dir = dataset_dir / TEST_FNAME
+    else:
+        if rand is not None and rand.random() <= valid_percent:
+            dest_dir = dataset_dir / TRAIN_FNAME
+
+    sample_rate = sf.info(audio_path).samplerate
+    max_chunk_frames = max_chunk_duration * sample_rate
+    duration = sf.info(audio_path.as_posix()).frames / sample_rate
+    num_chunks = math.ceil(duration / max_chunk_duration)
+    if num_chunks > 1:
+        logging.warning(f"splitting {audio_path.as_posix()} into {num_chunks} chunks...")
+        for start in range(num_chunks):
+            waveform, _ = sf.read(
+            audio_path, frames=max_chunk_frames, start=start*max_chunk_frames
+        ) # T
+            idx = "_{:02d}".format(start)
+            logging.info(f"writing to {dest_dir / f'{audio_path.stem}{idx}.flac'}")
+            sf.write(
+                (dest_dir / f"{audio_path.stem}{idx}.flac").as_posix(),
+                waveform, 16_000
+            )
+    else:
+        sym_path = dest_dir / audio_path.name
+        if not sym_path.is_symlink():
+            sym_path.symlink_to(audio_path)
+
+
+def get_paths_from_dir(
+    audio_dir: Path, audio_exts="wav,flac", excl_pattern=r'\/split(s)?\/'
+):
+    """
+    Get all files with specified extensions in all sub-level directories
+    except for those whose path containing "split" or "splits"
+    """
+    audio_paths = itertools.chain()
+    for ext in audio_exts.split(","):
+        audio_paths = itertools.chain(
+            audio_paths, 
+            glob.glob(f'{audio_dir}/**/*.{ext}', recursive=True)
+        )
+    audio_paths = list(audio_paths)
+    filtered_paths = [file for file in audio_paths if re.search(excl_pattern, file) is None]
+    return filtered_paths
+
+
+def get_paths_from_json(json_path):
+    assert json_path.exists()
+    with open(json_path, 'r') as f:
+        data = json.load(f)
+    audio_paths = []
+    if hasattr(data, "corpus"):
+        audio_paths = [d["path"] for d in data["corpus"]]
+    else:
+        for _, v in data.items():
+            audio_paths.append(v["path"])
+    return audio_paths
 
 
 def create_zip(
@@ -28,6 +107,7 @@ def create_zip(
     max_num_files=None,
 ):
     """
+    [OLD code without multiprocessing]
     Create zip files for all files in a given folder.
 
     Args:
@@ -50,6 +130,31 @@ def create_zip(
         with zipfile.ZipFile(zip_file_i, "w", zipfile.ZIP_STORED) as f:
             for path in tqdm(paths[i*max_num_files : (i+1)*max_num_files]):
                 f.write(path, arcname=path.name)
+
+
+def get_zip_info(data_root: Path, extensions="wav,flac,npy", max_num_files=None):
+    extensions = extensions.split(",")
+    paths = []
+    for ext in extensions:
+        paths.extend(data_root.glob(f"*.{ext}"))
+
+    num_zip_files = 0
+    if max_num_files is not None:
+        num_zip_files = math.ceil(len(paths) / max_num_files)
+    
+    return paths, num_zip_files, max_num_files
+
+
+def create_zip_file(zip_file_i, paths):
+    with zipfile.ZipFile(zip_file_i, "w", zipfile.ZIP_STORED) as z:
+        for path in tqdm(paths, desc=f"Creating {zip_file_i}"):
+            z.write(path, arcname=path.name)
+
+
+def chunk_paths(paths, chunk_size):
+    """Split paths into chunks of given size."""
+    it = iter(paths)
+    return iter(lambda: list(islice(it, chunk_size)), [])
 
 
 def create_manifest_file(
