@@ -149,7 +149,7 @@ SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/adastra/${MODALITY}/${
 # GPUs=48
 GPUs=16
 HOURS=24
-JOBS=2
+JOBS=1
 JOBNAME=$EXPNAME
 submit run mi250 ${GPUs} ${HOURS} ${JOBS} ${JOBNAME} "${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} \
 --config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=${USER_DIR} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUs} distributed_training.distributed_port=${MASTER_PORT}"
@@ -165,6 +165,7 @@ submit run mi250 ${GPUs} ${HOURS} ${JOBS} ${JOBNAME} "${FAIRSEQ}/fairseq_cli/hyd
 # base_audio_only_task_ngpu16_fr_adastra_torch23
 # job 0: 852754 (not install apex yet) (same speed as with torch22 (no flash attention))
 # job 1: 852755 (after 852754) (OSError: [Errno 12] Cannot allocate memory)
+# job 0: 875985
 
 # base_audio_only_task_ngpu16_fr_adastra_maxtok1.4M_lr1e-3
 # job 0: 704393 [2024-03-06 08:08:57,336] - [2024-03-07 07:51:48,894]: 112977updates

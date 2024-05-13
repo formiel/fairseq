@@ -44,6 +44,10 @@ rsyncpass -zarvm --max-size=100M --exclude="*debug*" \
         /Users/hang/tensorboard/
 
 
+rsyncpass -zarvm --max-size=100M --exclude="*debug*" \
+        adastra:/lus/scratch/CT10/c1615074/tphle/Data/LeBenchmark_prepared/zipped_audio/African_Accented_French/splits_additional/* \
+       /Users/hang/Downloads/adastra/
+
 ssh adastra-ccfr.cines.fr
 rsync -zarvm /lus/home/CT10/c1615074/tphle/experiments/fairseq_tensorboard/pantagruel/adastra umz16dj@jean-zay.idris.fr:/linkhome/rech/genlig01/umz16dj/experiments/fairseq_tensorboard/pantagruel/
 

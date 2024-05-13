@@ -53,6 +53,7 @@ class AudioTypeEncoder(PantagruelModalitySpecificEncoder):
             alibi_biases=alibi_biases,
             task=task,
         )
+        self.feature_enc_layers = eval(modality_cfg.feature_encoder_spec)
 
         super().__init__(
             modality_cfg=modality_cfg,

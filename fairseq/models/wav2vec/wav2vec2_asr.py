@@ -426,7 +426,10 @@ class Wav2VecEncoder(FairseqEncoder):
             if isinstance(w2v_args, Namespace):
                 cfg.w2v_args = w2v_args = convert_namespace_to_omegaconf(w2v_args)
 
-        self.is_d2v_multi = "data2vec_multi" in w2v_args.model.get("_name", None)
+        self.is_d2v_multi = (
+            "data2vec_multi" in w2v_args.model.get("_name", None) or
+            "pantagruel_multi" in w2v_args.model.get("_name", None)
+        )
 
         if not self.is_d2v_multi:
             model_normalized = w2v_args.task.get(
@@ -462,6 +465,10 @@ class Wav2VecEncoder(FairseqEncoder):
             else:
                 w2v_args.task.data = cfg.data
             task = tasks.setup_task(w2v_args.task, from_checkpoint=True)
+            if "pantagruel_multi" in w2v_args.model.get("_name", None):
+                # from examples.data2vec.data.modality import Modality
+                # task.supported_modalities = [Modality.TEXT, Modality.AUDIO]
+                logging.info(f"task.supported_modalities: {task.supported_modalities}")
 
             model = task.build_model(w2v_args.model, from_checkpoint=True)
 

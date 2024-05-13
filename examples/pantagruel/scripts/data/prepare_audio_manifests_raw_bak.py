@@ -155,7 +155,7 @@ def main():
     for d in DATA_DIR:
         logging.info(f"Creating zip for audio files in folder {d.as_posix()}")
         create_zip(
-            data_root=d,
+            data=d,
             zip_prefix=dataset_dir / f"waveforms_{d.name}",
             max_num_files=int(args.max_files)
         )

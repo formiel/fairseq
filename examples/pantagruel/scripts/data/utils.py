@@ -5,6 +5,7 @@ Date: 26 April 2024
 
 import glob
 import logging
+from typing import Union, List
 from pathlib import Path
 import math
 import zipfile
@@ -69,8 +70,71 @@ def process_audio_file(
             sym_path.symlink_to(audio_path)
 
 
+def process_audio_files_on_fly(
+    audio_paths: List[Path], 
+    out_split_dir: Path,
+    rand=None, 
+    valid_percent=0.0,
+    max_chunk_duration=30,
+):
+    if not out_split_dir.exists():
+        out_split_dir.mkdir(parents=True, exist_ok=True)
+
+    train_dict, valid_dict, test_dict = {}, {}, {}
+    num_file_splits = 0
+    for audio_path in audio_paths:
+        dest_dict = train_dict
+        if "valid" in audio_path.as_posix() or "dev" in audio_path.as_posix():
+            dest_dict = valid_dict
+        elif "test" in audio_path.as_posix():
+            dest_dict = test_dict
+        else:
+            if rand is not None and rand.random() <= valid_percent:
+                dest_dict = valid_dict
+
+        sample_rate = sf.info(audio_path).samplerate
+        max_chunk_frames = max_chunk_duration * sample_rate
+        duration = sf.info(audio_path).frames / sample_rate
+        num_chunks = math.ceil(duration / max_chunk_duration)
+        if num_chunks > 2:
+            for start in range(num_chunks-2):
+                dest_dict = read_and_save(
+                    audio_path=Path(audio_path), 
+                    frames=max_chunk_frames,
+                    offset=start*max_chunk_frames,
+                    idx="_{:02d}".format(start),
+                    out_dir=out_split_dir,
+                    dest_dict=dest_dict,
+                )
+            # combine last 2 chunks
+            dest_dict = read_and_save(
+                audio_path=Path(audio_path), 
+                frames=max_chunk_frames*2,
+                offset=(start+1)*max_chunk_frames,
+                idx="_{:02d}".format(start+1),
+                out_dir=out_split_dir,
+                dest_dict=dest_dict,
+                )
+            num_file_splits += num_chunks - 1
+        else:
+            dest_dict[audio_path.stem] = audio_path
+    
+    logging.info(f"num_file_splits: {num_file_splits}")
+    return train_dict, valid_dict, test_dict
+
+
+def read_and_save(audio_path: Path, frames, offset, idx, out_dir, dest_dict):
+    waveform, _ = sf.read(audio_path, frames=frames, start=offset) # T
+    out_path = out_dir / f'{audio_path.stem}{idx}.flac'
+    logging.info(f"writing to {out_path}")
+    sf.write(out_path, waveform, 16_000)
+    dest_dict[out_path.stem] = out_path
+    return dest_dict
+
+
 def get_paths_from_dir(
-    audio_dir: Path, audio_exts="wav,flac", excl_pattern=r'\/split(s)?\/'
+    audio_dir: Path, audio_exts="wav,flac", excl_pattern=r'\/split(s)?\/',
+    result_as="list",
 ):
     """
     Get all files with specified extensions in all sub-level directories
@@ -83,12 +147,21 @@ def get_paths_from_dir(
             glob.glob(f'{audio_dir}/**/*.{ext}', recursive=True)
         )
     audio_paths = list(audio_paths)
-    filtered_paths = [file for file in audio_paths if re.search(excl_pattern, file) is None]
-    return filtered_paths
+    if excl_pattern is not None:
+        filtered_paths = [file for file in audio_paths if re.search(excl_pattern, file) is None]
+    else:
+        filtered_paths = audio_paths
+    if result_as == "list":
+        return filtered_paths
+    elif result_as == "dict":
+        return {Path(p).stem: p for p in filtered_paths}
+    else:
+        raise NotImplementedError
 
 
 def get_paths_from_json(json_path):
-    assert json_path.exists()
+    if not json_path.exists():
+        return None
     with open(json_path, 'r') as f:
         data = json.load(f)
     audio_paths = []
@@ -100,8 +173,69 @@ def get_paths_from_json(json_path):
     return audio_paths
 
 
+def is_text_io_wrapper(obj):
+    return isinstance(obj, io.TextIOWrapper)
+
+
+def compute_duration(audio_path):
+    sample_rate = sf.info(audio_path).samplerate
+    duration = sf.info(audio_path).frames / sample_rate
+    return duration
+
+
+def is_long_audio(audio_path):
+    return True if compute_duration(audio_path) > 30 else False
+
+
+def get_split_duration(prefix_key, dictionary):
+    split_duration = 0
+    for k, v in dictionary.items():
+        if k.startswith(prefix_key):
+            # logging.info(f"{prefix_key} is split into {k}")
+            split_duration += compute_duration(v)
+    return split_duration
+
+
+def resolve_path_from_json(
+    dataset_root: Path, rel_jsons, existing_audios,
+    info_dir,
+):
+    """
+    read paths in json files and include only those that exist
+    """
+    json_paths = glob.glob(f'{dataset_root}/{rel_jsons}')
+    utterances = {} # dict of utt_id: path
+    # total_duration = 0
+    invalid_f = open(info_dir / "invalid_paths.txt", "w")
+    for json_path in json_paths:
+        json_path = Path(json_path)
+        assert json_path.exists()
+        with open(json_path, 'r') as f:
+            if is_text_io_wrapper(f):
+                for line in f:
+                    line = line.strip()
+                    if "path" in line:
+                        # correct the path
+                        audio_fname = line.split(": ")[-1]
+                        audio_fname = Path(
+                            audio_fname.replace('"', "").strip()
+                        ).stem
+                        if not audio_fname in utterances:
+                            if audio_fname not in existing_audios:
+                                # logging.warning(f'could not find {audio_fname}: {line}')
+                                print(line, file=invalid_f)
+                            else:
+                                utterances[audio_fname] = existing_audios[audio_fname]
+                                # total_duration += compute_duration(utterances[audio_fname])
+            else:
+                data = json.load(f)
+                print(f'Keys in json: {len(data.keys())}')
+    invalid_f.close()
+    return utterances
+
+
 def create_zip(
-    data_root: Path, 
+    data: Union[Path, dict], 
     zip_prefix: Path, 
     extensions="wav,flac,npy",
     max_num_files=None,
@@ -116,10 +250,15 @@ def create_zip(
         extensions: extensions of files to be zipped
         max_num_files: number of files to be included in a zip file
     """
-    extensions = extensions.split(",")
-    paths = []
-    for ext in extensions:
-        paths.extend(data_root.glob(f"*.{ext}"))
+    if isinstance(data, Path):
+        extensions = extensions.split(",")
+        paths = []
+        for ext in extensions:
+            paths.extend(data.glob(f"*.{ext}"))
+    elif isinstance(data, dict):
+        paths = [v for _, v in data.items()]
+    else:
+        raise NotImplementedError
 
     num_zip_files = 0
     if max_num_files is not None:
@@ -161,6 +300,7 @@ def create_manifest_file(
     dataset_dir: Path,
     tsv_dir:Path,
     split: str,
+    original_paths_to_check=None,
 ):
     """
     Create manifest tsv file for each split of the dataset
@@ -175,6 +315,7 @@ def create_manifest_file(
         data_zip.update(audio_paths)
         data_lengths.update(audio_lengths)
 
+    logging.info(f'Total duration of {split.upper()}: {sum([v for _, v in data_lengths.items()])/16000/3600} (h)')
     tsv_f = open(tsv_dir /  f"{split}_{dataset_dir.stem}.tsv", "w")
     print(dataset_dir.as_posix(), file=tsv_f) # writing the root directory
     for utt_id, path in data_zip.items():
@@ -186,15 +327,21 @@ def create_manifest_file(
         _path, slice_ptr = parse_path(path)
         byte_data = read_from_stored_zip(_path, slice_ptr[0], slice_ptr[1])
         assert is_sf_audio_data(byte_data)
+        # if not _is_sf_audio_data:
+        #     logging.warning(f"_is_sf_audio_data: {byte_data[0]}, {byte_data[1]}")
+        #     logging.warning(f"*** utt_id {utt_id} with path {path}: offset {slice_ptr[0]} and length {slice_ptr[1]}")
         path_or_fp = io.BytesIO(byte_data)
         wav, _ = sf.read(path_or_fp)
         feats = torch.from_numpy(wav).float()
 
-        try:
-            wav_2, _ = sf.read(dataset_dir / split / f"{utt_id}.flac")
-        except:
-            wav_2, _ = sf.read(dataset_dir / split / f"{utt_id}.wav")
-        feats_2 = torch.from_numpy(wav_2).float()
-        assert torch.equal(feats, feats_2)
+        if original_paths_to_check is not None:
+            wav_check, _ = sf.read(original_paths_to_check[utt_id])
+        else:
+            try:
+                wav_check, _ = sf.read(dataset_dir / split / f"{utt_id}.flac")
+            except:
+                wav_check, _ = sf.read(dataset_dir / split / f"{utt_id}.wav")
+        feats_check = torch.from_numpy(wav_check).float()
+        assert torch.equal(feats, feats_check)
 
     tsv_f.close()

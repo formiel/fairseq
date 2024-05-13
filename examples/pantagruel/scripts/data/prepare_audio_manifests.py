@@ -20,18 +20,13 @@ import time
 import logging
 import glob
 from pathlib import Path
-import itertools
 import random
-import math
-import shutil
-from multiprocessing import Pool
-
-import soundfile as sf
+import json
 
 from utils import (
-    create_zip, create_manifest_file, get_paths_from_json, get_paths_from_dir,
-    process_audio_file, create_zip_file, get_zip_info,
-    TRAIN_FNAME, VALID_FNAME, TEST_FNAME
+    create_zip, create_manifest_file, 
+    get_paths_from_dir, resolve_path_from_json,
+    get_split_duration, compute_duration, process_audio_files_on_fly,
 )
 
 
@@ -40,22 +35,22 @@ log = logging.getLogger(__name__)
 # dictionary of datasets and relative path to json files under audio_root / dataset
 DATA_SETS = {
     "mls_french_jz": None,
-    "audiocite_with_metadata": "data.json", 
-    "studios-tamani-kalangou-french": "v1_10102021/data.json",
-    "African_Accented_French": "data.json",
-    "Att-HACK_SLR88": "data.json",
-    "CaFE": "data.json",
-    "CFPP_corrected": "json/data_full.json",
-    "ESLO": "data.json",
-    "EPAC_flowbert": "data.json",
-    "GEMEP": "data.json",
-    "MPF": "data.json",
-    "Portmedia": "data.json",
-    "TCOF_corrected": "output/data_full.json",
-    "MaSS": "data.json",
-    "NCCFr": "data.json",
-    "voxpopuli_unlabeled": "json/data_full.json",
-    "voxpopuli_transcribed": None,
+    "audiocite_with_metadata": "*.json", 
+    "studios-tamani-kalangou-french": "v1_10102021/*.json",
+    "African_Accented_French": "*.json",
+    "Att-HACK_SLR88": "*.json",
+    "CaFE": "*.json",
+    "CFPP_corrected": "json/*.json",
+    "ESLO": "*.json",
+    "EPAC_flowbert": "*.json",
+    "GEMEP": "*.json",
+    "MPF": "*.json",
+    "Portmedia": "*.json",
+    "TCOF_corrected": "output/json/*.json",
+    "MaSS": "*.json",
+    "NCCFr": "*.json",
+    "voxpopuli_unlabeled": "json/*.json",
+    "voxpopuli_transcribed": "jsons/**/*.json",
 }
 
 
@@ -101,109 +96,117 @@ def main():
     )
     args = parser.parse_args()
 
+    start = time.time()
     assert args.valid_percent >= 0 and args.valid_percent <= 1.0
 
     # create directory to save output tsv and zipped audio files
     output_root = Path(args.output_root)
-    dataset_dir = output_root / "zipped_audio" / args.dataset # by datasets and splits
-    train_dir, valid_dir, test_dir = (
-        Path(dataset_dir / TRAIN_FNAME), 
-        Path(dataset_dir / VALID_FNAME), 
-        Path(dataset_dir / TEST_FNAME)
-    )
-    for d in [train_dir, valid_dir, test_dir]:
-        d.mkdir(parents=True, exist_ok=True)
+    dataset_dir = output_root / "zipped_audio" / args.dataset
+    dataset_dir.mkdir(parents=True, exist_ok=True)
     rand = random.Random(args.seed) if args.valid_percent > 0 else None
 
-    # read from json files if available, otherwise 
     # get all audio paths with valid audio extensions
     audio_dir = Path(args.audio_root) / args.dataset
-    audio_paths_from_json = None
-    if DATA_SETS[args.dataset] is not None:
-        audio_paths_from_json = get_paths_from_json(
-            audio_dir / DATA_SETS[args.dataset]
-        )
     audio_paths_from_dir = get_paths_from_dir(
         audio_dir=audio_dir,
         audio_exts=args.extensions,
+        excl_pattern=None,
+        result_as="dict",
     )
-    
-    # convert waveform data so that each dataset has the same structure: audio files under output_dir/args.dataset/split
-    logging.info(f"Restructure audio files under each TRAIN/VALID/TEST splits")
-    max_chunk_duration = args.max_seconds_per_file # in seconds
-    with Pool(args.workers) as pool:
-        arguments = [
-            (Path(audio_path), dataset_dir, rand, args.valid_percent, max_chunk_duration)
-            for audio_path in audio_paths_from_dir
-        ]
-        pool.starmap(process_audio_file, arguments)
+    logging.info(f'Number of audio files exist in corpus directory: {len(audio_paths_from_dir.keys())}')
 
-    logging.info(f'Total number of original audio files: {len(audio_paths_from_dir)}')
-    if audio_paths_from_json is not None:
-        logging.info(f'Number of audio files from json: {len(audio_paths_from_json)}')
+    # get audio paths from json files
+    audio_paths_from_json = None
+    if DATA_SETS[args.dataset] is not None:
+        logging.info(f"Getting paths from json...")
+        audio_paths_from_json = resolve_path_from_json(
+            audio_dir, DATA_SETS[args.dataset],
+            existing_audios=audio_paths_from_dir,
+            info_dir=dataset_dir,
+        )
+        logging.info(f'Number of valid audio files (that exist) read from JSON: {len(audio_paths_from_json.keys())}')
 
-    SPLITS = [TRAIN_FNAME]
-    DATA_DIR = [train_dir]
-    n_train = len(get_paths_from_dir(train_dir))
-    n_val = len(get_paths_from_dir(valid_dir))
-    n_test = len(get_paths_from_dir(test_dir))
-    logging.info(f"Total number of audio files in TRAIN: {n_train}")
-    if n_val > 0:
-        SPLITS.append("valid")
-        DATA_DIR.append(valid_dir)
-        logging.info(f"Total number of audio files in VALID: {n_val}")
-    if n_test > 0:
-        SPLITS.append("test")
-        DATA_DIR.append(test_dir)
-        logging.info(f"Total number of audio files in TEST: {n_test}")
-    logging.info(f"Total: {n_train} + {n_val} + {n_test}  = {n_train+n_val+n_test}")
+        # reconcile audio_paths_from_dir and audio_paths_from_json
+        missing_files_from_json = {}
+        duration_discarded = 0
+        duration_add_back = 0
+        for k, v in audio_paths_from_dir.items():
+            if not k in audio_paths_from_json:
+                # logging.warning(f"missing audio files from json: {v}")
+                duration = compute_duration(v)
+                total_split_duration = get_split_duration(k, audio_paths_from_json)
+                if total_split_duration == 0:
+                    if duration > 1:
+                        # logging.warning(f"audio files not split longer than 1 seconds: {v}")
+                        missing_files_from_json[k] = {
+                            "path": v,
+                            "duration": duration,
+                        }
+                        audio_paths_from_json[k] = v # add to training data
+                        duration_add_back += duration
+                    else:
+                        duration_discarded += duration
+
+        logging.info(f"Number of missing files longer than 1s: {len(missing_files_from_json.keys())}")
+        logging.info(f"Total duration discarded (files less than 1s): {duration_discarded} (s)")
+        logging.info(f"Total duration added back to training data: {duration_add_back} (s)")
+        if len(missing_files_from_json.keys()) > 0:
+            with open(dataset_dir / "audio_files_not_in_json.json", "w", encoding='utf-8') as f:
+                json.dump(missing_files_from_json, f, ensure_ascii=False, indent=4)
+
+    # now structure into train, valid, and test set
+    audio_paths = (
+        audio_paths_from_json if audio_paths_from_json is not None else audio_paths_from_dir
+    )
+    train_dict, valid_dict, test_dict = process_audio_files_on_fly(
+            audio_paths=[Path(v) for _, v in audio_paths.items()],
+            out_split_dir=dataset_dir / "splits_additional",
+            rand=rand, 
+            valid_percent=float(args.valid_percent),
+            max_chunk_duration=int(args.max_seconds_per_file),
+        )
+    n_train, n_val, n_test = len(train_dict), len(valid_dict), len(test_dict)
+    logging.info(f"TOTAL - TRAIN/VALID/TEST: {n_train+n_val+n_test} - {n_train}/{n_val}/{n_test}")
+    logging.info(f"Number of audio files split additionally: {len(glob.glob(f'{dataset_dir}/splits_additional/*.flac'))}")
 
     # create zip file from each split under dataset_dir
-    for d in DATA_DIR:
-        logging.info(f"Creating zip for audio files in folder {d.as_posix()}")
-        # create_zip(
-        #     data_root=d,
-        #     zip_prefix=dataset_dir / f"waveforms_{d.name}",
-        #     max_num_files=int(args.max_files_per_zip)
-        # )
-        zip_prefix = dataset_dir / f"waveforms_{d.name}"
-        pool = Pool(args.workers)  # Create a pool of workers
-        tasks = []
-        paths, num_zip_files, max_num_files = get_zip_info(
-            data_root=d,
-            max_num_files=args.max_files_per_zip
+    SPLITS = {"train": train_dict}
+    logging.info(f"Creating zip for TRAIN")
+    create_zip(
+        data=train_dict,
+        zip_prefix=dataset_dir / f"waveforms_train",
+        max_num_files=int(args.max_files_per_zip),
+    )
+    if n_val > 0:
+        logging.info(f"Creating zip for VALID")
+        SPLITS["valid"] = valid_dict
+        create_zip(
+            data=valid_dict,
+            zip_prefix=dataset_dir / f"waveforms_valid",
+            max_num_files=int(args.max_files_per_zip),
         )
-        for i in range(num_zip_files):
-            zip_file_i = f"{zip_prefix.as_posix()}_{i}.zip"
-            start_index = i * max_num_files
-            end_index = start_index + max_num_files
-            paths_zip_i = paths[start_index:end_index]
-
-            # Add task to the list for multiprocessing
-            tasks.append((zip_file_i, paths_zip_i))
-
-        # Use pool.starmap to apply the function to each task
-        pool.starmap(create_zip_file, tasks)
-
-        # Close the pool to free resources
-        pool.close()
-        pool.join()
+    if n_test > 0:
+        logging.info(f"Creating zip for TEST")
+        SPLITS["test"] = test_dict
+        create_zip(
+            data=test_dict,
+            zip_prefix=dataset_dir / f"waveforms_test",
+            max_num_files=int(args.max_files_per_zip),
+        )
 
     # create manifest file for each split under model_training
     model_training_dir = output_root / "model_training"
     model_training_dir.mkdir(parents=True, exist_ok=True)
 
-    for split in SPLITS:
+    for split, split_dict in SPLITS.items():
         logging.info(f"Writing manifest file for split:{split.upper()}")
         create_manifest_file(
             dataset_dir,
             model_training_dir,
             split,
+            original_paths_to_check=split_dict,
         )
-
-    # clean files
-    for d in [train_dir, valid_dir, test_dir]:
-        shutil.rmtree(d)
+    logging.info(f'Total running time: {(time.time() - start)/60} (minutes)')
 
 if __name__ == "__main__":
     main()
