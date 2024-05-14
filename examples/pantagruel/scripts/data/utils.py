@@ -5,7 +5,8 @@ Date: 26 April 2024
 
 import glob
 import logging
-from typing import Union, List
+from typing import Union, List, Optional
+import numpy as np
 from pathlib import Path
 import math
 import zipfile
@@ -19,7 +20,7 @@ from itertools import islice
 import soundfile as sf
 import torch
 
-from examples.speech_to_text.data_utils import get_zip_manifest
+from examples.speech_to_text.data_utils import is_npy_data
 from fairseq.data.audio.audio_utils import (
     parse_path,
     read_from_stored_zip,
@@ -295,12 +296,48 @@ def chunk_paths(paths, chunk_size):
     it = iter(paths)
     return iter(lambda: list(islice(it, chunk_size)), [])
 
+def include_accented_char(word):
+    for char in word:
+        if ord(char) > 128:
+            return True
+    return False
+
+def get_zip_manifest(
+        zip_path: Path, zip_root: Optional[Path] = None, is_audio=False
+):
+    _zip_path = Path.joinpath(zip_root or Path(""), zip_path)
+    with zipfile.ZipFile(_zip_path, mode="r") as f:
+        info = f.infolist()
+    paths, lengths = {}, {}
+    for i in tqdm(info):
+        utt_id = Path(i.filename).stem
+        fname = i.filename
+        if include_accented_char(fname):
+            fname = fname.encode('utf-8')
+        offset, file_size = i.header_offset + 30 + len(fname), i.file_size
+        paths[utt_id] = f"{zip_path.as_posix()}:{offset}:{file_size}"
+        with open(_zip_path, "rb") as f:
+            f.seek(offset)
+            byte_data = f.read(file_size)
+            assert len(byte_data) > 1
+            if is_audio:
+                assert is_sf_audio_data(byte_data), i
+            else:
+                assert is_npy_data(byte_data), i
+            byte_data_fp = io.BytesIO(byte_data)
+            if is_audio:
+                lengths[utt_id] = sf.info(byte_data_fp).frames
+            else:
+                lengths[utt_id] = np.load(byte_data_fp).shape[0]
+    return paths, lengths
+
 
 def create_manifest_file(
     dataset_dir: Path,
     tsv_dir:Path,
     split: str,
     original_paths_to_check=None,
+    debug=False,
 ):
     """
     Create manifest tsv file for each split of the dataset
@@ -317,31 +354,29 @@ def create_manifest_file(
 
     logging.info(f'Total duration of {split.upper()}: {sum([v for _, v in data_lengths.items()])/16000/3600} (h)')
     tsv_f = open(tsv_dir /  f"{split}_{dataset_dir.stem}.tsv", "w")
-    print(dataset_dir.as_posix(), file=tsv_f) # writing the root directory
+    print(dataset_dir.parent.as_posix(), file=tsv_f) # writing the audio root directory
     for utt_id, path in data_zip.items():
-        rel_path = Path(path).relative_to(dataset_dir)
+        rel_path = Path(path).relative_to(dataset_dir.parent).as_posix()
         print(
                 f"{rel_path}\t{data_lengths[utt_id]}", file=tsv_f
             )
-        # check if zipped data is the same as raw audio file # may slow down processing
-        _path, slice_ptr = parse_path(path)
-        byte_data = read_from_stored_zip(_path, slice_ptr[0], slice_ptr[1])
-        assert is_sf_audio_data(byte_data)
-        # if not _is_sf_audio_data:
-        #     logging.warning(f"_is_sf_audio_data: {byte_data[0]}, {byte_data[1]}")
-        #     logging.warning(f"*** utt_id {utt_id} with path {path}: offset {slice_ptr[0]} and length {slice_ptr[1]}")
-        path_or_fp = io.BytesIO(byte_data)
-        wav, _ = sf.read(path_or_fp)
-        feats = torch.from_numpy(wav).float()
+        if debug:
+            # check if zipped data is the same as raw audio file
+            _path, slice_ptr = parse_path(path)
+            byte_data = read_from_stored_zip(_path, slice_ptr[0], slice_ptr[1])
+            assert is_sf_audio_data(byte_data)
+            path_or_fp = io.BytesIO(byte_data)
+            wav, _ = sf.read(path_or_fp)
+            feats = torch.from_numpy(wav).float()
 
-        if original_paths_to_check is not None:
-            wav_check, _ = sf.read(original_paths_to_check[utt_id])
-        else:
-            try:
-                wav_check, _ = sf.read(dataset_dir / split / f"{utt_id}.flac")
-            except:
-                wav_check, _ = sf.read(dataset_dir / split / f"{utt_id}.wav")
-        feats_check = torch.from_numpy(wav_check).float()
-        assert torch.equal(feats, feats_check)
+            if original_paths_to_check is not None:
+                wav_check, _ = sf.read(original_paths_to_check[utt_id])
+            else:
+                try:
+                    wav_check, _ = sf.read(dataset_dir / split / f"{utt_id}.flac")
+                except:
+                    wav_check, _ = sf.read(dataset_dir / split / f"{utt_id}.wav")
+            feats_check = torch.from_numpy(wav_check).float()
+            assert torch.equal(feats, feats_check)
 
     tsv_f.close()

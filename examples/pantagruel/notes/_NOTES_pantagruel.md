@@ -45,7 +45,7 @@ rsyncpass -zarvm --max-size=100M --exclude="*debug*" \
 
 
 rsyncpass -zarvm --max-size=100M --exclude="*debug*" \
-        adastra:/lus/scratch/CT10/c1615074/tphle/Data/LeBenchmark_prepared/zipped_audio/African_Accented_French/splits_additional/* \
+        adastra:/lus/scratch/CT10/c1615074/tphle/Data/LeBenchmark_raw/MPF/output_waves/Auphelie1b_ANON_060318_151118_s_1_spk_Aurélie.wav \
        /Users/hang/Downloads/adastra/
 
 ssh adastra-ccfr.cines.fr

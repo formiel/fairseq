@@ -34,16 +34,23 @@ DATASETS="mls_french_jz
           NCCFr 
           voxpopuli_unlabeled 
           voxpopuli_transcribed"
-DATASETS="MPF"
+# DATASETS="MPF"
 FAIRSEQ=$HOME/code/fairspeech_torch23
 
 
 for DATA in $DATASETS; do
     echo "------------- DATASET: ${DATA} -------------"
-    if [[ $DATA != *"mls_french_jz"* ]] && [[ ! -L $RAW_DEST_DIR/$DATA ]]; then
+    if [[ $DATA != *"mls_french_jz"* ]] && [[ $DATA != *"MPF_copy"* ]] && [[ ! -L $RAW_DEST_DIR/$DATA ]]; then
         echo "Creating symlinks to raw data for $DATA"
         ln -s $SRC_DIR/$DATA $RAW_DEST_DIR/$DATA
     fi
-    # bash $HOME/code/slurmx/tools/submit.sh run mi250 1 20 1 prepare_data_$DATA "$FAIRSEQ/examples/pantagruel/scripts/data/prepare_audio_manifests.py --dataset $DATA --audio-root $RAW_DEST_DIR --output-root $PREPARED_DEST_DIR"
-    python $FAIRSEQ/examples/pantagruel/scripts/data/prepare_audio_manifests.py --dataset $DATA --audio-root $RAW_DEST_DIR --output-root $PREPARED_DEST_DIR |& tee $PREPARED_DEST_DIR/logs/$DATA.log
+    if [[ $DATA == "MPF_copy" ]]; then
+        for file in $RAW_DEST_DIR/$DATA/*/*; do
+            if [[ $file == "'"* ]]; then
+                echo $file
+            fi
+        done
+    fi
+    bash $HOME/code/slurmx/tools/submit.sh run mi250 1 20 1 prepare_data_$DATA "$FAIRSEQ/examples/pantagruel/scripts/data/prepare_audio_manifests.py --dataset $DATA --audio-root $RAW_DEST_DIR --output-root $PREPARED_DEST_DIR"
+    # python $FAIRSEQ/examples/pantagruel/scripts/data/prepare_audio_manifests.py --dataset $DATA --audio-root $RAW_DEST_DIR --output-root $PREPARED_DEST_DIR |& tee $PREPARED_DEST_DIR/logs/$DATA.log
 done

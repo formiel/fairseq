@@ -94,6 +94,9 @@ def main():
     parser.add_argument(
         "--seed", default=1, type=int, metavar="N", help="random seed",
     )
+    parser.add_argument(
+        "--debug", action="store_true", help="compare zipped data with raw audio"
+    )
     args = parser.parse_args()
 
     start = time.time()
@@ -205,6 +208,7 @@ def main():
             model_training_dir,
             split,
             original_paths_to_check=split_dict,
+            debug=args.debug,
         )
     logging.info(f'Total running time: {(time.time() - start)/60} (minutes)')
 
