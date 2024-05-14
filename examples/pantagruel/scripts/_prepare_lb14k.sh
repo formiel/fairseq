@@ -17,7 +17,7 @@
 
 SRC_DIR=/lus/work/CT10/lig3801/SHARED/pretraining_data/Modified/LeBenchmark/All_extracted
 RAW_DEST_DIR=/lus/scratch/CT10/c1615074/tphle/Data/LeBenchmark_raw
-PREPARED_DEST_DIR=/lus/scratch/CT10/c1615074/tphle/Data/LeBenchmark_prepared
+PREPARED_DEST_DIR=/lus/scratch/CT10/c1615074/tphle/Data/LeBenchmark_prepared_not_split_valid
 DATASETS="mls_french_jz  
           studios-tamani-kalangou-french 
           African_Accented_French 
@@ -33,8 +33,8 @@ DATASETS="mls_french_jz
           MaSS 
           NCCFr 
           voxpopuli_unlabeled 
-          voxpopuli_transcribed"
-# DATASETS="MPF"
+          voxpopuli_transcribed 
+          audiocite_with_metadata"
 FAIRSEQ=$HOME/code/fairspeech_torch23
 
 
@@ -44,13 +44,12 @@ for DATA in $DATASETS; do
         echo "Creating symlinks to raw data for $DATA"
         ln -s $SRC_DIR/$DATA $RAW_DEST_DIR/$DATA
     fi
-    if [[ $DATA == "MPF_copy" ]]; then
-        for file in $RAW_DEST_DIR/$DATA/*/*; do
-            if [[ $file == "'"* ]]; then
-                echo $file
-            fi
-        done
+    VALID_PERCENT=0.1
+    MAX_VALID=1000
+    if [[ $DATA == "mls_french_jz" ]] || [[ $DATA == "African_Accented_French" ]]; then
+        VALID_PERCENT=0.0
+        MAX_VALID=0 
     fi
-    bash $HOME/code/slurmx/tools/submit.sh run mi250 1 20 1 prepare_data_$DATA "$FAIRSEQ/examples/pantagruel/scripts/data/prepare_audio_manifests.py --dataset $DATA --audio-root $RAW_DEST_DIR --output-root $PREPARED_DEST_DIR"
-    # python $FAIRSEQ/examples/pantagruel/scripts/data/prepare_audio_manifests.py --dataset $DATA --audio-root $RAW_DEST_DIR --output-root $PREPARED_DEST_DIR |& tee $PREPARED_DEST_DIR/logs/$DATA.log
+    bash $HOME/code/slurmx/tools/submit.sh run mi250 1 20 1 prepare_data_$DATA "$FAIRSEQ/examples/pantagruel/scripts/data/prepare_audio_manifests.py --dataset $DATA --audio-root $RAW_DEST_DIR --output-root $PREPARED_DEST_DIR --valid-percent $VALID_PERCENT --max-valid-samples $MAX_VALID"
+    # python $FAIRSEQ/examples/pantagruel/scripts/data/prepare_audio_manifests.py --dataset $DATA --audio-root $RAW_DEST_DIR --output-root $PREPARED_DEST_DIR --valid-percent $VALID_PERCENT --max-valid-samples $MAX_VALID|& tee $PREPARED_DEST_DIR/logs/$DATA.log
 done

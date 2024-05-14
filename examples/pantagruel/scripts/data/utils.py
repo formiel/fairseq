@@ -31,6 +31,11 @@ VALID_FNAME = "valid"
 TEST_FNAME = "test"
 
 
+def save_to_json(data, saved_path):
+    with open(saved_path, "w", encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+
 def process_audio_file(
     audio_path: Path, dataset_dir: Path, 
     rand=None, valid_percent=0.0,
@@ -76,13 +81,12 @@ def process_audio_files_on_fly(
     out_split_dir: Path,
     rand=None, 
     valid_percent=0.0,
+    max_valid_samples=0,
     max_chunk_duration=30,
 ):
-    if not out_split_dir.exists():
-        out_split_dir.mkdir(parents=True, exist_ok=True)
-
     train_dict, valid_dict, test_dict = {}, {}, {}
     num_file_splits = 0
+    num_valid = 0
     for audio_path in audio_paths:
         dest_dict = train_dict
         if "valid" in audio_path.as_posix() or "dev" in audio_path.as_posix():
@@ -90,14 +94,17 @@ def process_audio_files_on_fly(
         elif "test" in audio_path.as_posix():
             dest_dict = test_dict
         else:
-            if rand is not None and rand.random() <= valid_percent:
+            if rand is not None and rand.random() <= valid_percent and num_valid < max_valid_samples:
                 dest_dict = valid_dict
+                num_valid += 1
 
         sample_rate = sf.info(audio_path).samplerate
         max_chunk_frames = max_chunk_duration * sample_rate
         duration = sf.info(audio_path).frames / sample_rate
         num_chunks = math.ceil(duration / max_chunk_duration)
         if num_chunks > 2:
+            if not out_split_dir.exists():
+                out_split_dir.mkdir(parents=True, exist_ok=True)
             for start in range(num_chunks-2):
                 dest_dict = read_and_save(
                     audio_path=Path(audio_path), 
@@ -120,7 +127,6 @@ def process_audio_files_on_fly(
         else:
             dest_dict[audio_path.stem] = audio_path
     
-    logging.info(f"num_file_splits: {num_file_splits}")
     return train_dict, valid_dict, test_dict
 
 
@@ -206,8 +212,7 @@ def resolve_path_from_json(
     """
     json_paths = glob.glob(f'{dataset_root}/{rel_jsons}')
     utterances = {} # dict of utt_id: path
-    # total_duration = 0
-    invalid_f = open(info_dir / "invalid_paths.txt", "w")
+
     for json_path in json_paths:
         json_path = Path(json_path)
         assert json_path.exists()
@@ -223,15 +228,15 @@ def resolve_path_from_json(
                         ).stem
                         if not audio_fname in utterances:
                             if audio_fname not in existing_audios:
-                                # logging.warning(f'could not find {audio_fname}: {line}')
-                                print(line, file=invalid_f)
+                                with open(info_dir / "invalid_paths.txt", "w") as invalid_f:
+                                    print(line, file=invalid_f)
                             else:
                                 utterances[audio_fname] = existing_audios[audio_fname]
-                                # total_duration += compute_duration(utterances[audio_fname])
             else:
                 data = json.load(f)
-                print(f'Keys in json: {len(data.keys())}')
-    invalid_f.close()
+                logging.info(f'Keys in json: {len(data.keys())}')
+                raise NotImplementedError
+
     return utterances
 
 

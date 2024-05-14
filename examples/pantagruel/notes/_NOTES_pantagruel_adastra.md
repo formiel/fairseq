@@ -149,7 +149,10 @@ INFO:root:n_train=258213, n_val=2416, n_test=2426
 
 
 ```bash
-# final preprocessing on-the-fly
+#### FINAL: 10% but not exceed 1k valid samples for each dataset
+# 877995 -> 878011
+
+# /lus/scratch/CT10/c1615074/tphle/Data/LeBenchmark_prepared_not_split_valid (no audiocite dataset)
 # mls_french_jz (number examples matched with paper)
 # 876650 -> 876665
 0: INFO:root:Number of audio files exist in corpus directory: 263055
@@ -359,4 +362,7 @@ INFO:root:n_train=258213, n_val=2416, n_test=2426
 0: INFO:root:Number of audio files split additionally: 15
 0: INFO:root:Total duration of TRAIN: 215.55956565972224 (h)
 0: INFO:root:Total running time: 35.14710802237193 (minutes)
+
+# audiocite_with_metadata
+# job 0: 878011
 ```

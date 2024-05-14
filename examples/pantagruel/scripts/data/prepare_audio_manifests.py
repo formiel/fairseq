@@ -27,6 +27,7 @@ from utils import (
     create_zip, create_manifest_file, 
     get_paths_from_dir, resolve_path_from_json,
     get_split_duration, compute_duration, process_audio_files_on_fly,
+    save_to_json,
 )
 
 
@@ -65,6 +66,13 @@ def main():
         type=float,
         metavar="D",
         help="percentage of data to use as validation set (between 0 and 1)",
+    )
+    parser.add_argument(
+        "--max-valid-samples",
+        default=0,
+        type=int,
+        metavar="D",
+        help="maximum number of samples to be included in validation set"
     )
     parser.add_argument(
         "--audio-root", required=True, type=str, metavar="DIR", 
@@ -154,8 +162,7 @@ def main():
         logging.info(f"Total duration discarded (files less than 1s): {duration_discarded} (s)")
         logging.info(f"Total duration added back to training data: {duration_add_back} (s)")
         if len(missing_files_from_json.keys()) > 0:
-            with open(dataset_dir / "audio_files_not_in_json.json", "w", encoding='utf-8') as f:
-                json.dump(missing_files_from_json, f, ensure_ascii=False, indent=4)
+            save_to_json(missing_files_from_json, dataset_dir / "audio_files_not_in_json.json")
 
     # now structure into train, valid, and test set
     audio_paths = (
@@ -166,6 +173,7 @@ def main():
             out_split_dir=dataset_dir / "splits_additional",
             rand=rand, 
             valid_percent=float(args.valid_percent),
+            max_valid_samples=int(args.max_valid_samples),
             max_chunk_duration=int(args.max_seconds_per_file),
         )
     n_train, n_val, n_test = len(train_dict), len(valid_dict), len(test_dict)
@@ -180,6 +188,7 @@ def main():
         zip_prefix=dataset_dir / f"waveforms_train",
         max_num_files=int(args.max_files_per_zip),
     )
+    save_to_json(train_dict, dataset_dir / "train.json")
     if n_val > 0:
         logging.info(f"Creating zip for VALID")
         SPLITS["valid"] = valid_dict
@@ -188,6 +197,7 @@ def main():
             zip_prefix=dataset_dir / f"waveforms_valid",
             max_num_files=int(args.max_files_per_zip),
         )
+        save_to_json(valid_dict, dataset_dir / "valid.json")
     if n_test > 0:
         logging.info(f"Creating zip for TEST")
         SPLITS["test"] = test_dict
@@ -196,6 +206,7 @@ def main():
             zip_prefix=dataset_dir / f"waveforms_test",
             max_num_files=int(args.max_files_per_zip),
         )
+        save_to_json(test_dict, dataset_dir / "test.json")
 
     # create manifest file for each split under model_training
     model_training_dir = output_root / "model_training"
