@@ -1,4 +1,4 @@
-rsyncpass -zarvm --exclude=".git*" /Users/hang/github/formiel/slurmx adastra:/lus/home/CT10/c1615074/tphle/code/
+rsyncpass -zarvm --exclude=".git*" /Users/hang/github/formiel/transformers adastra:/lus/home/CT10/c1615074/tphle/code/
 rsyncpass -zarvm /Users/hang/github/formiel/fairspeech_dd_updated/ adastra:/lus/home/CT10/c1615074/tphle/code/fairspeech_dd/
 
 cp -rp /lus/work/CT10/c1615074/tphle/Data/Wikipedia/frwiki_20190701 /lus/work/CT10/lig3801/SHARED/data/Modified/Flaubert/

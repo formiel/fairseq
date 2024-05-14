@@ -31,8 +31,8 @@ VALID_FNAME = "valid"
 TEST_FNAME = "test"
 
 
-def save_to_json(data, saved_path):
-    with open(saved_path, "w", encoding='utf-8') as f:
+def save_to_json(data: dict, saved_path: Path):
+    with open(saved_path.as_posix(), "w", encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
 
@@ -125,7 +125,7 @@ def process_audio_files_on_fly(
                 )
             num_file_splits += num_chunks - 1
         else:
-            dest_dict[audio_path.stem] = audio_path
+            dest_dict[audio_path.stem] = audio_path.as_posix()
     
     return train_dict, valid_dict, test_dict
 
@@ -135,7 +135,7 @@ def read_and_save(audio_path: Path, frames, offset, idx, out_dir, dest_dict):
     out_path = out_dir / f'{audio_path.stem}{idx}.flac'
     logging.info(f"writing to {out_path}")
     sf.write(out_path, waveform, 16_000)
-    dest_dict[out_path.stem] = out_path
+    dest_dict[out_path.stem] = out_path.as_posix()
     return dest_dict
 
 
@@ -262,7 +262,7 @@ def create_zip(
         for ext in extensions:
             paths.extend(data.glob(f"*.{ext}"))
     elif isinstance(data, dict):
-        paths = [v for _, v in data.items()]
+        paths = [Path(v) for _, v in data.items()]
     else:
         raise NotImplementedError
 
