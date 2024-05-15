@@ -171,7 +171,7 @@ INFO:root:n_train=258213, n_val=2416, n_test=2426
 0: INFO:root:Total duration of TEST: 10.067192291666666 (h)
 0: INFO:root:Total running time: 176.47625811894736 (minutes)
 
-# studios-tamani-kalangou-french
+# studios-tamani-kalangou-french (binarized)
 100%|██████████| 37332/37332 [00:39<00:00, 946.29it/s] 
 0: INFO:root:Total duration of TRAIN: 108.06742366319445 (h)
 0: INFO:root:Writing manifest file for split:VALID
@@ -212,7 +212,7 @@ INFO:root:n_train=258213, n_val=2416, n_test=2426
 0: INFO:root:Total duration of VALID: 0.7336313888888889 (h)
 0: INFO:root:Total running time: 6.123992125193278 (minutes)
 
-# CaFE
+# CaFE (binarized)
 0: INFO:root:Number of audio files exist in corpus directory: 936
 0: INFO:root:Getting paths from json...
 0: INFO:root:Number of valid audio files (that exist) read from JSON: 936

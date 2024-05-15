@@ -30,4 +30,4 @@ sed -i -e 's/\(.\)/\1 /g' $DEST_DIR/train_fnames.txt
 sed -i -e 's/\(.\)/\1 /g' $DEST_DIR/valid_fnames.txt
 
 # run preprocessor
-PYTHONPATH=$FAIRSEQ_ROOT python $FAIRSEQ_ROOT/fairseq_cli/preprocess.py --dataset-impl mmap --trainpref $DEST_DIR/train_fnames.txt --validpref $DEST_DIR/valid_fnames.txt --workers 60 --only-source --destdir $DEST_DIR
+PYTHONPATH=$FAIRSEQ_ROOT python $FAIRSEQ_ROOT/fairseq_cli/preprocess.py --dataset-impl mmap --trainpref $DEST_DIR/train_fnames.txt --validpref $DEST_DIR/valid_fnames.txt --workers 8 --only-source --destdir $DEST_DIR

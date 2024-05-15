@@ -38,9 +38,13 @@ submit run ${PARTITION} $GPUS 20 5 $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.
 # experiments/stdlogs/run/base_wikipedia_875671.log: -> [2024-03-06 01:03:49,264] (done training epoch 11 @ 1000000 updates) (4h for 25k steps)
 
 # base_wikipedia_frwiki_20190701
-# `Minimum loss scale reached (0.0001). Your loss is probably exploding`
+# 875710: `Minimum loss scale reached (0.0001). Your loss is probably exploding`
+# [2024-03-02 06:55:04,956][fairseq.data.data_utils][INFO] - loaded 66,911,314 examples from: /gpfsscratch/rech/ahm/umz16dj/Data/Wikipedia/frwiki_20190701/data-bin/byteBPE/train
+# [2024-03-02 06:55:05,855][fairseq.tasks.masked_lm][INFO] - loaded 2793151 blocks from: /gpfsscratch/rech/ahm/umz16dj/Data/Wikipedia/frwiki_20190701/data-bin/byteBPE/train
 
 # base_wikipedia2_frwiki_20190701_gpu_p13_gpus16
+# 0: [2024-05-15 15:34:11,574][fairseq.data.data_utils][INFO] - loaded 66,911,314 examples from: /gpfsscratch/rech/ahm/umz16dj/Data/Wikipedia/frwiki_20190701/data-bin/byteBPE/train
+# 0: [2024-05-15 15:34:12,790][fairseq.tasks.masked_lm][INFO] - loaded 2793151 blocks from: /gpfsscratch/rech/ahm/umz16dj/Data/Wikipedia/frwiki_20190701/data-bin/byteBPE/train
 # job 0: 1909621
 # job 1: 1909623 (after 1909621)
 # job 2: 1909624 (after 1909623)
