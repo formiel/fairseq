@@ -13,7 +13,7 @@ TIME_LIMIT=1190
 
 GPUS=16
 MASTER_PORT=$(shuf -i 20000-45000 -n 1)
-CONFIG=base_wikipedia_fr
+CONFIG=base_wikipedia2
 
 # WIKINAME=enwiki_20240201
 WIKINAME=frwiki_20190701
@@ -25,7 +25,7 @@ CONFIG_DIR=$FAIRSEQ/examples/pantagruel/configs/${MODALITY}/${TASK}
 TENSORBOARD_DIR=$WORK/experiments/fairseq_tensorboard/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
 SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
 
-submit run ${PARTITION} $GPUS 20 5 $EXPNAME "fairseq-hydra-train --config-dir ${CONFIG_DIR} --config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=$USER_DIR common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUS} distributed_training.distributed_port=${MASTER_PORT}"
+submit run ${PARTITION} $GPUS 20 5 $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.py --config-dir ${CONFIG_DIR} --config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=$USER_DIR common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUS} distributed_training.distributed_port=${MASTER_PORT}"
 
 # base_wikipedia_enwiki_20240201: watch 10G
 # training, evaluated on RTE: OK
@@ -40,9 +40,12 @@ submit run ${PARTITION} $GPUS 20 5 $EXPNAME "fairseq-hydra-train --config-dir ${
 # base_wikipedia_frwiki_20190701
 # `Minimum loss scale reached (0.0001). Your loss is probably exploding`
 
-# base_wikipedia_bszx3_frwiki_20190701
-# base_wikipedia_bszx10_frwiki_20190701
-# base_wikipedia_fr_frwiki_20190701_gpu_p13_gpus16
+# base_wikipedia2_frwiki_20190701_gpu_p13_gpus16
+# job 0: 1909621
+# job 1: 1909623 (after 1909621)
+# job 2: 1909624 (after 1909623)
+# job 3: 1909626 (after 1909624)
+# job 4: 1909627 (after 1909626)
 
 
 ###############################################################################

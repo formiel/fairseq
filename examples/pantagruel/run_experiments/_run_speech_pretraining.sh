@@ -41,7 +41,7 @@ TENSORBOARD_DIR=$WORK/experiments/fairseq_tensorboard/pantagruel/${MODALITY}/${T
 SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
 
 submit run gpu_p5 $GPUS 2 1 $EXPNAME "fairseq-hydra-train --config-dir ${CONFIG_DIR} --config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=${USER_DIR} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUS} distributed_training.distributed_port=${MASTER_PORT}"
-# # base_audio_only_task_ngpu16_fr:
+# # base_audio_only_task_ngpu16_fr -> Speech_Base_fr_1K
 # COMPLETED 
 # bsz: 1M x 16gpus x 1freq, lr=7.5e-4
 # (16h on 16gpus with eff bsz: max_tok 1M x 16gpus x frq1) (25k: 14m)
@@ -153,7 +153,7 @@ JOBS=1
 JOBNAME=$EXPNAME
 submit run mi250 ${GPUs} ${HOURS} ${JOBS} ${JOBNAME} "${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} \
 --config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=${USER_DIR} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUs} distributed_training.distributed_port=${MASTER_PORT}"
-# base_audio_only_task_ngpu16_fr_adastra 
+# base_audio_only_task_ngpu16_fr_adastra => Speech_Base_fr_1K_mi250x 
 # (exact same training settings as "base_audio_only_task_ngpu16_fr" trained on JZ)
 # 25k: 26m 
 # job 0: 704391 [2024-03-06 07:47:50,532] - [2024-03-07 07:12:42,795]: ~24h
