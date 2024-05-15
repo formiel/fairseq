@@ -1,4 +1,3 @@
 base_audio_only_task_ngpu16_fr
 base_audio_only_task_ngpu16_fr_adastra
 base_audio_only_task_ngpu16_fr_adastra_torch23
-base_audio_only_task_ngpu16_reproduce_en_torch2sdpa_stable

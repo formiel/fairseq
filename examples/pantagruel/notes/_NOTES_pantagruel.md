@@ -52,8 +52,8 @@ ssh adastra-ccfr.cines.fr
 rsync -zarvm /lus/home/CT10/c1615074/tphle/experiments/fairseq_tensorboard/pantagruel/adastra umz16dj@jean-zay.idris.fr:/linkhome/rech/genlig01/umz16dj/experiments/fairseq_tensorboard/pantagruel/
 
 ssh jean-zay-ccfr.idris.fr
-rsync -zarvm /gpfswork/rech/ahm/umz16dj/Data/Wikipedia/enwiki_20240201/data-bin/byteBPE/debug \
-        tphle@adastra-ccfr.cines.fr:/lus/work/CT10/c1615074/tphle/Data/prepared/Wikipedia/enwiki_20240201/data-bin/byteBPE/
+rsync -zarvm $WORK/experiments/fairseq_checkpoints/pantagruel/base_audio_only_task_ngpu16_fr/ \
+        tphle@adastra-ccfr.cines.fr:/lus/home/CT10/c1615074/tphle/pantagruel/pretrained_models/Speech_Base_fr_1K/
         
 
 

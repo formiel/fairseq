@@ -149,6 +149,11 @@ INFO:root:n_train=258213, n_val=2416, n_test=2426
 
 
 ```bash
+#### LeBenchmark_prepared_valid1pct: 1% but not exceed 100 examples
+# 880453 -> 880468
+
+
+
 #### FINAL: 10% but not exceed 1k valid samples for each dataset
 # mls_french_jz
 0: INFO:root:Number of audio files exist in corpus directory: 263055
