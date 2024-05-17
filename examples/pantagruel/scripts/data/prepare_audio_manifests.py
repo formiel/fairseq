@@ -21,7 +21,6 @@ import logging
 import glob
 from pathlib import Path
 import random
-import json
 
 from utils import (
     create_zip, create_manifest_file, 
@@ -177,8 +176,8 @@ def main():
             max_chunk_duration=int(args.max_seconds_per_file),
         )
     n_train, n_val, n_test = len(train_dict), len(valid_dict), len(test_dict)
-    logging.info(f"TOTAL - TRAIN/VALID/TEST: {n_train+n_val+n_test} - {n_train}/{n_val}/{n_test}")
-    logging.info(f"Number of audio files split additionally: {len(glob.glob(f'{dataset_dir}/splits_additional/*.flac'))}")
+    logging.info(f"TRAIN:{n_train} / VALID:{n_val} / TEST:{n_test} / TOTAL:{n_train+n_val+n_test}")
+    logging.info(f"Number of audio files split or converted: {len(glob.glob(f'{dataset_dir}/splits_additional/*.flac'))}")
 
     # create zip file from each split under dataset_dir
     SPLITS = {"train": train_dict}

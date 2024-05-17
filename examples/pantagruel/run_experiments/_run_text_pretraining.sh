@@ -14,6 +14,7 @@ TIME_LIMIT=1190
 GPUS=16
 MASTER_PORT=$(shuf -i 20000-45000 -n 1)
 CONFIG=base_wikipedia2
+# CONFIG=base_wikipedia_lr2e-5_wu1k
 
 # WIKINAME=enwiki_20240201
 WIKINAME=frwiki_20190701
@@ -25,11 +26,17 @@ CONFIG_DIR=$FAIRSEQ/examples/pantagruel/configs/${MODALITY}/${TASK}
 TENSORBOARD_DIR=$WORK/experiments/fairseq_tensorboard/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
 SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
 
-submit run ${PARTITION} $GPUS 20 5 $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.py --config-dir ${CONFIG_DIR} --config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=$USER_DIR common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUS} distributed_training.distributed_port=${MASTER_PORT}"
+submit run ${PARTITION} $GPUS 20 2 $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.py --config-dir ${CONFIG_DIR} --config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=$USER_DIR common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUS} distributed_training.distributed_port=${MASTER_PORT}"
 
 # base_wikipedia_enwiki_20240201: watch 10G
 # training, evaluated on RTE: OK
 # TODO: re-train with gpt2_bpe tokenizer: no need, checked the length of encoded tokens using different tokenizers already
+[2024-03-03 02:30:56,008][fairseq_cli.train][INFO] - training on 16 devices (GPUs/TPUs)
+[2024-03-03 02:30:56,009][fairseq_cli.train][INFO] - max tokens per device = None and max sentences per device = 6
+[2024-03-03 02:31:03,016][fairseq.data.data_utils][INFO] - loaded 190,504,555 examples from: /gpfsscratch/rech/ahm/umz16dj/Data/Wikipedia/enwiki_20240201/data-bin/byteBPE/train
+[2024-03-03 02:31:05,895][fairseq.tasks.masked_lm][INFO] - loaded 9226646 blocks from: /gpfsscratch/rech/ahm/umz16dj/Data/Wikipedia/enwiki_20240201/data-bin/byteBPE/train
+[2024-03-03 02:31:18,848][fairseq.data.iterators][INFO] - grouped total_num_itrs = 96111
+
 # experiments/stdlogs/run/base_wikipedia_875663.log: [2024-03-03 02:30:44,975] -> [2024-03-03 21:46:03,186]
 # experiments/stdlogs/run/base_wikipedia_875657.log: -> [2024-03-02 07:17:07,154]
 # experiments/stdlogs/run/base_wikipedia_875666.log: -> [2024-03-04 21:21:30,669]
@@ -45,11 +52,17 @@ submit run ${PARTITION} $GPUS 20 5 $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.
 # base_wikipedia2_frwiki_20190701_gpu_p13_gpus16
 # 0: [2024-05-15 15:34:11,574][fairseq.data.data_utils][INFO] - loaded 66,911,314 examples from: /gpfsscratch/rech/ahm/umz16dj/Data/Wikipedia/frwiki_20190701/data-bin/byteBPE/train
 # 0: [2024-05-15 15:34:12,790][fairseq.tasks.masked_lm][INFO] - loaded 2793151 blocks from: /gpfsscratch/rech/ahm/umz16dj/Data/Wikipedia/frwiki_20190701/data-bin/byteBPE/train
-# job 0: 1909621
-# job 1: 1909623 (after 1909621)
-# job 2: 1909624 (after 1909623)
-# job 3: 1909626 (after 1909624)
-# job 4: 1909627 (after 1909626)
+# job 0: 1909621 (20h)
+# job 0: 1936341
+# job 1: 1936342 (after 1936341)
+
+# base_wikipedia_lr2e-5_wu1k_frwiki_20190701_gpu_p13_gpus16
+# job 0: 1936336
+# job 1: 1936337 (after 1936336)
+# job 2: 1936338 (after 1936337)
+# job 3: 1936339 (after 1936338)
+# job 4: 1936340 (after 1936339)
+
 
 
 ###############################################################################

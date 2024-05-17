@@ -116,17 +116,20 @@ done
 # 2. Run training
 TASK=pretraining
 MODALITY=speech
-FAIRSEQ=$HOME/code/fairspeech_torch23
+# FAIRSEQ=$HOME/code/fairspeech_torch23
+FAIRSEQ=$HOME/code/fairspeech
 USER_DIR=$FAIRSEQ/examples/data2vec
 TIME_LIMIT=1430
 
 MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=base_mls1k
 # CONFIG=base_audio_only_task
-CONFIG=base_audio_only_task_ngpu16_fr_adastra
+# CONFIG=base_audio_only_task_ngpu16_fr_adastra
 # CONFIG=base_audio_only_task_ngpu16_fr_adastra_maxtok1.4M_lr1e-3
 # CONFIG=large_audio_only_task_ngpu48_fr_adastra
 # CONFIG=large_audio_only_task_ngpu64_fr_bsz89.6M_adastra
+
+CONFIG=large_audio_only_lb14k
 
 # /lus/work/CT10/c1615074/tphle/experiments/stdlogs/run/base_audio_only_task_ngpu16_fr_adastra_704392
 
@@ -134,11 +137,13 @@ CONFIG=base_audio_only_task_ngpu16_fr_adastra
 # CONFIG=large_mls1k
 # GPUS=32
 
-EXPNAME="${CONFIG}_torch23" # ===== CHECK THIS =====
-DATA_DIR=$WORK/Data/prepared/MLS_French
+EXPNAME="${CONFIG}_fr" # ===== CHECK THIS =====
+# DATA_DIR=$WORK/Data/prepared/MLS_French
+DATA_DIR=$SCRATCH/Data/LeBenchmark_prepared/data-bin-combined
+
 CONFIG_DIR=$FAIRSEQ/examples/pantagruel/configs/${MODALITY}/${TASK}
-TENSORBOARD_DIR=$WORK/experiments/fairseq_tensorboard/pantagruel/adastra/${MODALITY}/${TASK}/${EXPNAME}
-SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/adastra/${MODALITY}/${TASK}/${EXPNAME}
+TENSORBOARD_DIR=$WORK/experiments/fairseq_tensorboard/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
+SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
 
 # # working with 8 GPUs of 1 node
 # torchrun ${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} \
@@ -147,8 +152,8 @@ SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/adastra/${MODALITY}/${
 # submitted using 2 nodes
 # GPUs=16
 # GPUs=48
-GPUs=16
-HOURS=24
+GPUs=48
+HOURS=3
 JOBS=1
 JOBNAME=$EXPNAME
 submit run mi250 ${GPUs} ${HOURS} ${JOBS} ${JOBNAME} "${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} \
@@ -173,3 +178,6 @@ submit run mi250 ${GPUs} ${HOURS} ${JOBS} ${JOBNAME} "${FAIRSEQ}/fairseq_cli/hyd
 # large_audio_only_task_ngpu48_fr_adastra (failed)
 
 # large_audio_only_task_ngpu64_fr_bsz89.6M_adastra (failed)
+
+# large_audio_only_lb14k_fr
+# job 0: 883179

@@ -16,6 +16,7 @@ import json
 import itertools
 import re
 from itertools import islice
+import subprocess
 
 import soundfile as sf
 import torch
@@ -29,6 +30,12 @@ from fairseq.data.audio.audio_utils import (
 TRAIN_FNAME = "train"
 VALID_FNAME = "valid"
 TEST_FNAME = "test"
+DEFAULT_SAMPLE_RATE = 16000
+
+
+def convert_audio(input_wav, output_wav):
+    command = ['ffmpeg', '-i', input_wav, '-ar', '16000', output_wav]
+    subprocess.run(command)
 
 
 def save_to_json(data: dict, saved_path: Path):
@@ -87,6 +94,8 @@ def process_audio_files_on_fly(
     train_dict, valid_dict, test_dict = {}, {}, {}
     num_file_splits = 0
     num_valid = 0
+    if not out_split_dir.exists():
+        out_split_dir.mkdir(parents=True, exist_ok=True)
     for audio_path in audio_paths:
         dest_dict = train_dict
         if "valid" in audio_path.as_posix() or "dev" in audio_path.as_posix():
@@ -99,12 +108,19 @@ def process_audio_files_on_fly(
                 num_valid += 1
 
         sample_rate = sf.info(audio_path).samplerate
-        max_chunk_frames = max_chunk_duration * sample_rate
-        duration = sf.info(audio_path).frames / sample_rate
+        if sample_rate != DEFAULT_SAMPLE_RATE:
+            convert_audio(
+                input_wav=audio_path,
+                output_wav=(out_split_dir / f"{audio_path.stem}.flac").as_posix()
+            )
+            audio_path = out_split_dir / f"{audio_path.stem}.flac"
+        num_frames = sf.info(audio_path).frames
+        if num_frames < 3000:
+            continue
+        max_chunk_frames = max_chunk_duration * DEFAULT_SAMPLE_RATE
+        duration = num_frames / DEFAULT_SAMPLE_RATE
         num_chunks = math.ceil(duration / max_chunk_duration)
         if num_chunks > 2:
-            if not out_split_dir.exists():
-                out_split_dir.mkdir(parents=True, exist_ok=True)
             for start in range(num_chunks-2):
                 dest_dict = read_and_save(
                     audio_path=Path(audio_path), 
