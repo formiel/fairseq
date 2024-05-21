@@ -113,6 +113,8 @@ for SPLIT in $SPLITS; do
     bash $FAIRSEQ/examples/pantagruel/scripts/_modify_paths.sh /lus/work/CT10/c1615074/tphle/Data/prepared/MLS_French/${SPLIT}.tsv
 done
 
+
+
 # 2. Run training
 TASK=pretraining
 MODALITY=speech
@@ -130,6 +132,8 @@ MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=large_audio_only_task_ngpu64_fr_bsz89.6M_adastra
 
 CONFIG=large_audio_only_lb14k
+CONFIG=large_audio_only_lb14k_no_bin
+# CONFIG=large_audio_only_lb14k_no_bin_valid_separated
 
 # /lus/work/CT10/c1615074/tphle/experiments/stdlogs/run/base_audio_only_task_ngpu16_fr_adastra_704392
 
@@ -139,7 +143,8 @@ CONFIG=large_audio_only_lb14k
 
 EXPNAME="${CONFIG}_fr" # ===== CHECK THIS =====
 # DATA_DIR=$WORK/Data/prepared/MLS_French
-DATA_DIR=$SCRATCH/Data/LeBenchmark_prepared/data-bin-combined
+# DATA_DIR=$SCRATCH/Data/LeBenchmark_prepared/data-bin
+DATA_DIR=$SCRATCH/Data/LeBenchmark_prepared/model_training
 
 CONFIG_DIR=$FAIRSEQ/examples/pantagruel/configs/${MODALITY}/${TASK}
 TENSORBOARD_DIR=$WORK/experiments/fairseq_tensorboard/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
@@ -153,8 +158,8 @@ SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/${MODALITY}/${TASK}/${
 # GPUs=16
 # GPUs=48
 GPUs=48
-HOURS=3
-JOBS=1
+HOURS=24
+JOBS=5
 JOBNAME=$EXPNAME
 submit run mi250 ${GPUs} ${HOURS} ${JOBS} ${JOBNAME} "${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} \
 --config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=${USER_DIR} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUs} distributed_training.distributed_port=${MASTER_PORT}"
@@ -179,5 +184,27 @@ submit run mi250 ${GPUs} ${HOURS} ${JOBS} ${JOBNAME} "${FAIRSEQ}/fairseq_cli/hyd
 
 # large_audio_only_task_ngpu64_fr_bsz89.6M_adastra (failed)
 
-# large_audio_only_lb14k_fr
-# job 0: 883179
+# large_audio_only_lb14k_fr (min_sample_size: 3k)
+# loaded 2,639,922 examples from: /lus/scratch/CT10/c1615074/tphle/Data/LeBenchmark_prepared/data-bin/train
+# 0: [2024-05-18 14:38:27,810][fairseq.data.iterators][INFO] - grouped total_num_itrs = 38180
+# job 0: 886599 (done till 16k steps)
+# job 1: 886600 (error) g[1130,1132-1136]'
+# job 2: 886601 (after 886600) 'g[1130,1132-1136]'
+# job 3: 886602 (after 886601) 'g[1130,1132-1136]'
+# job 4: 886603 (after 886602) 'g[1130,1132-1136]'
+# job 0: 888268
+# job 1: 888269 (after 888268) (running)
+
+
+# large_audio_only_lb14k_no_bin_fr (min_sample_size: 32k as binarized dataset does not support min_sample_size)
+# 0: [2024-05-18 16:04:42,956][fairseq.data.audio.raw_audio_dataset][INFO] - loaded 2498162, skipped 141760 samples
+# 0: [2024-05-18 16:04:50,854][fairseq.data.iterators][INFO] - grouped total_num_itrs = 38051
+# job 0: 888291 (24h)
+# job 1: 888292 (after 888291) (6.5h)
+# job 0: 889949
+# job 1: 889950 (after 889949)
+# job 2: 889951 (after 889950)
+# job 3: 889952 (after 889951)
+# job 4: 889953 (after 889952)
+
+# large_audio_only_lb14k_no_bin_valid_separated_fr

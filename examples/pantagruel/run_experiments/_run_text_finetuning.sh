@@ -61,7 +61,9 @@ done
 task=pawsx
 # Jean zay
 data_path=$WORK/Data/flue_data/pawsx/x-final/fr/d2v-frwiki19-bin/byteBPE
-PRETRAIN_MODEL=$HOME/experiments/fairseq_checkpoints/pantagruel/text/pretraining/base_wikipedia_frwiki_20190701/checkpoint_best.pt
+PRETRAINED_NAME=base_wikipedia_frwiki_20190701
+PRETRAINED_NAME=base_wikipedia2_frwiki_20190701_gpu_p13_gpus16
+PRETRAIN_MODEL=$HOME/experiments/fairseq_checkpoints/pantagruel/text/pretraining/${PRETRAINED_NAME}/checkpoint_best.pt
 TENSORBOARD_DIR=$HOME/experiments/fairseq_tensorboard/pantagruel/text/finetuning/${task}
 SAVE_DIR=$HOME/experiments/fairseq_checkpoints/pantagruel/text/finetuning/${task}
 TIME_LIMIT=110

@@ -23,21 +23,21 @@ task:
   _name: audio_pretraining
   data: ???
   max_sample_size: 320000
-  min_sample_size: 3000
+  min_sample_size: 32000
   normalize: true
   precompute_mask_config: {}
-  binarized_dataset: true
+  # binarized_dataset: true
 
 dataset:
   num_workers: 1
   max_tokens: 500000
   skip_invalid_size_inputs_valid_test: true
-  validate_interval: 5
+  # validate_interval: 5
   required_batch_size_multiple: 1
   # disable_validation: true
-  valid_subset: valid
-  train_subset: train
-  dataset_impl: mmap
+  valid_subset: valid_full_16_datasets_excld_mass
+  train_subset: train_full_16_datasets_excld_mass
+  # dataset_impl: mmap
 
 
 distributed_training:

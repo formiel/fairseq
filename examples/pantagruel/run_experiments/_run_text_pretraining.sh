@@ -13,8 +13,7 @@ TIME_LIMIT=1190
 
 GPUS=16
 MASTER_PORT=$(shuf -i 20000-45000 -n 1)
-CONFIG=base_wikipedia2
-# CONFIG=base_wikipedia_lr2e-5_wu1k
+CONFIG=base_text_only_task_4gb
 
 # WIKINAME=enwiki_20240201
 WIKINAME=frwiki_20190701
@@ -53,8 +52,8 @@ submit run ${PARTITION} $GPUS 20 2 $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.
 # 0: [2024-05-15 15:34:11,574][fairseq.data.data_utils][INFO] - loaded 66,911,314 examples from: /gpfsscratch/rech/ahm/umz16dj/Data/Wikipedia/frwiki_20190701/data-bin/byteBPE/train
 # 0: [2024-05-15 15:34:12,790][fairseq.tasks.masked_lm][INFO] - loaded 2793151 blocks from: /gpfsscratch/rech/ahm/umz16dj/Data/Wikipedia/frwiki_20190701/data-bin/byteBPE/train
 # job 0: 1909621 (20h)
-# job 0: 1936341
-# job 1: 1936342 (after 1936341)
+# job 0: 1936341 (done)
+# job 1: 1936342 (done)
 
 # base_wikipedia_lr2e-5_wu1k_frwiki_20190701_gpu_p13_gpus16
 # job 0: 1936336
@@ -62,6 +61,10 @@ submit run ${PARTITION} $GPUS 20 2 $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.
 # job 2: 1936338 (after 1936337)
 # job 3: 1936339 (after 1936338)
 # job 4: 1936340 (after 1936339)
+
+# base_text_only_task_4gb_frwiki_20190701_gpu_p13_gpus16
+# job 0: 1952893
+# job 1: 1952894 (after 1952893)
 
 
 
