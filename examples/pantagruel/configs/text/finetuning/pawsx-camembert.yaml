@@ -7,6 +7,7 @@ common:
   fp16_scale_window: 128
   log_format: json
   log_interval: 200
+  seed: ???
 
 task:
   _name: sentence_prediction
@@ -51,7 +52,7 @@ optimization:
   clip_norm: 0.0
   lr: [2e-05]
   max_update: 20360
-  max_epoch: 10
+  # max_epoch: 10
 
 model:
   _name: roberta

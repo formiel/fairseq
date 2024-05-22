@@ -10,10 +10,11 @@ common:
   # user_dir: ${env:PWD}/examples/data2vec
   tensorboard_logdir: ???
   time_limit: ???
+  seed: ???
 
 task:
   _name: sentence_prediction
-  data: /gpfswork/rech/ahm/umz16dj/Data/glue_data/RTE-fairseq-pretrained/RTE-bin
+  data: ???
   init_token: 0
   separator_token: 2
   num_classes: 2
@@ -55,7 +56,7 @@ optimization:
   clip_norm: 0.0
   lr: [2e-05]
   max_update: 20360
-  max_epoch: 10
+  # max_epoch: 10
 
 model:
   _name: data2vec_text_classification

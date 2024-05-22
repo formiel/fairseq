@@ -133,6 +133,7 @@ MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 
 CONFIG=large_audio_only_lb14k
 CONFIG=large_audio_only_lb14k_no_bin
+CONFIG=large_audio_only_lb14k_no_bin_maxtok320k
 # CONFIG=large_audio_only_lb14k_no_bin_valid_separated
 
 # /lus/work/CT10/c1615074/tphle/experiments/stdlogs/run/base_audio_only_task_ngpu16_fr_adastra_704392
@@ -186,19 +187,18 @@ submit run mi250 ${GPUs} ${HOURS} ${JOBS} ${JOBNAME} "${FAIRSEQ}/fairseq_cli/hyd
 
 # large_audio_only_lb14k_fr (min_sample_size: 3k)
 # loaded 2,639,922 examples from: /lus/scratch/CT10/c1615074/tphle/Data/LeBenchmark_prepared/data-bin/train
-# 0: [2024-05-18 14:38:27,810][fairseq.data.iterators][INFO] - grouped total_num_itrs = 38180
+# grouped total_num_itrs = 38180
 # job 0: 886599 (done till 16k steps)
 # job 1: 886600 (error) g[1130,1132-1136]'
 # job 2: 886601 (after 886600) 'g[1130,1132-1136]'
 # job 3: 886602 (after 886601) 'g[1130,1132-1136]'
 # job 4: 886603 (after 886602) 'g[1130,1132-1136]'
 # job 0: 888268
-# job 1: 888269 (after 888268) (running)
+# job 1: 888269 (after 888268)
 
 
 # large_audio_only_lb14k_no_bin_fr (min_sample_size: 32k as binarized dataset does not support min_sample_size)
-# 0: [2024-05-18 16:04:42,956][fairseq.data.audio.raw_audio_dataset][INFO] - loaded 2498162, skipped 141760 samples
-# 0: [2024-05-18 16:04:50,854][fairseq.data.iterators][INFO] - grouped total_num_itrs = 38051
+# loaded 2498162, skipped 141760 samples, grouped total_num_itrs = 38051
 # job 0: 888291 (24h)
 # job 1: 888292 (after 888291) (6.5h)
 # job 0: 889949
@@ -208,3 +208,11 @@ submit run mi250 ${GPUs} ${HOURS} ${JOBS} ${JOBNAME} "${FAIRSEQ}/fairseq_cli/hyd
 # job 4: 889953 (after 889952)
 
 # large_audio_only_lb14k_no_bin_valid_separated_fr
+
+# large_audio_only_lb14k_no_bin_maxtok320k_fr
+# loaded 2498162, skipped 141760 samples, grouped total_num_itrs = 44530
+# job 0: 894643
+# job 1: 894644 (after 894643)
+# job 2: 894645 (after 894644)
+# job 3: 894646 (after 894645)
+# job 4: 894647 (after 894646)
