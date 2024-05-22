@@ -122,6 +122,7 @@ MODALITY=speech
 FAIRSEQ=$HOME/code/fairspeech
 USER_DIR=$FAIRSEQ/examples/data2vec
 TIME_LIMIT=1430
+PARTITION=mi250
 
 MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=base_mls1k
@@ -134,15 +135,17 @@ MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 CONFIG=large_audio_only_lb14k
 CONFIG=large_audio_only_lb14k_no_bin
 CONFIG=large_audio_only_lb14k_no_bin_maxtok320k
-# CONFIG=large_audio_only_lb14k_no_bin_valid_separated
+CONFIG=large_audio_only_lb14k_no_bin_maxtok640k
 
-# /lus/work/CT10/c1615074/tphle/experiments/stdlogs/run/base_audio_only_task_ngpu16_fr_adastra_704392
+# submitted using 2 nodes
+GPUs=48
+# GPUs=64
+HOURS=24
+JOBS=5
+UPDATE=600000
 
-
-# CONFIG=large_mls1k
-# GPUS=32
-
-EXPNAME="${CONFIG}_fr" # ===== CHECK THIS =====
+SUFFIX= # ===== CHECK THIS =====
+EXPNAME="${CONFIG}_maxupdate${UPDATE}_${PARTITION}_gpus${GPUs}${SUFFIX}"
 # DATA_DIR=$WORK/Data/prepared/MLS_French
 # DATA_DIR=$SCRATCH/Data/LeBenchmark_prepared/data-bin
 DATA_DIR=$SCRATCH/Data/LeBenchmark_prepared/model_training
@@ -155,15 +158,8 @@ SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/${MODALITY}/${TASK}/${
 # torchrun ${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} \
 # --config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=${USER_DIR} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUS} distributed_training.distributed_port=${MASTER_PORT} 
 
-# submitted using 2 nodes
-# GPUs=16
-# GPUs=48
-GPUs=48
-HOURS=24
-JOBS=5
-JOBNAME=$EXPNAME
-submit run mi250 ${GPUs} ${HOURS} ${JOBS} ${JOBNAME} "${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} \
---config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=${USER_DIR} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUs} distributed_training.distributed_port=${MASTER_PORT}"
+submit run ${PARTITION} ${GPUs} ${HOURS} ${JOBS} ${EXPNAME} "${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} \
+--config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=${USER_DIR} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUs} distributed_training.distributed_port=${MASTER_PORT} optimization.max_update=${UPDATE}"
 # base_audio_only_task_ngpu16_fr_adastra => Speech_Base_fr_1K_mi250x 
 # (exact same training settings as "base_audio_only_task_ngpu16_fr" trained on JZ)
 # 25k: 26m 
@@ -203,11 +199,7 @@ submit run mi250 ${GPUs} ${HOURS} ${JOBS} ${JOBNAME} "${FAIRSEQ}/fairseq_cli/hyd
 # job 1: 888292 (after 888291) (6.5h)
 # job 0: 889949
 # job 1: 889950 (after 889949)
-# job 2: 889951 (after 889950)
-# job 3: 889952 (after 889951)
-# job 4: 889953 (after 889952)
-
-# large_audio_only_lb14k_no_bin_valid_separated_fr
+# job 2: 889951 (after 889950) (18h)
 
 # large_audio_only_lb14k_no_bin_maxtok320k_fr
 # loaded 2498162, skipped 141760 samples, grouped total_num_itrs = 44530
@@ -216,3 +208,18 @@ submit run mi250 ${GPUs} ${HOURS} ${JOBS} ${JOBNAME} "${FAIRSEQ}/fairseq_cli/hyd
 # job 2: 894645 (after 894644)
 # job 3: 894646 (after 894645)
 # job 4: 894647 (after 894646)
+
+# large_audio_only_lb14k_no_bin_maxtok320k_mi250_gpus64
+# loaded 2498162, skipped 141760 samples, grouped total_num_itrs = 33397
+# job 0: 894861
+# job 1: 894862 (after 894861)
+# job 2: 894863 (after 894862)
+# job 3: 894864 (after 894863)
+# job 4: 894865 (after 894864)
+
+# large_audio_only_lb14k_no_bin_maxtok640k_maxupdate600000_mi250_gpus48
+# job 0: 895428
+# job 1: 895429 (after 895428)
+# job 2: 895430 (after 895429)
+# job 3: 895431 (after 895430)
+# job 4: 895432 (after 895431)

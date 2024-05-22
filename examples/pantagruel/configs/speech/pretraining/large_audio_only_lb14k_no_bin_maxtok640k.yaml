@@ -11,7 +11,7 @@ common:
   time_limit: ???
 
 checkpoint:
-  save_interval: 1
+  # save_interval: 1
   save_interval_updates: 10000
   keep_interval_updates: 10
   # no_epoch_checkpoints: true
@@ -30,7 +30,7 @@ task:
 
 dataset:
   num_workers: 1
-  max_tokens: 500000
+  max_tokens: 640000
   skip_invalid_size_inputs_valid_test: true
   # validate_interval: 5
   required_batch_size_multiple: 1
@@ -56,7 +56,7 @@ criterion:
     - masked_pct
 
 optimization:
-  max_update: 600000
+  max_update: ???
   debug_param_names: true
   clip_norm: 1
 

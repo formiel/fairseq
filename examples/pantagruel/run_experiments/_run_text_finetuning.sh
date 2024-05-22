@@ -67,6 +67,7 @@ data_path=$WORK/Data/flue_data/pawsx/x-final/fr/d2v-frwiki19-bin/byteBPE
 PRETRAINED_NAMES="base_wikipedia_frwiki_20190701 
                   base_wikipedia2_frwiki_20190701_gpu_p13_gpus16 
                   base_text_only_task_4gb_frwiki_20190701_gpu_p13_gpus16"
+PRETRAINED_NAMES="base_text_only_task_4gb_frwiki_20190701_gpu_p13_gpus16"
 TIME_LIMIT=110
 for PRETRAINED_NAME in $PRETRAINED_NAMES; do
     PRETRAIN_MODEL=$HOME/experiments/fairseq_checkpoints/pantagruel/text/pretraining/${PRETRAINED_NAME}/checkpoint_best.pt
