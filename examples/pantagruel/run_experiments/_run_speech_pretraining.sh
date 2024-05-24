@@ -204,22 +204,15 @@ submit run ${PARTITION} ${GPUs} ${HOURS} ${JOBS} ${EXPNAME} "${FAIRSEQ}/fairseq_
 # large_audio_only_lb14k_no_bin_maxtok320k_fr
 # loaded 2498162, skipped 141760 samples, grouped total_num_itrs = 44530
 # job 0: 894643
-# job 1: 894644 (after 894643)
-# job 2: 894645 (after 894644)
-# job 3: 894646 (after 894645)
-# job 4: 894647 (after 894646)
+# job 1: 894644 (after 894643) (Running, save in 3 more hours)
+
 
 # large_audio_only_lb14k_no_bin_maxtok320k_mi250_gpus64
 # loaded 2498162, skipped 141760 samples, grouped total_num_itrs = 33397
 # job 0: 894861
-# job 1: 894862 (after 894861)
-# job 2: 894863 (after 894862)
-# job 3: 894864 (after 894863)
-# job 4: 894865 (after 894864)
+# job 1: 894862 (after 894861) (Running, save in 6 more hours)
+
 
 # large_audio_only_lb14k_no_bin_maxtok640k_maxupdate600000_mi250_gpus48
 # job 0: 895428
-# job 1: 895429 (after 895428)
-# job 2: 895430 (after 895429)
-# job 3: 895431 (after 895430)
-# job 4: 895432 (after 895431)
+# job 1: 895429 (after 895428) (Running, save in 17 more hours)
