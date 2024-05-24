@@ -43,6 +43,9 @@ from fairseq.model_parallel.megatron_trainer import MegatronTrainer
 from fairseq.trainer import Trainer
 
 
+START_JOB_TIME = time()
+
+
 def main(cfg: FairseqConfig) -> None:
     # record the starting time for time limit
     start_time = time()
@@ -221,38 +224,12 @@ def main(cfg: FairseqConfig) -> None:
         
         # check for time limit if remaining time not enough to train one epoch
         if time_limit > 0: # time_limit should be in minutes, e.g. 1195 means 19 hours and 55 minutes
-            # epoch time in minutes
-            epoch_time = (time() - start_epoch_time)/60
-            # average duration of the last 3 epochs
-            epoch_time_queue.append(epoch_time)
-            avg_time = sum(epoch_time_queue)/len(epoch_time_queue)
-            # if the next epoch likely surpasses the time limit, then stop here
-            estimated_next_total_time = (time() - start_time)/60 + avg_time
-            # Distributed training: taking the highest estimate from all processes
-            if cfg.common.model_parallel_size > 1:
-                estimated_times = [
-                    torch.tensor([0.0], device="cuda:0") for _ in range(
-                        cfg.distributed_training.distributed_world_size
-                    )
-                ]
-                torch.distributed.all_gather(
-                    estimated_times, torch.tensor([estimated_next_total_time], device="cuda:0")
-                )
-                max_estimated_time = torch.cat(estimated_times).max().item()
-            else:
-                max_estimated_time = estimated_next_total_time
-
-            logger.info(f"Average training time for 1 epoch: {avg_time}")
-            if max_estimated_time > time_limit:
-                logger.info(
-                f"Stopping training because estimated time after next epoch "
-                f"({round(max_estimated_time, 2)} minutes) "
-                f"is greater than time limit ({time_limit} minutes)."
+            reach_time_limit, epoch_time_queue = get_time_queue_and_check_time_limit(
+                cfg, start_epoch_time=start_epoch_time,
+                epoch_time_queue=epoch_time_queue
             )
-                reach_time_limit = True
+            if reach_time_limit:
                 break
-            else:
-                logger.info(f"Training is within time limit. Continue ...")
 
         # only use first validation loss to update the learning rate
         lr = trainer.lr_step(epoch_itr.epoch, valid_losses[0])
@@ -375,7 +352,14 @@ def train(
     should_stop = False
     num_updates = trainer.get_num_updates()
     logger.info("Start iterating over samples")
+    epoch_time_queue = deque(maxlen=3)
+    time_limit = getattr(cfg.common, "time_limit", -1)
+    reach_time_limit = False
+
     for i, samples in enumerate(progress):
+        # Record the start time
+        start_epoch_time = time()
+
         with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
             "train_step-%d" % i
         ):
@@ -396,6 +380,14 @@ def train(
         valid_losses, should_stop = validate_and_save(
             cfg, trainer, task, epoch_itr, valid_subsets, end_of_epoch
         )
+        reach_time_limit, epoch_time_queue = get_time_queue_and_check_time_limit(
+                cfg, start_epoch_time=start_epoch_time,
+                epoch_time_queue=epoch_time_queue,
+                check_by="interval"
+            )
+        if reach_time_limit:
+            should_stop = True
+            break
 
         if should_stop:
             break
@@ -502,6 +494,53 @@ def validate_and_save(
 def get_training_stats(stats: Dict[str, Any]) -> Dict[str, Any]:
     stats["wall"] = round(metrics.get_meter("default", "wall").elapsed_time, 0)
     return stats
+
+
+def get_time_queue_and_check_time_limit(
+    cfg, start_epoch_time, epoch_time_queue,
+    check_by="epoch",
+):
+    reach_time_limit = False
+    time_limit = getattr(cfg.common, "time_limit", -1)
+
+    # epoch time in minutes
+    epoch_time = (time() - start_epoch_time)/60
+    # average duration of the last 3 epochs
+    epoch_time_queue.append(epoch_time)
+    avg_time = sum(epoch_time_queue)/len(epoch_time_queue)
+    # if the next epoch likely surpasses the time limit, then stop here
+    estimated_next_total_time = (time() - START_JOB_TIME)/60 + avg_time
+    # Distributed training: taking the highest estimate from all processes
+    if cfg.common.model_parallel_size > 1:
+        estimated_times = [
+            torch.tensor([0.0], device="cuda:0") for _ in range(
+                cfg.distributed_training.distributed_world_size
+            )
+        ]
+        torch.distributed.all_gather(
+            estimated_times, torch.tensor([estimated_next_total_time], device="cuda:0")
+        )
+        max_estimated_time = torch.cat(estimated_times).max().item()
+    else:
+        max_estimated_time = estimated_next_total_time
+
+    if check_by == "epoch":
+        message = "one epoch"
+    else:
+        message = f"{cfg.checkpoint.save_interval_updates} steps"
+    logger.info(f"Average training time for {message}: {avg_time}")
+
+    if max_estimated_time > time_limit:
+        logger.info(
+        f"Stopping training because estimated time after next epoch "
+        f"({round(max_estimated_time, 2)} minutes) "
+        f"is greater than time limit ({time_limit} minutes)."
+    )
+        reach_time_limit = True
+    else:
+        logger.info(f"Training is within time limit. Continue ...")
+    
+    return reach_time_limit, epoch_time_queue
 
 
 def validate(
