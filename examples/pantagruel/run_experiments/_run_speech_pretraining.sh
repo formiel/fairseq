@@ -214,5 +214,5 @@ submit run ${PARTITION} ${GPUs} ${HOURS} ${JOBS} ${EXPNAME} "${FAIRSEQ}/fairseq_
 
 
 # large_audio_only_lb14k_no_bin_maxtok640k_maxupdate600000_mi250_gpus48
-# job 0: 895428
+# job 0: 895428 (16h)
 # job 1: 895429 (after 895428) (Running, save in 17 more hours)
