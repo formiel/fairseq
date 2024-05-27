@@ -218,8 +218,8 @@ submit run ${PARTITION} ${GPUs} ${HOURS} ${JOBS} ${EXPNAME} "${FAIRSEQ}/fairseq_
 # loaded 2498162, skipped 141760 samples, grouped total_num_itrs = 21073
 # job 0: 895428 (16h)
 # job 1: 895429 (after 895428) (Running, save in 17 more hours)
-# job 0: 900391
-# job 1: 900392 (after 900391)
-# job 2: 900393 (after 900392)
+# job 0: 900391 (too much logging)
+# job 1: 900392 (after 900391) (too much logging)
+# job 2: 900393 (after 900392) (cancelled, ran so slow)
 # job 3: 900394 (after 900393)
 # job 4: 900396 (after 900394)
