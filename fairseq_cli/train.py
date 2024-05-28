@@ -224,10 +224,11 @@ def main(cfg: FairseqConfig) -> None:
         
         # check for time limit if remaining time not enough to train one epoch
         if time_limit > 0: # time_limit should be in minutes, e.g. 1195 means 19 hours and 55 minutes
-            reach_time_limit, epoch_time_queue = get_time_queue_and_check_time_limit(
+            reach_time_limit, _epoch_time_queue = get_time_queue_and_check_time_limit(
                 cfg, start_epoch_time=start_epoch_time,
                 epoch_time_queue=epoch_time_queue
             )
+            epoch_time_queue = _epoch_time_queue
             if reach_time_limit:
                 break
 
@@ -381,11 +382,11 @@ def train(
             cfg, trainer, task, epoch_itr, valid_subsets, end_of_epoch
         )
         if valid_losses[0] is not None:
-            reach_time_limit, epoch_time_queue = get_time_queue_and_check_time_limit(
+            reach_time_limit, _epoch_time_queue = get_time_queue_and_check_time_limit(
                     cfg, start_epoch_time=start_epoch_time,
                     epoch_time_queue=epoch_time_queue,
-                    check_by="interval"
                 )
+            epoch_time_queue = _epoch_time_queue
         if reach_time_limit:
             should_stop = True
             break
@@ -499,7 +500,6 @@ def get_training_stats(stats: Dict[str, Any]) -> Dict[str, Any]:
 
 def get_time_queue_and_check_time_limit(
     cfg, start_epoch_time, epoch_time_queue,
-    check_by="epoch",
 ):
     reach_time_limit = False
     time_limit = getattr(cfg.common, "time_limit", -1)
@@ -524,12 +524,6 @@ def get_time_queue_and_check_time_limit(
         max_estimated_time = torch.cat(estimated_times).max().item()
     else:
         max_estimated_time = estimated_next_total_time
-
-    if check_by == "epoch":
-        message = "one epoch"
-    else:
-        message = f"{cfg.checkpoint.save_interval_updates} steps"
-    # logger.info(f"Average training time for {message}: {avg_time}")
 
     if max_estimated_time > time_limit:
         logger.info(
