@@ -129,7 +129,7 @@ GPUs=48
 # GPUs=64
 HOURS=24
 JOBS=5
-UPDATE=600000
+UPDATE=300000
 
 MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=base_mls1k
@@ -143,6 +143,7 @@ CONFIG=large_audio_only_lb14k
 CONFIG=large_audio_only_lb14k_no_bin
 CONFIG=large_audio_only_lb14k_no_bin_maxtok320k
 CONFIG=large_audio_only_lb14k_no_bin_maxtok640k
+CONFIG=large_audio_only_lb14k_no_bin_maxtok640k_wu5k
 
 SUFFIX= # ===== CHECK THIS =====
 EXPNAME="${CONFIG}_maxupdate${UPDATE}_${PARTITION}_gpus${GPUs}${SUFFIX}"
@@ -222,4 +223,11 @@ submit run ${PARTITION} ${GPUs} ${HOURS} ${JOBS} ${EXPNAME} "${FAIRSEQ}/fairseq_
 # job 1: 900392 (after 900391) (too much logging)
 # job 2: 900393 (after 900392) (cancelled, ran so slow)
 # job 3: 900394 (after 900393)
-# job 4: 900396 (after 900394)
+# job 4: 900396 (after 900394) (cancelled as loss increasing)
+
+# large_audio_only_lb14k_no_bin_maxtok640k_wu5k_maxupdate300000_mi250_gpus48
+# job 0: 913123
+# job 1: 913124 (after 913123)
+# job 2: 913125 (after 913124)
+# job 3: 913126 (after 913125)
+# job 4: 913128 (after 913126)

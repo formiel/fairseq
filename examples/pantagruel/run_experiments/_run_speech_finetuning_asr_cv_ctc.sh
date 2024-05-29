@@ -42,21 +42,24 @@ GPUS=16
 
 DATA_DIR=$WORK/Data/CommonVoice/fr
 LABEL="fr.ltr"
+
+# Pre-trained checkpoint
+# PRETRAIN_CONFIG=base_audio_only_task_ngpu16_fr
+# PRETRAIN_CKPT=$WORK/experiments/fairseq_checkpoints/pantagruel/${MODALITY}/pretraining/${PRETRAIN_CONFIG}/checkpoint_best.pt
+# PRETRAIN_CONFIG=large_audio_only_task_ngpu48_fr
+# PRETRAIN_CKPT=$WORK/experiments/fairseq_checkpoints/pantagruel/${PRETRAIN_CONFIG}/checkpoint_best_200k.pt
+PRETRAIN_CONFIG=large_audio_only_lb14k_no_bin_maxtok640k_maxupdate600000_mi250_gpus48
+PRETRAIN_CKPT=$WORK/experiments/fairseq_checkpoints/pantagruel/speech/pretraining/${PRETRAIN_CONFIG}/checkpoint_best.pt
+
 # CONFIG=base_commonvoice_hparams_bszx4
 CONFIG=large_commonvoice
-EXPNAME="${CONFIG}_ngpu${GPUS}_${LABEL}" # !!!UNIQUE for each experiment!!!
+EXPNAME="${CONFIG}_ngpu${GPUS}_${LABEL}_pt_${PRETRAIN_CONFIG}" # !!!UNIQUE for each experiment!!!
 
 CONFIG_DIR=$FAIRSEQ/examples/pantagruel/configs/${MODALITY}/${TASK}
 TENSORBOARD_DIR=$WORK/experiments/fairseq_tensorboard/pantagruel/speech/${MODALITY}/${TASK}/${EXPNAME}
 SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
 
-# Pre-trained checkpoint
-# PRETRAIN_CONFIG=base_audio_only_task_ngpu16_fr
-# PRETRAIN_CKPT=$WORK/experiments/fairseq_checkpoints/pantagruel/${MODALITY}/pretraining/${PRETRAIN_CONFIG}/checkpoint_best.pt
-PRETRAIN_CONFIG=large_audio_only_task_ngpu48_fr
-PRETRAIN_CKPT=$WORK/experiments/fairseq_checkpoints/pantagruel/${PRETRAIN_CONFIG}/checkpoint_best_200k.pt
-
-submit run gpu_p5 $GPUS 20 2 $EXPNAME "fairseq-hydra-train --config-dir ${CONFIG_DIR} --config-name $CONFIG.yaml task.data=${DATA_DIR} task.labels=${LABEL} common.time_limit=${TIME_LIMIT} common.user_dir=${USER_DIR} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} model.w2v_path=${PRETRAIN_CKPT} distributed_training.distributed_world_size=${GPUS} distributed_training.distributed_port=${MASTER_PORT}"
+submit run gpu_p2 $GPUS 20 2 $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} --config-name $CONFIG.yaml task.data=${DATA_DIR} task.labels=${LABEL} common.time_limit=${TIME_LIMIT} common.user_dir=${USER_DIR} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} model.w2v_path=${PRETRAIN_CKPT} distributed_training.distributed_world_size=${GPUS} distributed_training.distributed_port=${MASTER_PORT}"
 
 # base_commonvoice_fr.ltr: WER on dev 8.96
 #
@@ -79,6 +82,10 @@ submit run gpu_p5 $GPUS 20 2 $EXPNAME "fairseq-hydra-train --config-dir ${CONFIG
 # large_commonvoice_ngpu16_fr.ltr
 # job 0: 947844 (completed)
 # job 1: 947845 (after 947844)
+
+# large_commonvoice_ngpu16_fr.ltr_pt_large_audio_only_lb14k_no_bin_maxtok640k_maxupdate600000_mi250_gpus48
+# job 0: 2084561
+# job 1: 2084562
 
 # 4.decoding data2vec2.0 model trained with CTC
 SPLIT=test

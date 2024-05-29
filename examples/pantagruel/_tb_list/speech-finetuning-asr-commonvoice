@@ -5,4 +5,4 @@ base_commonvoice_hparams_bszx4_fr.ltr
 base_commonvoice_full_fr.ltr
 large_commonvoice_ngpu16_fr.ltr
 base_commonvoice_w2v_transf_decoder_fr.ltr
-
+large_commonvoice_ngpu16_fr.ltr_pt_large_audio_only_lb14k_no_bin_maxtok640k_maxupdate600000_mi250_gpus48
