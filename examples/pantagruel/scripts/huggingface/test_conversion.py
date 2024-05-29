@@ -14,16 +14,53 @@ from fairseq import checkpoint_utils
 # from examples.data2vec.models.data2vec2 import Data2VecMultiModel, Data2VecMultiConfig
 from datasets import load_dataset
 from transformers import Wav2Vec2Processor
-from transformers.utils import CONFIG_NAME
+from transformers.utils import CONFIG_NAME, WEIGHTS_NAME
+
+
+def compare_tensors(tensor_a, tensor_b):
+    max_absolute_diff = torch.max(torch.abs(tensor_a - tensor_b)).item()
+    # print(f"max_absolute_diff = {max_absolute_diff}")  # ~ 1e-7
+    if max_absolute_diff > 0.0:
+        raise ValueError(f"max_absolute_diff={max_absolute_diff}")
+    success = torch.allclose(tensor_a, tensor_b, atol=1e-3)
+    if not success:
+        raise ValueError("!!!Something went wrong!!!")
 
 
 @torch.no_grad()
-def test_converted_weights(checkpoint_path, pytorch_dump_folder_path):
-    print(f"Initializing HF model with pre-trained config...")
-    configuration = Data2Vec2MultiConfig.from_pretrained(f"{pytorch_dump_folder_path}/{CONFIG_NAME}")
-    hf_model = Data2Vec2MultiModel(configuration)
-    print(f"Loading from pre-trained weights...")
-    hf_model.from_pretrained(pytorch_dump_folder_path)
+def test_converted_weights(args):
+    checkpoint_path = args.checkpoint_path
+    pytorch_dump_folder_path = args.pytorch_dump_folder_path
+
+    hf_model = Data2Vec2MultiModel.from_pretrained(pytorch_dump_folder_path)
+    print(f"Pre-trained weights loaded to HF model!")
+    hf_model.eval()
+
+    # fairseq checkpoint
+    print(f"Loading fairseq model...")
+    utils.import_user_module(args)
+    state = checkpoint_utils.load_checkpoint_to_cpu(checkpoint_path, {})
+    w2v_args = state.get("cfg", None)
+    assert w2v_args is not None
+    w2v_args.criterion = None
+    w2v_args.lr_scheduler = None
+    task = tasks.setup_task(w2v_args.task, from_checkpoint=True)
+    print(f"fairseq model args: {w2v_args.model}")
+    fairseq_model = task.build_model(w2v_args.model, from_checkpoint=True)
+    fairseq_model.load_state_dict(state["model"], strict=True)
+    fairseq_model.remove_pretraining_modules(modality="AUDIO")
+    fairseq_model.eval()
+    print(f"Pre-trained weights loaded to fairseq model!")
+
+    # compare keys and parameters
+    hf_keys = [n for n, _ in hf_model.named_parameters()]
+    fairseq_keys = [n for n, _ in fairseq_model.named_parameters()]
+    diffs = list(set(fairseq_keys) - set(hf_keys))
+    if len(diffs) > 0:
+        print(f"diffs: {diffs}")
+
+    for n, p in hf_model.named_parameters():
+        compare_tensors(p, fairseq_model.state_dict()[n])
 
     # print("Loading processor...")
     # processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-large-lv60")
@@ -34,40 +71,18 @@ def test_converted_weights(checkpoint_path, pytorch_dump_folder_path):
     # input_values = inputs.input_values
     # attention_mask = inputs.attention_mask
 
-    input_values = torch.randn((1, 320000), dtype=torch.float16)
+    print(f"Comparing outputs with randomized tensors...")
+    input_values = torch.randn((1, 320000), dtype=torch.float32)
 
-    # print(f"Forward using HF model...")
-    # hf_model.eval()
-    # hf_output = hf_model(input_values, padding_mask=None, mode="AUDIO", mask=False)["x"]
-    # print(f"hf_output: {hf_output.shape}")
-
-    # fairseq checkpoint
-    utils.import_user_module("examples/data2vec")
-    state = checkpoint_utils.load_checkpoint_to_cpu(checkpoint_path, {})
-    w2v_args = state.get("cfg", None)
-    assert w2v_args is not None
-    w2v_args.criterion = None
-    w2v_args.lr_scheduler = None
-    task = tasks.setup_task(w2v_args.task, from_checkpoint=True)
-    print(f"task: {task}")
-    print(f"model: {w2v_args.model}")
-    model = task.build_model(w2v_args.model, from_checkpoint=True)
-    print(model)
-    model.load_state_dict(state["model"], strict=True)
-    model.remove_pretraining_modules(modality="AUDIO")
+    print(f"Forward using HF model...")
+    hf_output = hf_model(input_values, padding_mask=None, mode="AUDIO", mask=False)
 
     print(f"Forward using fairseq model...")
-    fairseq_model = model.eval()
-    fairseq_output = fairseq_model(source=input_values, padding_mask=None, mask=False, features_only=True)["x"]
-    print(f"fairseq_output: {fairseq_output.shape}")
+    fairseq_output = fairseq_model(source=input_values, padding_mask=None, mask=False, features_only=True)
 
-    # max_absolute_diff = torch.max(torch.abs(hf_output - fairseq_output)).item()
-    # print(f"max_absolute_diff = {max_absolute_diff}")  # ~ 1e-7
-    # success = torch.allclose(hf_output, fairseq_output, atol=1e-3)
-    # if success:
-    #     print("Both models output the same tensors.")
-    # else:
-    #     raise Exception("Something went wrong.")
+    print(f"Comparing x...")
+    compare_tensors(hf_output["x"], fairseq_output["x"])
+    print(f'MATCHED!')
 
 
 def main_old(args):
@@ -97,11 +112,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--pytorch_dump_folder_path", default=None, type=str, help="Path to the output PyTorch model.")
     parser.add_argument("--checkpoint_path", default=None, type=str, help="Path to fairseq checkpoint")
+    parser.add_argument("--user-dir", default="examples/data2vec")
     args = parser.parse_args()
 
-    test_converted_weights(
-        args.checkpoint_path, args.pytorch_dump_folder_path,
-    )
+    test_converted_weights(args)
 
 if __name__ == "__main__":
     main()

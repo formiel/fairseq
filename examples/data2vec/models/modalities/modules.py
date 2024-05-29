@@ -414,13 +414,13 @@ class AltAttention(nn.Module):
                     padding_mask = None
             x = F.scaled_dot_product_attention(q, k, v, 
                                 attn_mask=padding_mask, 
-                                dropout_p=self.attn_drop,
+                                dropout_p=self.attn_drop if self.training else 0.0,
                                 scale=self.scale).transpose(1, 2)
 
         x = x.reshape(B, N, C)
         x = self.proj(x)
         # x = self.proj_drop(x)
-        x = F.dropout(x, p=self.proj_drop)
+        x = F.dropout(x, p=self.proj_drop if self.training else 0.0)
         return x
 
 
@@ -521,13 +521,13 @@ class EncDecAttention(nn.Module):
                     padding_mask = None
             x = F.scaled_dot_product_attention(q, k, v, 
                                 attn_mask=padding_mask, 
-                                dropout_p=self.attn_drop,
+                                dropout_p=self.attn_drop if self.training else 0.0,
                                 scale=self.scale).transpose(1, 2)
 
         x = x.reshape(B, N, C)
         x = self.proj(x)
         # x = self.proj_drop(x)
-        x = F.dropout(x, p=self.proj_drop)
+        x = F.dropout(x, p=self.proj_drop if self.training else 0.0)
         return x
 
 
