@@ -83,7 +83,7 @@ submit run gpu_p2 $GPUS 20 2 $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.py -m 
 # job 0: 947844 (completed)
 # job 1: 947845 (after 947844)
 
-# large_commonvoice_ngpu16_fr.ltr_pt_large_audio_only_lb14k_no_bin_maxtok640k_maxupdate600000_mi250_gpus48
+# large_commonvoice_ngpu16_fr.ltr_pt_large_audio_only_lb14k_no_bin_maxtok640k_maxupdate600000_mi250_gpus48 (best WER on dev 7.84%)
 # job 0: 2084561
 # job 1: 2084562
 

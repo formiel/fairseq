@@ -227,7 +227,8 @@ submit run ${PARTITION} ${GPUs} ${HOURS} ${JOBS} ${EXPNAME} "${FAIRSEQ}/fairseq_
 
 # large_audio_only_lb14k_no_bin_maxtok640k_wu5k_maxupdate300000_mi250_gpus48
 # job 0: 913123
-# job 1: 913124 (after 913123)
-# job 2: 913125 (after 913124)
-# job 3: 913126 (after 913125)
-# job 4: 913128 (after 913126)
+# job 0: 922925
+# job 1: 922926 (after 922925)
+# job 2: 922927 (after 922926)
+# job 3: 922928 (after 922927)
+# job 4: 922929 (after 922928)
