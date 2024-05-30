@@ -81,7 +81,7 @@ def test_converted_weights(args):
     fairseq_output = fairseq_model(source=input_values, padding_mask=None, mask=False, features_only=True)
 
     print(f"Comparing x...")
-    compare_tensors(hf_output["x"], fairseq_output["x"])
+    compare_tensors(hf_output.last_hidden_state, fairseq_output["x"])
     print(f'MATCHED!')
 
 
