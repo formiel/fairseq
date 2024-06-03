@@ -127,9 +127,9 @@ PARTITION=mi250
 # submitted using 2 nodes
 GPUs=48
 # GPUs=64
-HOURS=24
-JOBS=5
-UPDATE=300000
+HOURS=18
+JOBS=1
+UPDATE=600000
 
 MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=base_mls1k
@@ -140,13 +140,14 @@ MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=large_audio_only_task_ngpu64_fr_bsz89.6M_adastra
 
 CONFIG=large_audio_only_lb14k
-CONFIG=large_audio_only_lb14k_no_bin
-CONFIG=large_audio_only_lb14k_no_bin_maxtok320k
+# CONFIG=large_audio_only_lb14k_no_bin
+# CONFIG=large_audio_only_lb14k_no_bin_maxtok320k
 CONFIG=large_audio_only_lb14k_no_bin_maxtok640k
-CONFIG=large_audio_only_lb14k_no_bin_maxtok640k_wu5k
+# CONFIG=large_audio_only_lb14k_no_bin_maxtok640k_wu5k
 
 SUFFIX= # ===== CHECK THIS =====
 EXPNAME="${CONFIG}_maxupdate${UPDATE}_${PARTITION}_gpus${GPUs}${SUFFIX}"
+# EXPNAME="${CONFIG}_${SUFFIX}"
 # DATA_DIR=$WORK/Data/prepared/MLS_French
 # DATA_DIR=$SCRATCH/Data/LeBenchmark_prepared/data-bin
 DATA_DIR=$SCRATCH/Data/LeBenchmark_prepared/model_training
@@ -202,6 +203,7 @@ submit run ${PARTITION} ${GPUs} ${HOURS} ${JOBS} ${EXPNAME} "${FAIRSEQ}/fairseq_
 # job 0: 889949
 # job 1: 889950 (after 889949)
 # job 2: 889951 (after 889950) (18h)
+job 0: 934220 (18h)
 
 # large_audio_only_lb14k_no_bin_maxtok320k_fr
 # loaded 2498162, skipped 141760 samples, grouped total_num_itrs = 44530
@@ -224,6 +226,7 @@ submit run ${PARTITION} ${GPUs} ${HOURS} ${JOBS} ${EXPNAME} "${FAIRSEQ}/fairseq_
 # job 2: 900393 (after 900392) (cancelled, ran so slow)
 # job 3: 900394 (after 900393)
 # job 4: 900396 (after 900394) (cancelled as loss increasing)
+job 0: 934227 (18h)
 
 # large_audio_only_lb14k_no_bin_maxtok640k_wu5k_maxupdate300000_mi250_gpus48
 # job 0: 913123

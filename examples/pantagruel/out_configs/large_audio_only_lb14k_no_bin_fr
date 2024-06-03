@@ -1,0 +1,483 @@
+{'_name': None
+'common': {'_name': None
+'no_progress_bar': False
+'log_interval': 200
+'log_format': 'json'
+'log_file': None
+'aim_repo': None
+'aim_run_hash': None
+'tensorboard_logdir': '/lus/work/CT10/c1615074/tphle/experiments/fairseq_tensorboard/pantagruel/speech/pretraining/large_audio_only_lb14k_no_bin_fr'
+'wandb_project': None
+'azureml_logging': False
+'seed': 1
+'cpu': False
+'tpu': False
+'bf16': False
+'memory_efficient_bf16': False
+'fp16': True
+'memory_efficient_fp16': False
+'fp16_no_flatten_grads': True
+'fp16_init_scale': 128
+'fp16_scale_window': None
+'fp16_scale_tolerance': 0.0
+'on_cpu_convert_precision': False
+'min_loss_scale': 1e-06
+'threshold_loss_scale': None
+'amp': False
+'amp_batch_retries': 2
+'amp_init_scale': 128
+'amp_scale_window': None
+'user_dir': '/lus/home/CT10/c1615074/tphle/code/fairspeech/examples/data2vec'
+'empty_cache_freq': 0
+'all_gather_list_size': 16384
+'model_parallel_size': 1
+'quantization_config_path': None
+'profile': False
+'reset_logging': False
+'suppress_crashes': False
+'use_plasma_view': False
+'plasma_path': '/tmp/plasma'
+'time_limit': 1430}
+'common_eval': {'_name': None
+'path': None
+'post_process': None
+'quiet': False
+'model_overrides': '{}'
+'results_path': None}
+'distributed_training': {'_name': None
+'distributed_world_size': 48
+'distributed_num_procs': 8
+'distributed_rank': 0
+'distributed_backend': 'nccl'
+'distributed_init_method': 'env://'
+'distributed_port': 22105
+'device_id': 0
+'distributed_no_spawn': True
+'ddp_backend': 'c10d'
+'ddp_comm_hook': 'none'
+'bucket_cap_mb': 25
+'fix_batches_to_gpus': False
+'find_unused_parameters': False
+'gradient_as_bucket_view': False
+'fast_stat_sync': False
+'heartbeat_timeout': -1
+'broadcast_buffers': False
+'slowmo_momentum': None
+'slowmo_base_algorithm': 'localsgd'
+'localsgd_frequency': 3
+'nprocs_per_node': 8
+'pipeline_model_parallel': False
+'pipeline_balance': None
+'pipeline_devices': None
+'pipeline_chunks': 0
+'pipeline_encoder_balance': None
+'pipeline_encoder_devices': None
+'pipeline_decoder_balance': None
+'pipeline_decoder_devices': None
+'pipeline_checkpoint': 'never'
+'zero_sharding': 'none'
+'fp16': True
+'memory_efficient_fp16': False
+'tpu': False
+'no_reshard_after_forward': False
+'fp32_reduce_scatter': False
+'cpu_offload': False
+'use_sharded_state': False
+'not_fsdp_flatten_parameters': False}
+'dataset': {'_name': None
+'num_workers': 1
+'skip_invalid_size_inputs_valid_test': True
+'max_tokens': 500000
+'batch_size': None
+'required_batch_size_multiple': 1
+'required_seq_len_multiple': 1
+'dataset_impl': None
+'data_buffer_size': 10
+'train_subset': 'train_full_16_datasets_excld_mass'
+'valid_subset': 'valid_full_16_datasets_excld_mass'
+'combine_valid_subsets': None
+'ignore_unused_valid_subsets': False
+'validate_interval': 1
+'validate_interval_updates': 0
+'validate_after_updates': 0
+'fixed_validation_seed': None
+'disable_validation': False
+'max_tokens_valid': 500000
+'batch_size_valid': None
+'max_valid_steps': None
+'curriculum': 0
+'gen_subset': 'test'
+'num_shards': 1
+'shard_id': 0
+'grouped_shuffling': False
+'update_epoch_batch_itr': False
+'update_ordered_indices_seed': False}
+'optimization': {'_name': None
+'max_epoch': 0
+'max_update': 600000
+'stop_time_hours': 0.0
+'clip_norm': 1.0
+'sentence_avg': False
+'update_freq': [1]
+'lr': [0.25]
+'stop_min_lr': -1.0
+'use_bmuf': False
+'skip_remainder_batch': False
+'debug_param_names': True}
+'checkpoint': {'_name': None
+'save_dir': '/lus/work/CT10/c1615074/tphle/experiments/fairseq_checkpoints/pantagruel/speech/pretraining/large_audio_only_lb14k_no_bin_fr'
+'restore_file': 'checkpoint_last.pt'
+'continue_once': None
+'finetune_from_model': None
+'reset_dataloader': False
+'reset_lr_scheduler': False
+'reset_meters': False
+'reset_optimizer': False
+'optimizer_overrides': '{}'
+'save_interval': 1
+'save_interval_updates': 2000
+'keep_interval_updates': 10
+'keep_interval_updates_pattern': -1
+'keep_last_epochs': -1
+'keep_best_checkpoints': 10
+'no_save': False
+'no_epoch_checkpoints': False
+'no_last_checkpoints': False
+'no_save_optimizer_state': False
+'best_checkpoint_metric': 'loss'
+'maximize_best_checkpoint_metric': False
+'patience': -1
+'checkpoint_suffix': ''
+'checkpoint_shard_count': 1
+'load_checkpoint_on_all_dp_ranks': False
+'write_checkpoints_asynchronously': False
+'model_parallel_size': 1}
+'bmuf': {'_name': None
+'block_lr': 1.0
+'block_momentum': 0.875
+'global_sync_iter': 50
+'warmup_iterations': 500
+'use_nbm': False
+'average_sync': False
+'distributed_world_size': 48}
+'generation': {'_name': None
+'beam': 5
+'beam_mt': 0
+'nbest': 1
+'max_len_a': 0.0
+'max_len_b': 200
+'max_len_a_mt': 0.0
+'max_len_b_mt': 200
+'min_len': 1
+'match_source_len': False
+'unnormalized': False
+'no_early_stop': False
+'no_beamable_mm': False
+'lenpen': 1.0
+'lenpen_mt': 1.0
+'unkpen': 0.0
+'replace_unk': None
+'sacrebleu': False
+'score_reference': False
+'prefix_size': 0
+'no_repeat_ngram_size': 0
+'sampling': False
+'sampling_topk': -1
+'sampling_topp': -1.0
+'constraints': None
+'temperature': 1.0
+'diverse_beam_groups': -1
+'diverse_beam_strength': 0.5
+'diversity_rate': -1.0
+'print_alignment': None
+'print_step': False
+'lm_path': None
+'lm_weight': 0.0
+'iter_decode_eos_penalty': 0.0
+'iter_decode_max_iter': 10
+'iter_decode_force_max_iter': False
+'iter_decode_with_beam': 1
+'iter_decode_with_external_reranker': False
+'retain_iter_history': False
+'retain_dropout': False
+'retain_dropout_modules': None
+'decoding_format': None
+'no_seed_provided': False
+'eos_token': None}
+'eval_lm': {'_name': None
+'output_word_probs': False
+'output_word_stats': False
+'context_window': 0
+'softmax_batch': 9223372036854775807}
+'interactive': {'_name': None
+'buffer_size': 0
+'input': '-'}
+'model': {'_name': 'data2vec_multi'
+'loss_beta': 0.0
+'loss_scale': None
+'depth': 16
+'start_drop_path_rate': 0.0
+'end_drop_path_rate': 0.0
+'num_heads': 16
+'norm_eps': 1e-05
+'norm_affine': True
+'encoder_dropout': 0.1
+'post_mlp_drop': 0.1
+'attention_dropout': 0.1
+'activation_dropout': 0.0
+'dropout_input': 0.0
+'layerdrop': 0.0
+'embed_dim': 1024
+'mlp_ratio': 4.0
+'layer_norm_first': False
+'average_top_k_layers': 16
+'end_of_block_targets': False
+'clone_batch': 12
+'layer_norm_target_layer': False
+'batch_norm_target_layer': False
+'instance_norm_target_layer': True
+'instance_norm_targets': False
+'layer_norm_targets': False
+'ema_decay': 0.9997
+'ema_same_dtype': True
+'log_norms': True
+'ema_end_decay': 1.0
+'ema_anneal_end_step': 300000
+'ema_encoder_only': False
+'max_update': 600000
+'modalities': {'_name': None
+'audio': {'type': 'AUDIO'
+'prenet_depth': 8
+'prenet_layerdrop': 0.0
+'prenet_dropout': 0.1
+'start_drop_path_rate': 0.0
+'end_drop_path_rate': 0.0
+'num_extra_tokens': 0
+'init_extra_token_zero': True
+'mask_noise_std': 0.01
+'mask_prob_min': None
+'mask_prob': 0.55
+'inverse_mask': False
+'mask_prob_adjust': 0.1
+'keep_masked_pct': 0.0
+'mask_length': 5
+'add_masks': False
+'remove_masks': False
+'mask_dropout': 0.0
+'encoder_zero_mask': True
+'mask_channel_prob': 0.0
+'mask_channel_length': 64
+'ema_local_encoder': False
+'local_grad_mult': 1.0
+'use_alibi_encoder': True
+'alibi_scale': 1.0
+'learned_alibi': False
+'alibi_max_pos': None
+'learned_alibi_scale': True
+'learned_alibi_scale_per_head': True
+'learned_alibi_scale_per_layer': False
+'num_alibi_heads': 16
+'model_depth': 16
+'decoder': {'decoder_dim': 768
+'decoder_groups': 16
+'decoder_kernel': 7
+'decoder_layers': 4
+'input_dropout': 0.1
+'add_positions_masked': False
+'add_positions_all': False
+'decoder_residual': True
+'projection_layers': 1
+'projection_ratio': 2.0}
+'extractor_mode': 'layer_norm'
+'feature_encoder_spec': '[(512
+10
+5)] + [(512
+3
+2)] * 4 + [(512,2,2)] + [(512,2,2)]'
+'conv_pos_width': 95
+'conv_pos_groups': 16
+'conv_pos_depth': 5
+'conv_pos_pre_ln': False}
+'image': {'type': 'IMAGE'
+'prenet_depth': 4
+'prenet_layerdrop': 0.0
+'prenet_dropout': 0.0
+'start_drop_path_rate': 0.0
+'end_drop_path_rate': 0.0
+'num_extra_tokens': 0
+'init_extra_token_zero': True
+'mask_noise_std': 0.01
+'mask_prob_min': None
+'mask_prob': 0.7
+'inverse_mask': False
+'mask_prob_adjust': 0.0
+'keep_masked_pct': 0.0
+'mask_length': 5
+'add_masks': False
+'remove_masks': False
+'mask_dropout': 0.0
+'encoder_zero_mask': True
+'mask_channel_prob': 0.0
+'mask_channel_length': 64
+'ema_local_encoder': False
+'local_grad_mult': 1.0
+'use_alibi_encoder': False
+'alibi_scale': 1.0
+'learned_alibi': False
+'alibi_max_pos': None
+'learned_alibi_scale': False
+'learned_alibi_scale_per_head': False
+'learned_alibi_scale_per_layer': False
+'num_alibi_heads': 16
+'model_depth': 16
+'decoder': {'decoder_dim': 384
+'decoder_groups': 16
+'decoder_kernel': 5
+'decoder_layers': 5
+'input_dropout': 0.1
+'add_positions_masked': False
+'add_positions_all': False
+'decoder_residual': True
+'projection_layers': 1
+'projection_ratio': 2.0}
+'input_size': 224
+'in_chans': 3
+'patch_size': 16
+'embed_dim': 768
+'alibi_dims': 2
+'alibi_distance': 'manhattan'
+'fixed_positions': True
+'transformer_decoder': False
+'enc_dec_transformer': False}
+'text': {'type': 'TEXT'
+'prenet_depth': 4
+'prenet_layerdrop': 0.0
+'prenet_dropout': 0.0
+'start_drop_path_rate': 0.0
+'end_drop_path_rate': 0.0
+'num_extra_tokens': 0
+'init_extra_token_zero': True
+'mask_noise_std': 0.01
+'mask_prob_min': None
+'mask_prob': 0.7
+'inverse_mask': False
+'mask_prob_adjust': 0.0
+'keep_masked_pct': 0.0
+'mask_length': 5
+'add_masks': False
+'remove_masks': False
+'mask_dropout': 0.0
+'encoder_zero_mask': True
+'mask_channel_prob': 0.0
+'mask_channel_length': 64
+'ema_local_encoder': False
+'local_grad_mult': 1.0
+'use_alibi_encoder': False
+'alibi_scale': 1.0
+'learned_alibi': False
+'alibi_max_pos': None
+'learned_alibi_scale': False
+'learned_alibi_scale_per_head': False
+'learned_alibi_scale_per_layer': False
+'num_alibi_heads': 16
+'model_depth': 16
+'decoder': {'decoder_dim': 384
+'decoder_groups': 16
+'decoder_kernel': 5
+'decoder_layers': 5
+'input_dropout': 0.1
+'add_positions_masked': False
+'add_positions_all': False
+'decoder_residual': True
+'projection_layers': 1
+'projection_ratio': 2.0}
+'max_source_positions': 512
+'learned_pos': True
+'dropout': 0.1
+'no_scale_embedding': True
+'layernorm_embedding': True
+'no_token_positional_embeddings': False}}
+'shared_decoder': None
+'min_target_var': 0.1
+'min_pred_var': 0.01
+'supported_modality': 'AUDIO'
+'mae_init': False
+'seed': 1
+'skip_ema': False
+'cls_loss': 0.0
+'recon_loss': 0.0
+'d2v_loss': 1.0
+'decoder_group': False}
+'task': {'_name': 'audio_pretraining'
+'data': '/lus/scratch/CT10/c1615074/tphle/Data/LeBenchmark_prepared/model_training'
+'labels': None
+'multi_corpus_keys': None
+'multi_corpus_sampling_weights': None
+'binarized_dataset': False
+'sample_rate': 16000
+'normalize': True
+'enable_padding': False
+'max_sample_size': 320000
+'min_sample_size': 32000
+'num_batch_buckets': 0
+'tpu': False
+'text_compression_level': 'none'
+'rebuild_batches': True
+'precompute_mask_config': {'feature_encoder_spec': '[(512
+10
+5)] + [(512
+3
+2)] * 4 + [(512,2,2)] + [(512,2,2)]'
+'mask_prob': 0.55
+'mask_prob_adjust': 0.1
+'mask_length': 5
+'inverse_mask': False
+'mask_dropout': 0.0
+'clone_batch': 12
+'expand_adjacent': False
+'non_overlapping': False}
+'post_save_script': None
+'subsample': 1.0
+'seed': 1}
+'criterion': {'_name': 'model'
+'loss_weights': {}
+'log_keys': ['ema_decay'
+'target_var'
+'pred_var'
+'model_norm'
+'ema_norm'
+'masked_pct']
+'can_sum': True}
+'optimizer': {'_name': 'composite'
+'groups': {'default': {'lr_float': 0.0004
+'optimizer': {'_name': 'adam'
+'adam_betas': [0.9
+0.98]
+'adam_eps': 1e-06
+'weight_decay': 0.01}
+'lr_scheduler': {'_name': 'cosine'
+'warmup_updates': 10000}}}
+'dynamic_groups': True}
+'lr_scheduler': {'_name': 'pass_through'}
+'scoring': None
+'bpe': None
+'tokenizer': None
+'ema': {'_name': None
+'store_ema': False
+'ema_decay': 0.9999
+'ema_start_update': 0
+'ema_seed_model': None
+'ema_update_freq': 1
+'ema_fp32': False}
+'job_logging_cfg': {'version': 1
+'formatters': {'simple': {'format': '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'}}
+'handlers': {'console': {'class': 'logging.StreamHandler'
+'formatter': 'simple'
+'stream': 'ext://sys.stdout'}
+'file': {'class': 'logging.FileHandler'
+'formatter': 'simple'
+'filename': 'hydra_train.log'}}
+'root': {'level': 'INFO'
+'handlers': ['console'
+'file']}
+'disable_existing_loggers': False}}
