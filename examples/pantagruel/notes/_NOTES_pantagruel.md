@@ -39,6 +39,10 @@ rsync -chavzP --stats --exclude "*debug*" --exclude "*base_speech_mls1k*" \
         umz16dj@jean-zay.idris.fr:/linkhome/rech/genlig01/umz16dj/experiments/fairseq_tensorboard/* \
         /Users/hang/tensorboard/
 
+scp -r -p -3 umz16dj@jean-zay.idris.fr:/gpfswork/rech/ahm/umz16dj/experiments/fairseq_checkpoints/pantagruel/base_audio_only_task_ngpu16_fr/checkpoint_best.pt \
+        lethip@decore1:/home/getalp/lethip/shared/pantagruel/Speech_Base_fr_1K/
+        
+
 rsyncpass -zarvm --max-size=100M --exclude="*debug*" \
         adastra://lus/work/CT10/c1615074/tphle/experiments/fairseq_tensorboard/* \
         /Users/hang/tensorboard/
