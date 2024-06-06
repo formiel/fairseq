@@ -35,6 +35,7 @@ submit run ${PARTITION} $GPUS 20 2 $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.
 [2024-03-03 02:31:03,016][fairseq.data.data_utils][INFO] - loaded 190,504,555 examples from: /gpfsscratch/rech/ahm/umz16dj/Data/Wikipedia/enwiki_20240201/data-bin/byteBPE/train
 [2024-03-03 02:31:05,895][fairseq.tasks.masked_lm][INFO] - loaded 9226646 blocks from: /gpfsscratch/rech/ahm/umz16dj/Data/Wikipedia/enwiki_20240201/data-bin/byteBPE/train
 [2024-03-03 02:31:18,848][fairseq.data.iterators][INFO] - grouped total_num_itrs = 96111
+# average last 10 ckpts: /gpfswork/rech/ahm/umz16dj/experiments/fairseq_checkpoints/pantagruel/text/pretraining/base_wikipedia_enwiki_20240201/avg_last_10_checkpoint.pt
 
 # experiments/stdlogs/run/base_wikipedia_875663.log: [2024-03-03 02:30:44,975] -> [2024-03-03 21:46:03,186]
 # experiments/stdlogs/run/base_wikipedia_875657.log: -> [2024-03-02 07:17:07,154]
@@ -47,6 +48,7 @@ submit run ${PARTITION} $GPUS 20 2 $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.
 # 875710: `Minimum loss scale reached (0.0001). Your loss is probably exploding`
 # [2024-03-02 06:55:04,956][fairseq.data.data_utils][INFO] - loaded 66,911,314 examples from: /gpfsscratch/rech/ahm/umz16dj/Data/Wikipedia/frwiki_20190701/data-bin/byteBPE/train
 # [2024-03-02 06:55:05,855][fairseq.tasks.masked_lm][INFO] - loaded 2793151 blocks from: /gpfsscratch/rech/ahm/umz16dj/Data/Wikipedia/frwiki_20190701/data-bin/byteBPE/train
+# average last 10 ckpts: /gpfswork/rech/ahm/umz16dj/experiments/fairseq_checkpoints/pantagruel/text/pretraining/base_wikipedia_frwiki_20190701/avg_last_10_checkpoint.pt
 
 # base_wikipedia2_frwiki_20190701_gpu_p13_gpus16
 # 0: [2024-05-15 15:34:11,574][fairseq.data.data_utils][INFO] - loaded 66,911,314 examples from: /gpfsscratch/rech/ahm/umz16dj/Data/Wikipedia/frwiki_20190701/data-bin/byteBPE/train

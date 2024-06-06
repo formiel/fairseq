@@ -97,7 +97,7 @@ submit run gpu_p5 $GPUS 12 3 $CONFIG "fairseq-hydra-train --config-dir ${CONFIG_
 # job 1: 665910 (after 665909)
 # job 2: 665911 (after 665910)
 
-
+# averaged last 10 checkpoints: /gpfswork/rech/ahm/umz16dj/experiments/fairseq_checkpoints/pantagruel/base_audio_only_task_ngpu16_reproduce_en_torch2sdpa_stable/avg_last_10_checkpoint.pt
 ```
 
 - Fine-tuning with CTC
@@ -143,17 +143,28 @@ GPUS=4
 FAIRSEQ=$HOME/code/fairspeech
 PRETRAIN_CONFIG=base_audio_only_task_ngpu16_reproduce_en
 DATA=/gpfswork/rech/ahm/umz16dj/Data/LibriSpeech/librilight_10h_labelled
-CHECKPOINT=/gpfsscratch/rech/ahm/umz16dj/Experiments/fairseq_checkpoints/pantagruel/${PRETRAIN_CONFIG}/checkpoint_best.pt
+CKPT_FNAME=checkpoint_best
+CKPT_FNAME=avg_last_10_checkpoint
+CHECKPOINT=$SCRATCH/Experiments/fairseq_checkpoints/pantagruel/${PRETRAIN_CONFIG}/${CKPT_FNAME}.pt
 # CHECKPOINT=/gpfswork/rech/ahm/umz16dj/pretrained_models/data2vec/v2/speech/base_libri.pt
-CONFIG=vox_10h
+CONFIG=vox_10h_v1
 # CONFIG=vox_10h_fairseq_ckpt
 # CONFIG=vox_10h_hyprparam_w2v2_incrbsz
 # CONFIG=base_10h_reproduce_2
-submit run gpu_p1 $GPUS 10 4 $CONFIG "fairseq-hydra-train task.data=$DATA common.user_dir=examples/data2vec model.w2v_path=$CHECKPOINT --config-dir examples/pantagruel/configs/speech/finetuning --config-name ${CONFIG}"
+TIME_LIMIT=600
+SAVE_DIR=$SCRATCH/Experiments/fairseq_checkpoints/pantagruel/speech/finetuning/pt_${PRETRAIN_CONFIG}_avg_last_10_checkpoint
+TENSORBOARD_DIR=$HOME/experiments/fairseq_tensorboard/pantagruel/speech/finetuning/pt_${PRETRAIN_CONFIG}_avg_last_10_checkpoint
+submit run gpu_p1 $GPUS 10 4 "pt_${PRETRAIN_CONFIG}_ft_${CONFIG}" "${FAIRSEQ}/fairseq_cli/hydra_train.py -m common.user_dir=examples/data2vec common.time_limit=${TIME_LIMIT} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} task.data=$DATA model.w2v_path=$CHECKPOINT --config-dir examples/pantagruel/configs/speech/finetuning --config-name ${CONFIG}"
 # job 0: 567572
 # job 1: 567574 (after 567572)
 # job 2: 567575 (after 567574)
 # job 3: 567576 (after 567575)
+
+# pt_base_audio_only_task_ngpu16_reproduce_en_avg_last_10_checkpoint
+# job 0: 2611
+# job 1: 2612 (after 2611)
+# job 2: 2613 (after 2612)
+# job 3: 2614 (after 2613)
 
 # on multiple GPUs on 1 node
 CONFIG=base_10h_reproduce_torch2sdpa_stable_adam

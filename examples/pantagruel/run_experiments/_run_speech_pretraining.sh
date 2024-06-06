@@ -52,6 +52,7 @@ submit run gpu_p5 $GPUS 2 1 $EXPNAME "fairseq-hydra-train --config-dir ${CONFIG_
 # job 676473: [2024-02-17 05:13:12,214] - [2024-02-17 16:53:14,154]: 42003s ~ 700min
 # job 676474: [2024-02-18 09:43:35,313] - [2024-02-18 17:40:25,294]: 28610s ~ 477min
 # total: 697+700+477 = 1874m (31 hours)
+# averaged last 10 checkpoints: /gpfswork/rech/ahm/umz16dj/experiments/fairseq_checkpoints/pantagruel/base_audio_only_task_ngpu16_fr/avg_last_10_checkpoint.pt
 
 # # base_audio_only_task_ngpu8_fr_frq8_bsz (28min for 760updates)
 # (watching 38G)
