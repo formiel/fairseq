@@ -96,6 +96,8 @@ submit run gpu_p5 $GPUS 12 3 $CONFIG "fairseq-hydra-train --config-dir ${CONFIG_
 # job 0: 664469, 665909
 # job 1: 665910 (after 665909)
 # job 2: 665911 (after 665910)
+
+
 ```
 
 - Fine-tuning with CTC

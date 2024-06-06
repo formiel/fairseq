@@ -57,11 +57,14 @@ def average_checkpoints(inputs):
             p = model_params[k]
             if isinstance(p, torch.HalfTensor):
                 p = p.float()
-            if k not in params_dict:
-                params_dict[k] = p.clone()
-                # NOTE: clone() is needed in case of p is a shared parameter
+            elif isinstance(p, torch.Tensor):
+                if k not in params_dict:
+                    params_dict[k] = p.clone()
+                    # NOTE: clone() is needed in case of p is a shared parameter
+                else:
+                    params_dict[k] += p
             else:
-                params_dict[k] += p
+                print(f'k: {k} with type {type(p)}')
 
     averaged_params = collections.OrderedDict()
     for k, v in params_dict.items():
