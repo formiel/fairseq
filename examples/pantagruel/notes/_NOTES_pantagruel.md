@@ -21,14 +21,17 @@ cp -rp $mff_CCFRWORK/Data $ahm_CCFRWORK/
 rsync -chavzP --stats \
         /Users/hang/github/formiel/fairspeech/ \
         umz16dj@jean-zay.idris.fr:/linkhome/rech/genlig01/umz16dj/code/fairspeech/
-rsyncpass -zarvm --exclude="*.git*" \
-        /Users/hang/github/formiel/fairspeech/ \
-        adastra:/lus/home/CT10/c1615074/tphle/code/fairspeech/
+rsync -chavzP --exclude="*.git*" \
+        /Users/hang/github/formiel/transformers_94b3f54 \
+        umz16dj@jean-zay.idris.fr:/linkhome/rech/genlig01/umz16dj/code/
 
 rsync -chavzP --stats \
         umz16dj@jean-zay.idris.fr:/gpfsscratch/rech/ahm/umz16dj/Data/mTEDx/fr-en/data/train/wav_splits/If92mr3B_Og_0028.wav \
         /Users/hang/Downloads/pantagruel/
         
+scp -r -p -3 \
+        /Users/hang/Downloads/configuration_utils.py \
+        lethip@decore1.imag.fr:/home/getalp/lethip/shared/pantagruel/
         
         
 grep -n "京" /gpfswork/rech/ahm/umz16dj/Data/CommonVoice/fr/train.wrd
@@ -141,7 +144,7 @@ done
 # Run fine-tuning
 GPUS=4
 FAIRSEQ=$HOME/code/fairspeech
-PRETRAIN_CONFIG=base_audio_only_task_ngpu16_reproduce_en
+PRETRAIN_CONFIG=base_audio_only_task_ngpu16_reproduce_en_torch2sdpa_stable
 DATA=/gpfswork/rech/ahm/umz16dj/Data/LibriSpeech/librilight_10h_labelled
 CKPT_FNAME=checkpoint_best
 CKPT_FNAME=avg_last_10_checkpoint
@@ -161,10 +164,10 @@ submit run gpu_p1 $GPUS 10 4 "pt_${PRETRAIN_CONFIG}_ft_${CONFIG}" "${FAIRSEQ}/fa
 # job 3: 567576 (after 567575)
 
 # pt_base_audio_only_task_ngpu16_reproduce_en_avg_last_10_checkpoint
-# job 0: 2611
-# job 1: 2612 (after 2611)
-# job 2: 2613 (after 2612)
-# job 3: 2614 (after 2613)
+# job 0: 3836
+# job 1: 3838 (after 3836)
+# job 2: 3839 (after 3838)
+# job 3: 3840 (after 3839)
 
 # on multiple GPUs on 1 node
 CONFIG=base_10h_reproduce_torch2sdpa_stable_adam
@@ -382,3 +385,13 @@ $SCRATCH/Data
 - mTEDx
 - mustc
 
+# Hugging Face transformers: different version on JZ
+
+```
+# transformers v 4.24
+module load pytorch-gpu/py3/1.13.0
+cd code/transformers_94b3f54
+
+# current version: module purge && module load python/3.10.4 gcc/9.3.0 nccl/2.19.3-1-cuda && module list
+
+```
