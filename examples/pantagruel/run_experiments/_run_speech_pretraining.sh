@@ -126,11 +126,11 @@ TIME_LIMIT=1430
 PARTITION=mi250
 
 # submitted using 2 nodes
-GPUs=48
+GPUs=128
 # GPUs=64
 HOURS=24
-JOBS=5
-UPDATE=600000
+JOBS=1
+UPDATE=300000
 
 MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=base_mls1k
@@ -140,11 +140,12 @@ MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=large_audio_only_task_ngpu48_fr_adastra
 # CONFIG=large_audio_only_task_ngpu64_fr_bsz89.6M_adastra
 
-CONFIG=large_audio_only_lb14k
+# CONFIG=large_audio_only_lb14k
 # CONFIG=large_audio_only_lb14k_no_bin
 # CONFIG=large_audio_only_lb14k_no_bin_maxtok320k
-CONFIG=large_audio_only_lb14k_no_bin_maxtok640k
+# CONFIG=large_audio_only_lb14k_no_bin_maxtok640k
 # CONFIG=large_audio_only_lb14k_no_bin_maxtok640k_wu5k
+CONFIG=large_audio_only_lb14k_v2
 
 SUFFIX= # ===== CHECK THIS =====
 EXPNAME="${CONFIG}_maxupdate${UPDATE}_${PARTITION}_gpus${GPUs}${SUFFIX}"
@@ -241,3 +242,6 @@ job 0: 934220 (18h)
 # job 2: 922927 (after 922926)
 # job 3: 922928 (after 922927)
 # job 4: 922929 (after 922928)
+
+# large_audio_only_lb14k_v2_maxupdate300000_mi250_gpus128
+# job 0: 944378
