@@ -1,6 +1,4 @@
 base_audio_only_task_ngpu16_fr
 base_audio_only_task_ngpu16_fr_adastra
 base_audio_only_task_ngpu16_fr_adastra_torch23
-large_audio_only_lb14k_fr
-large_audio_only_lb14k_no_bin_fr
-large_audio_only_lb14k_no_bin_valid_separated_fr
+
