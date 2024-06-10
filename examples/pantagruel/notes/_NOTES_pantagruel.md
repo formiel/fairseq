@@ -42,8 +42,8 @@ rsync -chavzP --stats --exclude "*debug*" --exclude "*base_speech_mls1k*" \
         umz16dj@jean-zay.idris.fr:/linkhome/rech/genlig01/umz16dj/experiments/fairseq_tensorboard/* \
         /Users/hang/tensorboard/
 
-scp -r -p -3 umz16dj@jean-zay.idris.fr:/gpfswork/rech/ahm/umz16dj/experiments/fairseq_checkpoints/pantagruel/base_audio_only_task_ngpu16_fr/checkpoint_best.pt \
-        lethip@decore1:/home/getalp/lethip/shared/pantagruel/Speech_Base_fr_1K/
+scp -r -p -3 umz16dj@jean-zay.idris.fr:/gpfswork/rech/ahm/umz16dj/experiments/fairseq_checkpoints/pantagruel/speech/finetuning/base_commonvoice_ngpu16_fr.ltr_pt_base_audio_only_task_ngpu16_fr_avg_last_10_checkpoint/checkpoint_best.pt \
+        lethip@decore1:/home/getalp/lethip/shared/pantagruel/Speech_Base_fr_1K_finetuned_asr_commonvoice/pretrained_avg_last_10/
         
 
 rsyncpass -zarvm --max-size=100M --exclude="*debug*" \
@@ -59,10 +59,33 @@ ssh adastra-ccfr.cines.fr
 rsync -zarvm /lus/home/CT10/c1615074/tphle/experiments/fairseq_tensorboard/pantagruel/adastra umz16dj@jean-zay.idris.fr:/linkhome/rech/genlig01/umz16dj/experiments/fairseq_tensorboard/pantagruel/
 
 ssh jean-zay-ccfr.idris.fr
-rsync -zarvm $WORK/experiments/fairseq_checkpoints/pantagruel/base_audio_only_task_ngpu16_fr/ \
-        tphle@adastra-ccfr.cines.fr:/lus/home/CT10/c1615074/tphle/pantagruel/pretrained_models/Speech_Base_fr_1K/
+rsync -zarvm /gpfswork/rech/ahm/umz16dj/experiments/fairseq_checkpoints/pantagruel/Text_Base_en_20GB/checkpoint_best.pt \
+        tphle@adastra-ccfr.cines.fr:/lus/home/CT10/c1615074/tphle/pantagruel/pretrained_models/Text_Base_en_20GB/
         
+rsync -zarvm /gpfswork/rech/ahm/umz16dj/experiments/fairseq_checkpoints/pantagruel/Text_Base_en_20GB/HuggingFace \
+        tphle@adastra-ccfr.cines.fr:/lus/home/CT10/c1615074/tphle/pantagruel/pretrained_models/Text_Base_en_20GB/
 
+rsync -zarvm /gpfswork/rech/ahm/umz16dj/Data/Wikipedia/enwiki_20240201/data-bin/byteBPE/bpe-bytelevel-* \
+        tphle@adastra-ccfr.cines.fr:/lus/home/CT10/c1615074/tphle/pantagruel/pretrained_models/Text_Base_en_20GB/
+rsync -zarvm /gpfswork/rech/ahm/umz16dj/Data/Wikipedia/enwiki_20240201/data-bin/byteBPE/dict.txt \
+        tphle@adastra-ccfr.cines.fr:/lus/home/CT10/c1615074/tphle/pantagruel/pretrained_models/Text_Base_en_20GB/
+
+rsync -zarvm /gpfswork/rech/ahm/umz16dj/experiments/fairseq_checkpoints/pantagruel/speech/finetuning/base_commonvoice_ngpu16_fr.ltr_pt_base_audio_only_task_ngpu16_fr_avg_last_10_checkpoint/checkpoint_best.pt \
+        tphle@adastra-ccfr.cines.fr:/lus/home/CT10/c1615074/tphle/pantagruel/pretrained_models/Speech_Base_fr_1K_finetuned_asr_commonvoice/pretrained_avg_last_10/
+
+rsync -zarvm /gpfswork/rech/ahm/umz16dj/experiments/fairseq_checkpoints/pantagruel/Speech_Base_fr_1K/avg_last_10_checkpoint.pt \
+        tphle@adastra-ccfr.cines.fr:/lus/home/CT10/c1615074/tphle/pantagruel/pretrained_models/Speech_Base_fr_1K/
+rsync -zarvm /gpfswork/rech/ahm/umz16dj/experiments/fairseq_checkpoints/pantagruel/Speech_Base_fr_1K/HuggingFace_avg_last_10 \
+        tphle@adastra-ccfr.cines.fr:/lus/home/CT10/c1615074/tphle/pantagruel/pretrained_models/Speech_Base_fr_1K/
+
+rsync -zarvm /gpfswork/rech/ahm/umz16dj/experiments/fairseq_checkpoints/pantagruel/Speech_Base_en_1K/checkpoint_best.pt \
+        tphle@adastra-ccfr.cines.fr:/lus/home/CT10/c1615074/tphle/pantagruel/pretrained_models/Speech_Base_en_1K/
+rsync -zarvm /gpfswork/rech/ahm/umz16dj/experiments/fairseq_checkpoints/pantagruel/Speech_Base_en_1K/avg_last_10_checkpoint.pt \
+        tphle@adastra-ccfr.cines.fr:/lus/home/CT10/c1615074/tphle/pantagruel/pretrained_models/Speech_Base_en_1K/
+rsync -zarvm /gpfswork/rech/ahm/umz16dj/experiments/fairseq_checkpoints/pantagruel/Speech_Base_en_1K/HuggingFace \
+        tphle@adastra-ccfr.cines.fr:/lus/home/CT10/c1615074/tphle/pantagruel/pretrained_models/Speech_Base_en_1K/
+rsync -zarvm /gpfswork/rech/ahm/umz16dj/experiments/fairseq_checkpoints/pantagruel/Speech_Base_en_1K/HuggingFace_avg_last_10 \
+        tphle@adastra-ccfr.cines.fr:/lus/home/CT10/c1615074/tphle/pantagruel/pretrained_models/Speech_Base_en_1K/
 
 # Common errors
 ```python

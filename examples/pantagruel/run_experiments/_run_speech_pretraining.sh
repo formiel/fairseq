@@ -128,8 +128,8 @@ PARTITION=mi250
 # submitted using 2 nodes
 GPUs=48
 # GPUs=64
-HOURS=18
-JOBS=1
+HOURS=24
+JOBS=5
 UPDATE=600000
 
 MASTER_PORT=$(shuf -i 20000-40000 -n 1)
@@ -227,7 +227,12 @@ job 0: 934220 (18h)
 # job 2: 900393 (after 900392) (cancelled, ran so slow)
 # job 3: 900394 (after 900393)
 # job 4: 900396 (after 900394) (cancelled as loss increasing)
-job 0: 934227 (18h)
+# job 0: 934227 (18h)
+# job 0: 938845
+# job 1: 938846 (after 938845)
+# job 2: 938847 (after 938846)
+# job 3: 938848 (after 938847)
+# job 4: 938849 (after 938848)
 
 # large_audio_only_lb14k_no_bin_maxtok640k_wu5k_maxupdate300000_mi250_gpus48
 # job 0: 913123
