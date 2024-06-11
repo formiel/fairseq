@@ -249,5 +249,3 @@ job 0: 947544
 
 # large_audio_only_lb14k_v3_maxupdate120000_mi250_gpus128
 job 0: 947557
-
-# large_audio_only_lb14k_v3_maxupdate300000_mi250_gpus128
