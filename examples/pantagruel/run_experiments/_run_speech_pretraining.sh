@@ -130,7 +130,7 @@ GPUs=128
 # GPUs=64
 HOURS=24
 JOBS=1
-UPDATE=300000
+UPDATE=120000
 
 MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=base_mls1k
@@ -235,16 +235,19 @@ submit run ${PARTITION} ${GPUs} ${HOURS} ${JOBS} ${EXPNAME} "${FAIRSEQ}/fairseq_
 # job 3: 938848 (after 938847)
 # job 4: 938849 (after 938848)
 
-# large_audio_only_lb14k_no_bin_maxtok640k_wu5k_maxupdate300000_mi250_gpus48
+# large_audio_only_lb14k_no_bin_maxtok640k_wu5k_maxupdate300000_mi250_gpus48 (!!!)
 # job 0: 913123
 # job 0: 922925
 # job 1: 922926 (after 922925)
 # job 2: 922927 (after 922926)
 # job 3: 922928 (after 922927)
 # job 4: 922929 (after 922928)
+job 0: 947544
 
 # large_audio_only_lb14k_v2_maxupdate300000_mi250_gpus128
 # job 0: 944378
 
+# large_audio_only_lb14k_v3_maxupdate120000_mi250_gpus128
+job 0: 947557
+
 # large_audio_only_lb14k_v3_maxupdate300000_mi250_gpus128
-# job 0: 946991

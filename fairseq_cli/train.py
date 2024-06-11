@@ -244,7 +244,14 @@ def main(cfg: FairseqConfig) -> None:
         )
     train_meter.stop()
     if not reach_time_limit:
-        logger.info("done training in {:.1f} seconds".format(train_meter.sum))
+        # TODO: check if max_updates or max_epoch has been reached
+        if (
+            epoch_itr.epoch >= cfg.optimization.max_epoch 
+            or trainer.get_num_updates() >= cfg.optimization.max_update
+        ):
+            logger.info("done training in {:.1f} seconds".format(train_meter.sum))
+        else:
+            logger.info(f"Should resume training as this job reaches time limit.")
     else:
         logger.info(f"Should resume training as this job reaches time limit.")
 
@@ -354,12 +361,15 @@ def train(
     num_updates = trainer.get_num_updates()
     logger.info("Start iterating over samples")
     epoch_time_queue = deque(maxlen=3)
-    time_limit = getattr(cfg.common, "time_limit", -1)
     reach_time_limit = False
+    start_timing_epoch = True
+    start_epoch_time = time()
 
     for i, samples in enumerate(progress):
-        # Record the start time
-        start_epoch_time = time()
+        # Reset the start time
+        if start_timing_epoch:
+            start_epoch_time = time()
+            start_timing_epoch = False
 
         with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
             "train_step-%d" % i
@@ -387,6 +397,7 @@ def train(
                     epoch_time_queue=epoch_time_queue,
                 )
             epoch_time_queue = _epoch_time_queue
+            start_timing_epoch = True
         if reach_time_limit:
             should_stop = True
             break
@@ -533,6 +544,7 @@ def get_time_queue_and_check_time_limit(
     )
         reach_time_limit = True
     else:
+        logger.info(f"Average time per epoch/valide interval: {round(avg_time, 2)} minutes")
         logger.info(f"Training is within time limit. Continue ...")
     
     return reach_time_limit, epoch_time_queue
