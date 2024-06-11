@@ -145,7 +145,7 @@ MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=large_audio_only_lb14k_no_bin_maxtok320k
 # CONFIG=large_audio_only_lb14k_no_bin_maxtok640k
 # CONFIG=large_audio_only_lb14k_no_bin_maxtok640k_wu5k
-CONFIG=large_audio_only_lb14k_v2
+CONFIG=large_audio_only_lb14k_v3
 
 SUFFIX= # ===== CHECK THIS =====
 EXPNAME="${CONFIG}_maxupdate${UPDATE}_${PARTITION}_gpus${GPUs}${SUFFIX}"
@@ -205,7 +205,7 @@ submit run ${PARTITION} ${GPUs} ${HOURS} ${JOBS} ${EXPNAME} "${FAIRSEQ}/fairseq_
 # job 0: 889949
 # job 1: 889950 (after 889949)
 # job 2: 889951 (after 889950) (18h)
-job 0: 934220 (18h)
+# job 0: 934220 (18h)
 
 # large_audio_only_lb14k_no_bin_maxtok320k_fr
 # loaded 2498162, skipped 141760 samples, grouped total_num_itrs = 44530
@@ -245,3 +245,6 @@ job 0: 934220 (18h)
 
 # large_audio_only_lb14k_v2_maxupdate300000_mi250_gpus128
 # job 0: 944378
+
+# large_audio_only_lb14k_v3_maxupdate300000_mi250_gpus128
+# job 0: 946991
