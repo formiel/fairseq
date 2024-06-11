@@ -427,3 +427,18 @@ INFO:root:n_train=258213, n_val=2416, n_test=2426
 0: INFO:root:Total duration of TEST: 21.015069444444446 (h)
 0: INFO:root:Total running time: 430.7886329849561 (minutes)
 ```
+
+# Data from INA
+100h: /lus/work/CT10/lig3801/vpelloin/dl_100h/tar
+```python
+import tarfile
+import soundfile as sf
+
+with tarfile.open("/lus/work/CT10/lig3801/vpelloin/dl_100h/tar/00a.tar") as archive:
+    for f in archive.getmembers():
+        flac_file = archive.extractfile(f)
+        if flac_file == None:
+            continue
+        data, sample_rate = sf.read(flac_file)
+        print(f"{f} {data.shape} {sample_rate}")
+```
