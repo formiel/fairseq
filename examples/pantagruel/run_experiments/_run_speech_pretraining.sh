@@ -147,7 +147,7 @@ MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=large_audio_only_lb14k_no_bin_maxtok640k_wu5k
 CONFIG=large_audio_only_lb14k_v3
 
-SUFFIX= # ===== CHECK THIS =====
+SUFFIX=_wu2k # ===== CHECK THIS =====
 EXPNAME="${CONFIG}_maxupdate${UPDATE}_${PARTITION}_gpus${GPUs}${SUFFIX}"
 # EXPNAME="${CONFIG}_${SUFFIX}"
 # DATA_DIR=$WORK/Data/prepared/MLS_French
@@ -248,4 +248,7 @@ job 0: 947544
 # job 0: 944378
 
 # large_audio_only_lb14k_v3_maxupdate120000_mi250_gpus128
-job 0: 947557
+# job 0: 947557
+
+# large_audio_only_lb14k_v3_maxupdate120000_mi250_gpus128_wu2k
+job 0: 948003
