@@ -202,6 +202,7 @@ def main(cfg: FairseqConfig) -> None:
     train_meter.start()
     # We use the average running time of the last 3 epochs as an estimate for the next epoch
     epoch_time_queue = deque(maxlen=3)
+    # time_limit should be in minutes, e.g. 1195 means 19 hours and 55 minutes
     time_limit = getattr(cfg.common, "time_limit", -1)
     reach_time_limit = False
 
@@ -223,7 +224,7 @@ def main(cfg: FairseqConfig) -> None:
             break
         
         # check for time limit if remaining time not enough to train one epoch
-        if time_limit > 0: # time_limit should be in minutes, e.g. 1195 means 19 hours and 55 minutes
+        if time_limit > 0 and cfg.checkpoint.save_interval_updates == 0:
             reach_time_limit, _epoch_time_queue = get_time_queue_and_check_time_limit(
                 cfg, start_epoch_time=start_epoch_time,
                 epoch_time_queue=epoch_time_queue

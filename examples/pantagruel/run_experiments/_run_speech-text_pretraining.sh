@@ -178,6 +178,7 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 # job 3: 851769 (after 851768)
 
 # base_speech_text_en_rep_mi250_gpus16 (potential difference with previous run: init bert weights)
+# (NOT WORKING: WER remains 100%)
 # job 0: 835844
 # job 0: 849221
 # job 1: 849222 (after 849221)
