@@ -132,6 +132,7 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 
 ####### random input tensors
 # base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_mi250_gpus16_dummy_random
+# (NOT WORKING, best WER 96.1354%)
 # job 0: 818323 (done) (10h/1job)
 # job 1: 818324 (done) (10h/1job)
 # job 2: 818325 (done) (10h/1job)
@@ -178,7 +179,7 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 # job 3: 851769 (after 851768)
 
 # base_speech_text_en_rep_mi250_gpus16 (potential difference with previous run: init bert weights)
-# (NOT WORKING: WER remains 100%)
+# (NOT WORKING: best WER 97.5097%)
 # job 0: 835844
 # job 0: 849221
 # job 1: 849222 (after 849221)
