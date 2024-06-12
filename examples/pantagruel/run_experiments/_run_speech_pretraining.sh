@@ -126,11 +126,11 @@ TIME_LIMIT=1430
 PARTITION=mi250
 
 # submitted using 2 nodes
-GPUs=128
+GPUs=48
 # GPUs=64
 HOURS=24
 JOBS=1
-UPDATE=120000
+UPDATE=300000
 
 MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=base_mls1k
@@ -144,10 +144,11 @@ MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=large_audio_only_lb14k_no_bin
 # CONFIG=large_audio_only_lb14k_no_bin_maxtok320k
 # CONFIG=large_audio_only_lb14k_no_bin_maxtok640k
-# CONFIG=large_audio_only_lb14k_no_bin_maxtok640k_wu5k
-CONFIG=large_audio_only_lb14k_v3
+CONFIG=large_audio_only_lb14k_no_bin_maxtok640k_wu5k
+# CONFIG=large_audio_only_lb14k_v3
 
-SUFFIX=_wu2k # ===== CHECK THIS =====
+# SUFFIX=_wu2k 
+SUFFIX= # ===== CHECK THIS =====
 EXPNAME="${CONFIG}_maxupdate${UPDATE}_${PARTITION}_gpus${GPUs}${SUFFIX}"
 # EXPNAME="${CONFIG}_${SUFFIX}"
 # DATA_DIR=$WORK/Data/prepared/MLS_French
@@ -243,6 +244,7 @@ submit run ${PARTITION} ${GPUs} ${HOURS} ${JOBS} ${EXPNAME} "${FAIRSEQ}/fairseq_
 # job 3: 922928 (after 922927)
 # job 4: 922929 (after 922928)
 # job 0: 947544
+job 0: 950391
 
 # large_audio_only_lb14k_v2_maxupdate300000_mi250_gpus128
 # job 0: 944378
@@ -252,3 +254,4 @@ submit run ${PARTITION} ${GPUs} ${HOURS} ${JOBS} ${EXPNAME} "${FAIRSEQ}/fairseq_
 
 # large_audio_only_lb14k_v3_maxupdate120000_mi250_gpus128_wu2k
 # job 0: 948003
+job 0: 950390
