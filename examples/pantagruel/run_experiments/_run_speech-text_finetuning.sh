@@ -28,9 +28,9 @@ EXPNAME=${PRETRAIN_CONFIG}_ft_${CONFIG}
 DATA=/gpfswork/rech/ahm/umz16dj/Data/LibriSpeech/librilight_10h_labelled
 TENSORBOARD_DIR=$WORK/experiments/fairseq_tensorboard/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
 SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
-CHECKPOINT=/gpfsscratch/rech/ahm/umz16dj/Experiments/fairseq_checkpoints/pantagruel/speech-text/pretraining/${PRETRAIN_CONFIG}/${PRETRAIN_CKPT_NAME}_updated_path_audio.pt
+CHECKPOINT=/gpfsscratch/rech/ahm/umz16dj/Experiments/fairseq_checkpoints/pantagruel/speech-text/pretraining/${PRETRAIN_CONFIG}/${PRETRAIN_CKPT_NAME}_updated_path_audio_v2.pt
 
-submit run ${PARTITION} $GPUS $HOURS 1 $CONFIG "${FAIRSEQ}/fairseq_cli/hydra_train.py -m task.data=$DATA common.user_dir=$USER_DIR common.tensorboard_logdir=${TENSORBOARD_DIR} common.time_limit=${TIME_LIMIT} checkpoint.save_dir=${SAVE_DIR} model.w2v_path=$CHECKPOINT --config-dir examples/pantagruel/configs/speech/finetuning --config-name ${CONFIG}"
+submit run ${PARTITION} $GPUS $HOURS 1 $CONFIG "${FAIRSEQ}/fairseq_cli/hydra_train.py -m task.data=$DATA common.user_dir=$USER_DIR common.tensorboard_logdir=${TENSORBOARD_DIR} common.time_limit=${TIME_LIMIT} checkpoint.save_dir=${SAVE_DIR} model.w2v_path=$CHECKPOINT --config-dir examples/pantagruel/configs/${MODALITY}/finetuning --config-name ${CONFIG}"
 
 # base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_mi250_gpus16_dummy_random_ft_base_10h 
 # job 0: 1570240
@@ -41,17 +41,14 @@ submit run ${PARTITION} $GPUS $HOURS 1 $CONFIG "${FAIRSEQ}/fairseq_cli/hydra_tra
 # base_speech_text_en_maxtok500k_bsz6_frq1_lr1e-4_wo_lr_cycles_maxupdate1M_mi250_gpus16_dummy_random_ft_base_10h_ep5
 # job 0: 1629245
 
-# base_speech_text_en_cnnx2_tokentype_mi250_gpus16_ft_base_10h
-# job 0: 1710174
-
 # base_speech_text_en_rep_mi250_gpus16_ft_base_10h
 # 1790550
 
-# base_speech_text_en_cnnx2_tokentype_mi250_gpus16_ft_base_10h
-# 1791100
-
 # base_speech_text_en_cnnx3_tokentype_mi250_gpus16_ft_base_10h
 # 1789481
+
+# base_speech_text_en_cnnx2_tokentype_mi250_gpus16_ft_base_10h
+job 0: 67332
 
 
 task=rte

@@ -151,7 +151,6 @@ class PantagruelMultiModel(Data2VecMultiModel):
     def build_model(cls, cfg: PantagruelMultiConfig, task=None):
         """Build a new model instance."""
         if task is None or not hasattr(task, "supported_modalities"):
-            logging.info(f"1: {cfg.supported_modality}")
             modalities = (
                 [cfg.supported_modality]
                 if cfg.supported_modality is not None
@@ -162,9 +161,7 @@ class PantagruelMultiModel(Data2VecMultiModel):
                 ]
             )
         else:
-            logging.info(f"2: {task.supported_modalities}")
             modalities = task.supported_modalities
-        logging.info(f"Modalities: {modalities}")
         return cls(cfg, modalities, task=task, skip_ema=cfg.skip_ema)
         
     def forward(
@@ -503,4 +500,3 @@ class PantagruelMultiModel(Data2VecMultiModel):
             result["ema_decay"] = self.ema.get_decay() * 1000
 
         return result
-        

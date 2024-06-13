@@ -430,6 +430,9 @@ class Wav2VecEncoder(FairseqEncoder):
             "data2vec_multi" in w2v_args.model.get("_name", None) or
             "pantagruel_multi" in w2v_args.model.get("_name", None)
         )
+        self.is_pantagruel_multi = (
+            "pantagruel_multi" in w2v_args.model.get("_name", None)
+        )
 
         if not self.is_d2v_multi:
             model_normalized = w2v_args.task.get(
@@ -465,14 +468,12 @@ class Wav2VecEncoder(FairseqEncoder):
             else:
                 w2v_args.task.data = cfg.data
             task = tasks.setup_task(w2v_args.task, from_checkpoint=True)
-            if "pantagruel_multi" in w2v_args.model.get("_name", None):
-                # from examples.data2vec.data.modality import Modality
-                # task.supported_modalities = [Modality.TEXT, Modality.AUDIO]
-                logging.info(f"task.supported_modalities: {task.supported_modalities}")
 
             model = task.build_model(w2v_args.model, from_checkpoint=True)
 
-            model.remove_pretraining_modules(modality="audio")
+            if not self.is_pantagruel_multi:
+                logger.info(f"Removing pre-trained modules...")
+                model.remove_pretraining_modules(modality="audio")
             d = w2v_args.model.embed_dim
 
         if state is not None and not cfg.no_pretrained_weights:
@@ -578,11 +579,12 @@ class Wav2VecEncoder(FairseqEncoder):
                     model.modality_encoders["AUDIO"].encoder_mask = None
                     del state["model"]["modality_encoders.AUDIO.encoder_mask"]
 
-                for k in list(state["model"].keys()):
-                    if k.startswith("modality_encoders.") and not k.startswith(
-                        "modality_encoders.AUDIO"
-                    ):
-                        del state["model"][k]
+                if not self.is_pantagruel_multi:
+                    for k in list(state["model"].keys()):
+                        if k.startswith("modality_encoders.") and not k.startswith(
+                            "modality_encoders.AUDIO"
+                        ):
+                            del state["model"][k]
 
             print(model)
             model.load_state_dict(state["model"], strict=True)

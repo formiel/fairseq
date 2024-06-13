@@ -38,19 +38,19 @@ def main():
                         cfg[k][subtask]["data"] = subtask_cfg["data"].replace(OLD_DATA_PATH, NEW_DATA_PATH)
                         print(f"{subtask}: {subtask_cfg}")
                 else:
-                    cfg[k][subtask] = None
+                    cfg[k][subtask]["data"] = subtask_cfg["data"].replace(OLD_DATA_PATH, NEW_DATA_PATH)
                     print(f"{subtask}: {cfg[k][subtask]}")
 
-    if args.remove_modality == "audio":
-        for k in list(ckpt["model"].keys()):
-            if (k.startswith("modality_encoders.AUDIO")
-            ):
-                print(f"Deleting {k} from checkpoint")
-                del ckpt["model"][k]
-            
+    # if args.remove_modality == "audio":
+    #     for k in list(ckpt["model"].keys()):
+    #         if (k.startswith("modality_encoders.AUDIO")
+    #         ):
+    #             print(f"Deleting {k} from checkpoint")
+    #             del ckpt["model"][k]
+    cfg["model"]["skip_ema"] = True
     ckpt["cfg"] = cfg
     mod = "audio" if args.remove_modality == "text" else "text"
-    saved_path = f'{args.path.replace(".pt", f"_updated_path_{mod}.pt")}'
+    saved_path = f'{args.path.replace(".pt", f"_updated_path_{mod}_v2.pt")}'
     torch.save(ckpt, saved_path)
     print(f"saved updated checkpoint to {saved_path}")
 
