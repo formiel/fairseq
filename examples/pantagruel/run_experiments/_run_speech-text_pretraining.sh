@@ -15,11 +15,11 @@ MODALITY=speech-text
 FAIRSEQ=$HOME/code/fairspeech
 # USER_DIR=$FAIRSEQ/examples/data2vec
 USER_DIR=$FAIRSEQ/examples/pantagruel
-TIME_LIMIT=1190
+TIME_LIMIT=1160
 # TIME_LIMIT=740
 # TIME_LIMIT=10
 HOURS=20
-JOBS=4
+JOBS=2
 GPUs=16
 # SUFFIX=_dummy_random
 SUFFIX=
@@ -36,8 +36,9 @@ MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 CONFIG=base_speech_text_en_debug
 # CONFIG=base_speech_text_en_cnnx3_tokentype
 # CONFIG=base_speech_text_en_cnnx2_tokentype
-CONFIG=base_speech_text_en_rep
+# CONFIG=base_speech_text_en_rep
 # CONFIG=base_speech_text_en_rep_token_type
+CONFIG=base_speech_text_en_rep_noisy_dummy_1e-5
 
 ## Data
 if [[ $PARTITION != "mi250" ]]; then
@@ -188,3 +189,7 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 
 # base_speech_text_en_rep_token_type_mi250_gpus16
 # job 0: 837088
+
+# base_speech_text_en_rep_noisy_dummy_1e-5_mi250_gpus16
+# job 0: 953385
+# job 1: 953386 (after 953385)

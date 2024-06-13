@@ -227,7 +227,7 @@ class PantagruelMultiModel(Data2VecMultiModel):
                 dummy_outs = self.modality_encoders[name](dummy, None, False, False, token_type_ids=remaining_token_type_ids[name])
                 x_dummies.append(dummy_outs["x"])
                 encoder_mask_dummies.append(dummy_outs["encoder_mask"])
-                x += 0 * dummy_outs["x"].mean(dim=1).unsqueeze(1)
+                x += 0.00001 * dummy_outs["x"].mean(dim=1).unsqueeze(1)
         encoder_mask = extractor_out["encoder_mask"]
         masked_padding_mask = extractor_out["padding_mask"]
         masked_alibi_bias = extractor_out.get("alibi_bias", None)
