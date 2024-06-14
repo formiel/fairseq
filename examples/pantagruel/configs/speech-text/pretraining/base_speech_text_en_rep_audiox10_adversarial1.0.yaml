@@ -3,13 +3,13 @@
 common:
   fp16: true
   log_format: json
-  log_interval: 200
+  log_interval: 500
   tensorboard_logdir: ???
   min_loss_scale: 1e-6
   fp16_no_flatten_grads: false
   # memory_efficient_fp16: true
   # fp16_scale_tolerance: 0.25
-  # time_limit: ???
+  time_limit: ???
   user_dir: ???
 
 checkpoint:
@@ -18,13 +18,13 @@ checkpoint:
   # keep_interval_updates: 1
   # no_epoch_checkpoints: true
   keep_best_checkpoints: 10
-  keep_last_epochs: 2
+  keep_last_epochs: 5
   # patience: 10
   save_dir: ???
 
 task:
   _name: pantagruel_multimodal_pretraining
-  audio_ratio: 1
+  audio_ratio: 10
   text_ratio: 1
   # update_freq: [4]
   audio:
@@ -80,7 +80,6 @@ optimization:
   debug_param_names: true
   # max_update: 1000000
   update_freq: [1]
-  stop_time_hours: ???
 
 optimizer:
   _name: adam
@@ -120,6 +119,9 @@ model:
   norm_eps: 1e-5
 
   use_token_type_embeddings: false
+  adversarial_loss: 1.0
+  num_discriminator_layers: 3
+  num_discriminator_steps: 4
 
   # shared_decoder:
   #   input_dropout: 0.1

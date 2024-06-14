@@ -3,7 +3,7 @@
 common:
   fp16: true
   log_format: json
-  log_interval: 200
+  log_interval: 500
   tensorboard_logdir: ???
   fp16_no_flatten_grads: true
   # user_dir: ${env:PWD}/examples/data2vec
@@ -21,7 +21,7 @@ checkpoint:
 
 distributed_training:
   distributed_world_size: ???
-  ddp_backend: legacy_ddp
+  ddp_backend: c10d
   distributed_port: ???
 
 task:
@@ -35,6 +35,8 @@ task:
   include_index: True
   skip_masking: True
   d2v2_multi: True
+  add_special_symbols: False
+  dataset_impl: cached
 
 criterion:
   _name: model

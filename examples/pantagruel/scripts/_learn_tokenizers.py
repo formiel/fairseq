@@ -7,6 +7,7 @@ UNK_TOKEN, UNK_TOKEN_ID = "<unk>", 3
 BOS_TOKEN, BOS_TOKEN_ID = "<s>", 0
 EOS_TOKEN, EOS_TOKEN_ID = "</s>", 2
 PAD_TOKEN, PAD_TOKEN_ID = "<pad>", 1
+MASK_TOKEN, MASK_TOKEN_ID = "<mask>", 4
 
 
 def main():
@@ -56,7 +57,7 @@ def main():
             PAD_TOKEN,
             EOS_TOKEN,
             UNK_TOKEN,
-            "<mask>",
+            MASK_TOKEN,
         ],
     )
 

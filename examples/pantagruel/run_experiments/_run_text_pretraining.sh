@@ -5,7 +5,7 @@
 ##### JEAN ZAY
 ###############################################################################
 ###############################################################################
-PARTITION=gpu_p13
+PARTITION=gpu_p2
 TASK=pretraining
 MODALITY=text
 USER_DIR=$FAIRSEQ/examples/data2vec
@@ -13,19 +13,20 @@ TIME_LIMIT=1190
 
 GPUS=16
 MASTER_PORT=$(shuf -i 20000-45000 -n 1)
-CONFIG=base_text_only_task_4gb
+# CONFIG=base_text_only_task_4gb_lazy
+CONFIG=base_text_only_task_4gb_cached
 
 # WIKINAME=enwiki_20240201
 WIKINAME=frwiki_20190701
-EXPNAME="${CONFIG}_${WIKINAME}_${PARTITION}_gpus${GPUS}"
+EXPNAME="${CONFIG}_${WIKINAME}_${PARTITION}_gpus${GPUS}_fix_embed_cached"
 # DATA_DIR=/gpfswork/rech/ahm/umz16dj/Data/wikitext-103/data-bin/debug
-DATA_DIR=$SCRATCH/Data/Wikipedia/${WIKINAME}/data-bin/byteBPE
+DATA_DIR=$SCRATCH/Data/Wikipedia/${WIKINAME}/data-bin-cached/byteBPE
 CONFIG_DIR=$FAIRSEQ/examples/pantagruel/configs/${MODALITY}/${TASK}
 
 TENSORBOARD_DIR=$WORK/experiments/fairseq_tensorboard/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
 SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
 
-submit run ${PARTITION} $GPUS 20 2 $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.py --config-dir ${CONFIG_DIR} --config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=$USER_DIR common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUS} distributed_training.distributed_port=${MASTER_PORT}"
+submit run ${PARTITION} $GPUS 20 1 $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.py --config-dir ${CONFIG_DIR} --config-name $CONFIG.yaml task.data=${DATA_DIR} common.time_limit=${TIME_LIMIT} common.user_dir=$USER_DIR common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} distributed_training.distributed_world_size=${GPUS} distributed_training.distributed_port=${MASTER_PORT}"
 
 # base_wikipedia_enwiki_20240201: watch 10G
 # training, evaluated on RTE: OK
@@ -68,7 +69,9 @@ submit run ${PARTITION} $GPUS 20 2 $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.
 # job 0: 1952893
 # job 1: 1952894 (after 1952893)
 
-
+# base_text_only_task_4gb_frwiki_20190701_gpu_p2_gpus16_fix_embed
+job 0: 90075
+job 1: 90076 (after 90075)
 
 ###############################################################################
 ###############################################################################

@@ -63,10 +63,59 @@ from examples.data2vec.models.data2vec2 import (
 logger = logging.getLogger(__name__)
 
 
+class LinearDiscriminator(nn.Module):
+    """Adapted from https://github.com/facebookresearch/UnsupervisedMT/blob/main/NMT/src/model/discriminator.py
+    """
+    def __init__(self, 
+            input_dim, 
+            num_outputs=2, 
+            layers=3, 
+            hidden_dim=1024, 
+            dropout=0.1):
+        """
+        Discriminator initialization.
+        """
+        super(LinearDiscriminator, self).__init__()
+        self.num_outputs = num_outputs
+        self.input_dim = input_dim
+        self.layers = layers
+        self.hidden_dim = hidden_dim
+        self.dropout = dropout
+
+        layers = []
+        for i in range(self.layers + 1):
+            if i == 0:
+                input_dim = self.input_dim
+            else:
+                input_dim = self.hidden_dim
+            output_dim = self.hidden_dim if i < self.layers else self.num_outputs
+
+            layers.append(nn.Linear(input_dim, output_dim))
+            if i < self.layers:
+                layers.append(nn.LeakyReLU(0.01))
+                layers.append(nn.Dropout(self.dropout))
+        self.layers = nn.Sequential(*layers)
+
+    def forward(self, input):
+        return self.layers(input)
+
+
 @dataclass
 class PantagruelMultiConfig(Data2VecMultiConfig):
 
     use_token_type_embeddings: bool = False
+    adversarial_loss: float = field(
+        default=0.0,
+        metadata={"help": "Adversarial weight in loss function"},
+    )
+    num_discriminator_layers: int = field(
+        default=-1,
+        metadata={"help": "number of discriminator layers"},
+    )
+    num_discriminator_steps: int = field(
+        default=-1,
+        metadata={"help": "number of discriminator steps"},
+    )
 
 
 @register_model("pantagruel_multi", dataclass=PantagruelMultiConfig)
@@ -104,7 +153,7 @@ class PantagruelMultiModel(Data2VecMultiModel):
             token_type_embeddings,
         )
 
-    def __init__(self, cfg: Data2VecMultiConfig, modalities, skip_ema=False, task=None):
+    def __init__(self, cfg: PantagruelMultiConfig, modalities, skip_ema=False, task=None):
         super().__init__(cfg, modalities, skip_ema, task)
 
         make_layer_norm = partial(
@@ -146,6 +195,18 @@ class PantagruelMultiModel(Data2VecMultiModel):
                 token_type_embeddings,
             )
             self.modality_encoders[mod.name] = enc
+
+        self.discriminator = None
+        self.adversarial_loss = getattr(cfg, "adversarial_loss", 0.0)
+        self.num_discriminator_steps = getattr(cfg, "num_discriminator_steps", -1)
+        self.step_counter = 0
+        if self.adversarial_loss > 0:
+            self.discriminator = LinearDiscriminator(
+                input_dim=cfg.embed_dim, 
+                num_outputs=len(self.modalities), 
+                hidden_dim=cfg.embed_dim * 2,
+                layers=cfg.num_discriminator_layers,
+            )
 
     @classmethod
     def build_model(cls, cfg: PantagruelMultiConfig, task=None):
@@ -227,7 +288,7 @@ class PantagruelMultiModel(Data2VecMultiModel):
                 dummy_outs = self.modality_encoders[name](dummy, None, False, False, token_type_ids=remaining_token_type_ids[name])
                 x_dummies.append(dummy_outs["x"])
                 encoder_mask_dummies.append(dummy_outs["encoder_mask"])
-                x += 0.00001 * dummy_outs["x"].mean(dim=1).unsqueeze(1)
+                x += 0 * dummy_outs["x"].mean(dim=1).unsqueeze(1)
         encoder_mask = extractor_out["encoder_mask"]
         masked_padding_mask = extractor_out["padding_mask"]
         masked_alibi_bias = extractor_out.get("alibi_bias", None)
@@ -235,6 +296,7 @@ class PantagruelMultiModel(Data2VecMultiModel):
 
         if self.dropout_input is not None:
             x = self.dropout_input(x)
+        x_feat = x
 
         layer_results = []
         for i, blk in enumerate(self.blocks):
@@ -309,7 +371,7 @@ class PantagruelMultiModel(Data2VecMultiModel):
                     dx += 0 * dummy_out.mean(dim=1).unsqueeze(1)
 
             xs.append(dx)
-            orig_x = x
+            # orig_x = x
 
         assert len(xs) > 0
 
@@ -456,6 +518,20 @@ class PantagruelMultiModel(Data2VecMultiModel):
             result["losses"]["recon"] = (
                 self.d2v_loss(recon, target.float()) * self.cfg.recon_loss
             )
+
+        if self.adversarial_loss > 0:
+            self.step_counter += 1
+            predictions = self.discriminator(x_feat.mean(dim=1)) # B x D
+            for im, m in enumerate(self.modalities):
+                if m.name == mode:
+                    targets = torch.zeros(predictions.size()[0]).fill_(im).long().to(device=device)
+                else:
+                    fake_targets = torch.zeros(predictions.size()[0]).fill_(im).long().to(device=device)
+
+            if self.step_counter % self.num_discriminator_steps == 0:
+                result["losses"]["discriminator"] = self.adversarial_loss * F.cross_entropy(predictions, targets)
+            else:
+                result["losses"]["generator"] = self.adversarial_loss * F.cross_entropy(predictions, fake_targets)
 
         if self.cfg.d2v_loss > 0:
             for i, x in enumerate(xs):

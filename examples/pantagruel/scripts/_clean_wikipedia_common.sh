@@ -19,7 +19,7 @@ XMLFILE=${LG}wiki-${DATE}-pages-articles-multistream.xml
 COMPFILE=${XMLFILE}.bz2
 
 GPT2_DICTS=$WORK/pretrained/tokenizers/gpt2_bpe
-BIN_NAME=data-bin-v1
+BIN_NAME=data-bin-cached
 
 # ### Download Wikipedia if not exists
 # if [[ ! -f $DST_DIR/${COMPFILE} ]]; then
@@ -64,12 +64,12 @@ BIN_NAME=data-bin-v1
 
 cd $FAIRSEQ
 echo "Changing to $FAIRSEQ"
-### Split into train and dev sets based on articles
-if [[ ! -f "${DST_DIR}/${LG}wiki.train" ]]; then
-    echo "Splitting train and dev sets..."
-    python $FAIRSEQ/examples/pantagruel/scripts/_split_wikipedia.py ${DATA_DIR} --lang ${LG} --version ${DATE} \
-                        |& tee $DST_DIR/split_train_dev.log
-fi
+# ### Split into train and dev sets based on articles
+# if [[ ! -f "${DST_DIR}/${LG}wiki.train" ]]; then
+#     echo "Splitting train and dev sets..."
+#     python $FAIRSEQ/examples/pantagruel/scripts/_split_wikipedia.py ${DATA_DIR} --lang ${LG} --version ${DATE} \
+#                         |& tee $DST_DIR/split_train_dev.log
+# fi
 
 # # | sed "/^\s*\$/d" \
 # # | grep -v "^<doc id=" \
@@ -118,19 +118,19 @@ if [[ ${tokenizer} != "none" ]]; then
     # fi
 fi
 
-# SPLITS="dev train"
-# if [[ ! -f "$DATA_BIN/${LG}wiki.train.bpe"  ]]; then
-#     if [[ $tokenizer == "byteBPE" ]]; then
-#         for SPLIT in $SPLITS; do
-#             echo "Encoding ${SPLIT} using learned byteBPE 50K..."
-#             python $FAIRSEQ/examples/roberta/multiprocessing_bpe_encoder.py \
-#                 --encoder-json $DATA_BIN/encoder.json \
-#                 --vocab-bpe $DATA_BIN/vocab.bpe \
-#                 --inputs ${DST_DIR}/${LG}wiki.${SPLIT}.clean \
-#                 --outputs ${DATA_BIN}/${LG}wiki.${SPLIT}.bpe \
-#                 --keep-empty \
-#                 --workers ${num_workers};
-#         done
+SPLITS="dev train"
+if [[ ! -f "$DATA_BIN/${LG}wiki.train.bpe"  ]]; then
+    if [[ $tokenizer == "byteBPE" ]]; then
+        for SPLIT in $SPLITS; do
+            echo "Encoding ${SPLIT} using learned byteBPE 50K..."
+            python $FAIRSEQ/examples/roberta/multiprocessing_bpe_encoder.py \
+                --encoder-json $DATA_BIN/encoder.json \
+                --vocab-bpe $DATA_BIN/vocab.bpe \
+                --inputs ${DST_DIR}/${LG}wiki.${SPLIT}.clean \
+                --outputs ${DATA_BIN}/${LG}wiki.${SPLIT}.bpe \
+                --keep-empty \
+                --workers ${num_workers};
+        done
 #     elif [[ $tokenizer == "cl100k_base" ]]; then
 #         echo "Encoding dev set using cl100k_base tokenizer from OpenAI..."
 #         python $FAIRSEQ/examples/pantagruel/scripts/_encoding_tiktoken.py \
@@ -174,20 +174,21 @@ fi
 ### Binarized data using fairseq
 echo "Binarizing data..."
 if [[ ! -f "$DATA_BIN/${LG}wiki.train.idx"  ]]; then
-    if [[ $tokenizer == "byteBPE" ]]; then
-        fairseq-preprocess \
-            --only-source \
-            --trainpref ${DATA_BIN}/${LG}wiki.train.bpe \
-            --validpref ${DATA_BIN}/${LG}wiki.dev.bpe \
-            --destdir ${DATA_BIN} \
-            --workers ${num_workers}
-    else
-        fairseq-preprocess \
-            --only-source \
-            --trainpref ${DATA_BIN}/${LG}wiki.train.bpe \
-            --validpref ${DATA_BIN}/${LG}wiki.dev.bpe \
-            --destdir ${DATA_BIN} \
-            --workers ${num_workers} \
-            --srcdict $DATA_BIN/dict.txt
-    fi
+    # if [[ $tokenizer == "byteBPE" ]]; then
+    #     fairseq-preprocess \
+    #         --only-source \
+    #         --trainpref ${DATA_BIN}/${LG}wiki.train.bpe \
+    #         --validpref ${DATA_BIN}/${LG}wiki.dev.bpe \
+    #         --destdir ${DATA_BIN} \
+    #         --workers ${num_workers}
+    # else
+    fairseq-preprocess \
+        --only-source \
+        --trainpref ${DATA_BIN}/${LG}wiki.train.bpe \
+        --validpref ${DATA_BIN}/${LG}wiki.dev.bpe \
+        --destdir ${DATA_BIN} \
+        --workers ${num_workers} \
+        --srcdict $DATA_BIN/dict.txt \
+        --dataset-impl cached
+    # fi
 fi

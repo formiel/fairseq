@@ -18,7 +18,7 @@ USER_DIR=$FAIRSEQ/examples/pantagruel
 TIME_LIMIT=1160
 # TIME_LIMIT=740
 # TIME_LIMIT=10
-HOURS=20
+HOURS=24
 JOBS=2
 GPUs=16
 # SUFFIX=_dummy_random
@@ -38,7 +38,8 @@ CONFIG=base_speech_text_en_debug
 # CONFIG=base_speech_text_en_cnnx2_tokentype
 # CONFIG=base_speech_text_en_rep
 # CONFIG=base_speech_text_en_rep_token_type
-CONFIG=base_speech_text_en_rep_noisy_dummy_1e-5
+CONFIG=base_speech_text_en_rep_audiox10
+# CONFIG=base_speech_text_en_rep_audiox10_adversarial1.0
 
 ## Data
 if [[ $PARTITION != "mi250" ]]; then
@@ -69,7 +70,7 @@ echo "=== EXP_NAME: ${EXPNAME} ==="
 export TMPDIR=$SCRATCH/tmp
 mkdir -p $TMPDIR
 
-submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} --config-name $CONFIG common.user_dir=${USER_DIR} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} task.audio.data=$AUDIO_DATA task.text.data=$TEXT_DATA distributed_training.distributed_world_size=${GPUs} distributed_training.distributed_port=${MASTER_PORT} optimization.stop_time_hours=${TIME_LIMIT}"
+submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} --config-name $CONFIG common.user_dir=${USER_DIR} common.time_limit=${TIME_LIMIT} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} task.audio.data=$AUDIO_DATA task.text.data=$TEXT_DATA distributed_training.distributed_world_size=${GPUs} distributed_training.distributed_port=${MASTER_PORT}"
 
 ##### Jean Zay #####
 ####################
@@ -190,6 +191,9 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 # base_speech_text_en_rep_token_type_mi250_gpus16
 # job 0: 837088
 
-# base_speech_text_en_rep_noisy_dummy_1e-5_mi250_gpus16
-# job 0: 953385
-# job 1: 953386 (after 953385)
+# base_speech_text_en_rep_audiox10_mi250_gpus16
+job 0: 955171
+job 1: 955172 (after 955171)
+
+# base_speech_text_en_rep_audiox10_adversarial1.0_mi250_gpus16
+# job 0: 953893 (minimum loss scale reached)
