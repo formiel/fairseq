@@ -7,11 +7,12 @@ set -e
 # Data is then preprocessed (binarized) ready for training using fairseq-preprocess
 ########################
 
-DATA_DIR=$1
-LG=$2
-DATE=$3 #latest: 20240201, reproduced to compare with CamemBERT: "20190701" 
-tokenizer=$4 # choose between ["cl100k_base", "byteBPE", "gpt2_bpe", "none"]
+DATA_DIR=$SCRATCH/Data/Wikipedia
+LG=fr
+DATE=20190701 #latest: 20240201, reproduced to compare with CamemBERT: "20190701" 
+tokenizer=byteBPE # choose between ["cl100k_base", "byteBPE", "gpt2_bpe", "none"]
 DST_DIR=$DATA_DIR/${LG}wiki_${DATE} #$SCRATCH/Data/Wikipedia/${LG}wiki_${DATE}
+echo "DST_DIR: ${DST_DIR}"
 num_workers=64
 mkdir -p $DST_DIR
 
@@ -19,7 +20,7 @@ XMLFILE=${LG}wiki-${DATE}-pages-articles-multistream.xml
 COMPFILE=${XMLFILE}.bz2
 
 GPT2_DICTS=$WORK/pretrained/tokenizers/gpt2_bpe
-BIN_NAME=data-bin-cached
+BIN_NAME=data-bin-no-prefix
 
 # ### Download Wikipedia if not exists
 # if [[ ! -f $DST_DIR/${COMPFILE} ]]; then
@@ -96,26 +97,26 @@ if [[ ${tokenizer} != "none" ]]; then
     DATA_BIN=$DST_DIR/$BIN_NAME/${tokenizer}
     echo "Creating folder for tokenizer at: ${DATA_BIN}"
     mkdir -p $DATA_BIN
-    # ### Building vocabulary using HuggingFace tokenizers
-    # if [[ $tokenizer == "byteBPE" ]]; then
-    #     echo "Learning byte BPE 50K tokenizer using HuggingFace..."
-    #     python $FAIRSEQ/examples/pantagruel/scripts/_learn_tokenizers.py --files $DST_DIR/${LG}wiki.train.cle* --out $DATA_BIN
-    #     ln -s $DATA_BIN/bpe-bytelevel-vocab.json $DATA_BIN/encoder.json
-    #     ln -s $DATA_BIN/bpe-bytelevel-merges.txt $DATA_BIN/vocab.bpe
-    # elif [[ $tokenizer == "cl100k_base" ]]; then
-    #     echo "Using tokenizer from OpenAI's."
-    # elif [[ $tokenizer == "gpt2_bpe" ]]; then
-    #     echo "Using gpt2_bpe tokenizer from fairseq."
-    #     FILES="encoder.json dict.txt vocab.bpe"
-    #     for FILE in $FILES; do
-    #         if [[ ! -f ${DATA_BIN}/${FILE} ]]; then
-    #             ln -s ${GPT2_DICTS}/${FILE} $DATA_BIN/${FILE}
-    #         fi
-    #     done
-    # else
-    #     echo "Invalid tokenizer!"
-    #     exit 1
-    # fi
+    ### Building vocabulary using HuggingFace tokenizers
+    if [[ $tokenizer == "byteBPE" ]]; then
+        echo "Learning byte BPE 50K tokenizer using HuggingFace..."
+        python $FAIRSEQ/examples/pantagruel/scripts/_learn_tokenizers.py --files $DST_DIR/${LG}wiki.train.cle* --out $DATA_BIN
+        ln -s $DATA_BIN/bpe-bytelevel-vocab.json $DATA_BIN/encoder.json
+        ln -s $DATA_BIN/bpe-bytelevel-merges.txt $DATA_BIN/vocab.bpe
+    elif [[ $tokenizer == "cl100k_base" ]]; then
+        echo "Using tokenizer from OpenAI's."
+    elif [[ $tokenizer == "gpt2_bpe" ]]; then
+        echo "Using gpt2_bpe tokenizer from fairseq."
+        FILES="encoder.json dict.txt vocab.bpe"
+        for FILE in $FILES; do
+            if [[ ! -f ${DATA_BIN}/${FILE} ]]; then
+                ln -s ${GPT2_DICTS}/${FILE} $DATA_BIN/${FILE}
+            fi
+        done
+    else
+        echo "Invalid tokenizer!"
+        exit 1
+    fi
 fi
 
 SPLITS="dev train"
@@ -131,64 +132,55 @@ if [[ ! -f "$DATA_BIN/${LG}wiki.train.bpe"  ]]; then
                 --keep-empty \
                 --workers ${num_workers};
         done
-#     elif [[ $tokenizer == "cl100k_base" ]]; then
-#         echo "Encoding dev set using cl100k_base tokenizer from OpenAI..."
-#         python $FAIRSEQ/examples/pantagruel/scripts/_encoding_tiktoken.py \
-#             --inputs ${DST_DIR}/${LG}wiki.dev.clean \
-#             --outputs ${DATA_BIN}/${LG}wiki.dev.bpe \
-#             --keep-empty \
-#             --workers ${num_workers};
-#         if [[ $LG == "en" ]]; then
-#             echo "Split train into two files..."
-#             split -d -b 10G -a 2 $DST_DIR/${LG}wiki.train.clean ${DATA_BIN}/${LG}wiki.train.clean.
-#             NUMBERS="00 01"
-#             for NUMBER in $NUMBERS; do
-#                 echo "Encoding train set no.${NUMBER} using cl100k_base tokenizer from OpenAI..."
-#                 python $FAIRSEQ/examples/pantagruel/scripts/_encoding_tiktoken.py \
-#                     --inputs ${DATA_BIN}/${LG}wiki.train.clean.${NUMBER} \
-#                     --outputs ${DATA_BIN}/${LG}wiki.train.bpe.${NUMBER} \
-#                     --keep-empty \
-#                     --workers ${num_workers};
-#                 wc -l ${DATA_BIN}/${LG}wiki.train.clean.${NUMBER}
-#                 wc -l ${DATA_BIN}/${LG}wiki.train.bpe.${NUMBER}
-#                 cat ${DATA_BIN}/${LG}wiki.train.bpe.${NUMBER} >> ${DATA_BIN}/${LG}wiki.train.bpe
-#                 wc -l ${DATA_BIN}/${LG}wiki.train.bpe
-#             done
-#         fi
-#     elif [[ $tokenizer == "gpt2_bpe" ]]; then
-#         for SPLIT in $SPLITS; do
-#             python $FAIRSEQ/examples/roberta/multiprocessing_bpe_encoder.py \
-#                     --encoder-json $DATA_BIN/encoder.json \
-#                     --vocab-bpe $DATA_BIN/vocab.bpe \
-#                     --inputs ${DST_DIR}/${LG}wiki.${SPLIT}.clean \
-#                     --outputs ${DATA_BIN}/${LG}wiki.${SPLIT}.bpe \
-#                     --keep-empty \
-#                     --workers ${num_workers}; \
-#         done
-#     else
-#         echo "Invalid tokenizer!"
-#         exit 1
-#     fi
-# fi
+    elif [[ $tokenizer == "cl100k_base" ]]; then
+        echo "Encoding dev set using cl100k_base tokenizer from OpenAI..."
+        python $FAIRSEQ/examples/pantagruel/scripts/_encoding_tiktoken.py \
+            --inputs ${DST_DIR}/${LG}wiki.dev.clean \
+            --outputs ${DATA_BIN}/${LG}wiki.dev.bpe \
+            --keep-empty \
+            --workers ${num_workers};
+        if [[ $LG == "en" ]]; then
+            echo "Split train into two files..."
+            split -d -b 10G -a 2 $DST_DIR/${LG}wiki.train.clean ${DATA_BIN}/${LG}wiki.train.clean.
+            NUMBERS="00 01"
+            for NUMBER in $NUMBERS; do
+                echo "Encoding train set no.${NUMBER} using cl100k_base tokenizer from OpenAI..."
+                python $FAIRSEQ/examples/pantagruel/scripts/_encoding_tiktoken.py \
+                    --inputs ${DATA_BIN}/${LG}wiki.train.clean.${NUMBER} \
+                    --outputs ${DATA_BIN}/${LG}wiki.train.bpe.${NUMBER} \
+                    --keep-empty \
+                    --workers ${num_workers};
+                wc -l ${DATA_BIN}/${LG}wiki.train.clean.${NUMBER}
+                wc -l ${DATA_BIN}/${LG}wiki.train.bpe.${NUMBER}
+                cat ${DATA_BIN}/${LG}wiki.train.bpe.${NUMBER} >> ${DATA_BIN}/${LG}wiki.train.bpe
+                wc -l ${DATA_BIN}/${LG}wiki.train.bpe
+            done
+        fi
+    elif [[ $tokenizer == "gpt2_bpe" ]]; then
+        for SPLIT in $SPLITS; do
+            python $FAIRSEQ/examples/roberta/multiprocessing_bpe_encoder.py \
+                    --encoder-json $DATA_BIN/encoder.json \
+                    --vocab-bpe $DATA_BIN/vocab.bpe \
+                    --inputs ${DST_DIR}/${LG}wiki.${SPLIT}.clean \
+                    --outputs ${DATA_BIN}/${LG}wiki.${SPLIT}.bpe \
+                    --keep-empty \
+                    --workers ${num_workers}; \
+        done
+    else
+        echo "Invalid tokenizer!"
+        exit 1
+    fi
+fi
 
 ### Binarized data using fairseq
 echo "Binarizing data..."
 if [[ ! -f "$DATA_BIN/${LG}wiki.train.idx"  ]]; then
-    # if [[ $tokenizer == "byteBPE" ]]; then
-    #     fairseq-preprocess \
-    #         --only-source \
-    #         --trainpref ${DATA_BIN}/${LG}wiki.train.bpe \
-    #         --validpref ${DATA_BIN}/${LG}wiki.dev.bpe \
-    #         --destdir ${DATA_BIN} \
-    #         --workers ${num_workers}
-    # else
+    python $FAIRSEQ/examples/pantagruel/scripts/_json2dict.py --json $DATA_BIN/encoder.json
     fairseq-preprocess \
         --only-source \
         --trainpref ${DATA_BIN}/${LG}wiki.train.bpe \
         --validpref ${DATA_BIN}/${LG}wiki.dev.bpe \
         --destdir ${DATA_BIN} \
         --workers ${num_workers} \
-        --srcdict $DATA_BIN/dict.txt \
-        --dataset-impl cached
-    # fi
+        --srcdict $DATA_BIN/dict.txt
 fi

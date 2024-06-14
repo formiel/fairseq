@@ -18,7 +18,7 @@ def main():
     print(f"len(data): {len(d)}")
 
     with open(os.path.join(dirname, "dict.txt"), "w", encoding="utf-8") as fd:
-        for k, v in d.items():
+        for _, v in d.items():
             print("{} {}".format(v, 1), file=fd)
 
 
