@@ -131,6 +131,7 @@ GPUs=128
 HOURS=24
 JOBS=1
 UPDATE=100000
+WARMUP=5000
 
 MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=base_mls1k
@@ -145,11 +146,12 @@ MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=large_audio_only_lb14k_no_bin_maxtok320k
 # CONFIG=large_audio_only_lb14k_no_bin_maxtok640k
 # CONFIG=large_audio_only_lb14k_no_bin_maxtok640k_wu5k
-CONFIG=large_audio_only_lb14k_v4
+# CONFIG=large_audio_only_lb14k_v4
+CONFIG=large_audio_only_lb14k_v5
 
 # SUFFIX=_wu2k 
 SUFFIX= # ===== CHECK THIS =====
-EXPNAME="${CONFIG}_maxupdate${UPDATE}_${PARTITION}_gpus${GPUs}${SUFFIX}"
+EXPNAME="${CONFIG}_maxupdate${UPDATE}_wu${WARMUP}_${PARTITION}_gpus${GPUs}${SUFFIX}"
 # EXPNAME="${CONFIG}_${SUFFIX}"
 # DATA_DIR=$WORK/Data/prepared/MLS_French
 # DATA_DIR=$SCRATCH/Data/LeBenchmark_prepared/data-bin
@@ -258,4 +260,7 @@ submit run ${PARTITION} ${GPUs} ${HOURS} ${JOBS} ${EXPNAME} "${FAIRSEQ}/fairseq_
 # job 0: 950390 (var too low)
 
 # large_audio_only_lb14k_v4_maxupdate100000_mi250_gpus128
-job 0: 953227
+# job 0: 953227 (var too low)
+
+# large_audio_only_lb14k_v5_maxupdate100000_wu5000_mi250_gpus128
+job 0: 955210

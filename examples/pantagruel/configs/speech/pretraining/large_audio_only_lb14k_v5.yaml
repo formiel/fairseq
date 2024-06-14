@@ -1,0 +1,132 @@
+# @package _group_
+
+common:
+  fp16: true
+  log_format: json
+  log_interval: 500
+  tensorboard_logdir: ???
+  min_loss_scale: 1e-6
+  fp16_no_flatten_grads: true
+  # user_dir: ${env:PWD}/examples/data2vec
+  time_limit: ???
+
+checkpoint:
+  # save_interval: 1
+  save_interval_updates: 2000
+  keep_interval_updates: 10
+  # no_epoch_checkpoints: true
+  keep_best_checkpoints: 10
+  # keep_last_epochs: 20
+  save_dir: ???
+
+task:
+  _name: audio_pretraining
+  data: ???
+  max_sample_size: 320000
+  min_sample_size: 32000
+  normalize: true
+  precompute_mask_config: {}
+  # binarized_dataset: true
+
+dataset:
+  num_workers: 3
+  max_tokens: 640000
+  skip_invalid_size_inputs_valid_test: true
+  # validate_interval: 5
+  required_batch_size_multiple: 1
+  # disable_validation: true
+  valid_subset: valid_full_16_datasets_excld_mass
+  train_subset: train_full_16_datasets_excld_mass
+  # dataset_impl: mmap
+
+
+distributed_training:
+  distributed_world_size: ???
+  distributed_port: ???
+  ddp_backend: c10d
+
+criterion:
+  _name: model
+  log_keys:
+    - ema_decay
+    - target_var
+    - pred_var
+    - model_norm
+    - ema_norm
+    - masked_pct
+
+optimization:
+  max_update: 100000
+  debug_param_names: true
+  clip_norm: 1
+
+optimizer:
+  _name: composite
+  dynamic_groups: true
+  groups:
+    default:
+      lr_float: 0.0005
+      optimizer:
+        _name: adam
+        adam_betas: [0.9,0.98]
+        adam_eps: 1e-06
+        weight_decay: 0.01
+      lr_scheduler:
+        _name: cosine
+        warmup_updates: 5000
+
+lr_scheduler: pass_through
+
+model:
+  _name: data2vec_multi
+
+  loss_beta: 0
+  loss_scale: null
+
+  depth: 16
+  embed_dim: 1024
+  num_heads: 16
+
+  clone_batch: 12
+
+  ema_decay: 0.9997
+  ema_end_decay: 1
+  ema_anneal_end_step: 100000
+  ema_encoder_only: false
+
+  average_top_k_layers: 16
+  instance_norm_target_layer: true
+  layer_norm_target_layer: false
+  layer_norm_targets: false
+
+  layerdrop: 0.0
+  norm_eps: 1e-5
+
+  supported_modality: AUDIO
+
+  modalities:
+    audio:
+      feature_encoder_spec: '[(512, 10, 5)] + [(512, 3, 2)] * 4 + [(512,2,2)] + [(512,2,2)]'
+      conv_pos_depth: 5
+      conv_pos_width: 95
+      conv_pos_groups: 16
+      prenet_depth: 8
+      mask_prob: 0.55
+      mask_prob_adjust: 0.1
+      inverse_mask: false
+      mask_length: 5
+      mask_noise_std: 0.01
+      mask_dropout: 0
+      add_masks: false
+      ema_local_encoder: false
+      use_alibi_encoder: true
+      prenet_layerdrop: 0
+      prenet_dropout: 0.1
+      learned_alibi_scale: true
+      learned_alibi_scale_per_head: true
+      decoder:
+        input_dropout: 0.1
+        decoder_dim: 768
+        decoder_groups: 16
+        decoder_kernel: 7
+        decoder_layers: 4
