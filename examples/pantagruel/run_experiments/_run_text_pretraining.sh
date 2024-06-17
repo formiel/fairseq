@@ -5,7 +5,7 @@
 ##### JEAN ZAY
 ###############################################################################
 ###############################################################################
-PARTITION=gpu_p2
+PARTITION=mi250
 TASK=pretraining
 MODALITY=text
 USER_DIR=$FAIRSEQ/examples/data2vec
@@ -14,13 +14,17 @@ TIME_LIMIT=1190
 GPUS=16
 MASTER_PORT=$(shuf -i 20000-45000 -n 1)
 # CONFIG=base_text_only_task_4gb_lazy
-CONFIG=base_text_only_task_4gb_cached
+CONFIG=base_text_only_task_4gb
 
 # WIKINAME=enwiki_20240201
 WIKINAME=frwiki_20190701
 EXPNAME="${CONFIG}_${WIKINAME}_${PARTITION}_gpus${GPUS}_fix_embed_cached"
 # DATA_DIR=/gpfswork/rech/ahm/umz16dj/Data/wikitext-103/data-bin/debug
-DATA_DIR=$SCRATCH/Data/Wikipedia/${WIKINAME}/data-bin-cached/byteBPE
+DATA_ROOT=$SCRATCH/Data
+if [[ $PARTITION == "mi250" ]]; then
+    DATA_ROOT=$WORK/Data/prepared
+fi
+DATA_DIR=$DATA_ROOT/Wikipedia/${WIKINAME}/data-bin-no-prefix/byteBPE
 CONFIG_DIR=$FAIRSEQ/examples/pantagruel/configs/${MODALITY}/${TASK}
 
 TENSORBOARD_DIR=$WORK/experiments/fairseq_tensorboard/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
@@ -69,9 +73,7 @@ submit run ${PARTITION} $GPUS 20 1 $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.
 # job 0: 1952893
 # job 1: 1952894 (after 1952893)
 
-# base_text_only_task_4gb_frwiki_20190701_gpu_p2_gpus16_fix_embed
-job 0: 90075
-job 1: 90076 (after 90075)
+# 
 
 ###############################################################################
 ###############################################################################

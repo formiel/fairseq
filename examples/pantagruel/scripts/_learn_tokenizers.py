@@ -68,11 +68,12 @@ def main():
     os.makedirs(args.out, exist_ok=True)
     tokenizer.save_model(args.out, args.name)
 
-    # # Restoring model from learned vocab/merges
+    # # # Restoring model from learned vocab/merges
     # tokenizer = ByteLevelBPETokenizer(
     #     "/".join([args.out, "{}-vocab.json".format(args.name)]),
     #     "/".join([args.out, "{}-merges.txt".format(args.name)]),
-    #     add_prefix_space=True,
+    #     add_prefix_space=False,
+    #     unicode_normalizer="nfc",
     # )
     # tokenizer.add_special_tokens(SPECIAL_TOKENS)
 
@@ -89,7 +90,7 @@ def main():
     #     print(f"Decoded sentence: {decoded_text}")
 
     #     # Decoding
-    #     encoded_ids = "8387 1256 1677 16 847 306 313 22021 328 17263 13 297 1002 306 313 11624 1529 8751 328 16345 472 345 321 34057 676 16 306 2937 25996 676 322 2806 10690 327 525"
+    #     encoded_ids = "40 11 1620 4771 70 17241 16 1512 261 11 290 19921 268 13939 1525 8702 322 17195 478 429 653 603 2426 8011 347 5387 268 22327 18"
     #     decoded_text = tokenizer.decode([int(i) for i in encoded_ids.split()])
     #     print(f"Decoded sentence-2: {decoded_text}")
     #     print(f"IDs: {tokenizer.encode(decoded_text).ids}")

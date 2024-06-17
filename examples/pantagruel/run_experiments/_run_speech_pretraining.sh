@@ -129,7 +129,7 @@ PARTITION=mi250
 GPUs=128
 # GPUs=64
 HOURS=24
-JOBS=1
+JOBS=5
 UPDATE=100000
 WARMUP=5000
 
@@ -264,3 +264,8 @@ submit run ${PARTITION} ${GPUs} ${HOURS} ${JOBS} ${EXPNAME} "${FAIRSEQ}/fairseq_
 
 # large_audio_only_lb14k_v5_maxupdate100000_wu5000_mi250_gpus128
 job 0: 955210
+job 0: 962337
+job 1: 962338 (after 962337)
+job 2: 962339 (after 962338)
+job 3: 962340 (after 962339)
+job 4: 962341 (after 962340)

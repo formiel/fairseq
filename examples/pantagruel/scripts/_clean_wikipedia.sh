@@ -7,10 +7,10 @@ set -e
 # Data is then preprocessed (binarized) ready for training using fairseq-preprocess
 ########################
 
-DATA_DIR=$SCRATCH/Data/Wikipedia
-LG=fr
-DATE=20190701 #latest: 20240201, reproduced to compare with CamemBERT: "20190701" 
-tokenizer=byteBPE # choose between ["cl100k_base", "byteBPE", "gpt2_bpe", "none"]
+DATA_DIR=$1
+LG=$2
+DATE=$3 #latest: 20240201, reproduced to compare with CamemBERT: "20190701" 
+tokenizer=$4 # choose between ["cl100k_base", "byteBPE", "gpt2_bpe", "none"]
 DST_DIR=$DATA_DIR/${LG}wiki_${DATE} #$SCRATCH/Data/Wikipedia/${LG}wiki_${DATE}
 echo "DST_DIR: ${DST_DIR}"
 num_workers=64
@@ -20,7 +20,7 @@ XMLFILE=${LG}wiki-${DATE}-pages-articles-multistream.xml
 COMPFILE=${XMLFILE}.bz2
 
 GPT2_DICTS=$WORK/pretrained/tokenizers/gpt2_bpe
-BIN_NAME=data-bin-no-prefix
+BIN_NAME=data-bin-nfc-add-prefix-false
 
 # ### Download Wikipedia if not exists
 # if [[ ! -f $DST_DIR/${COMPFILE} ]]; then
@@ -173,6 +173,8 @@ if [[ ! -f "$DATA_BIN/${LG}wiki.train.bpe"  ]]; then
 fi
 
 ### Binarized data using fairseq
+# tricky: change fairseq to not having to change tokenizer learned using HuggingFace
+# Line 95 fairseq/tasks/fairseq_task.py: add_special_symbols=False
 echo "Binarizing data..."
 if [[ ! -f "$DATA_BIN/${LG}wiki.train.idx"  ]]; then
     python $FAIRSEQ/examples/pantagruel/scripts/_json2dict.py --json $DATA_BIN/encoder.json
