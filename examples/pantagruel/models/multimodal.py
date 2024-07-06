@@ -237,6 +237,7 @@ class PantagruelMultiModel(Data2VecMultiModel):
         force_remove_masked=False,
         remove_extra_tokens=True,
         precomputed_mask=None,
+        skip_mode=None, 
     ):
         if mode is None:
             assert self.cfg.supported_modality is not None
