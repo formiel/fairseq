@@ -41,6 +41,8 @@ def main():
     )
     parser.add_argument("--name", default="bpe-bytelevel", type=str, help="The name of the output vocab files")
     parser.add_argument("--test-decoding", action="store_true", help="Test decoding")
+    parser.add_argument("--unicode_normalizer", default=None, help="unicodedata normalization", type=str)
+    parser.add_argument("--add_prefix_space", action="store_true")
     args = parser.parse_args()
     args = parser.parse_args()
 
@@ -49,10 +51,12 @@ def main():
         print(f"File does not exist: {args.files}")
         exit(1)
 
+    print(f'*** add_prefix_space: {args.add_prefix_space}')
+    print(f'*** unicode_normalizer: {args.unicode_normalizer}')
     # Initialize an empty tokenizer
     tokenizer = ByteLevelBPETokenizer(
-        add_prefix_space=False,
-        unicode_normalizer="nfc"
+        add_prefix_space=args.add_prefix_space,
+        unicode_normalizer=args.unicode_normalizer
     ) 
  
     # And then train
@@ -72,8 +76,8 @@ def main():
     # tokenizer = ByteLevelBPETokenizer(
     #     "/".join([args.out, "{}-vocab.json".format(args.name)]),
     #     "/".join([args.out, "{}-merges.txt".format(args.name)]),
-    #     add_prefix_space=False,
-    #     unicode_normalizer="nfc",
+    #     add_prefix_space=args.add_prefix_space,
+    #     unicode_normalizer=args.unicode_normalizer,
     # )
     # tokenizer.add_special_tokens(SPECIAL_TOKENS)
 

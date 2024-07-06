@@ -5,7 +5,7 @@
 ##### JEAN ZAY
 ###############################################################################
 ###############################################################################
-PARTITION=mi250
+PARTITION=gpu_p2
 TASK=pretraining
 MODALITY=text
 USER_DIR=$FAIRSEQ/examples/data2vec
@@ -24,7 +24,7 @@ DATA_ROOT=$SCRATCH/Data
 if [[ $PARTITION == "mi250" ]]; then
     DATA_ROOT=$WORK/Data/prepared
 fi
-DATA_DIR=$DATA_ROOT/Wikipedia/${WIKINAME}/data-bin-no-prefix/byteBPE
+DATA_DIR=$DATA_ROOT/Wikipedia/${WIKINAME}/data-bin-nfc-add-prefix-false/byteBPE
 CONFIG_DIR=$FAIRSEQ/examples/pantagruel/configs/${MODALITY}/${TASK}
 
 TENSORBOARD_DIR=$WORK/experiments/fairseq_tensorboard/pantagruel/${MODALITY}/${TASK}/${EXPNAME}
@@ -73,7 +73,8 @@ submit run ${PARTITION} $GPUS 20 1 $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.
 # job 0: 1952893
 # job 1: 1952894 (after 1952893)
 
-# 
+# base_text_only_task_4gb_frwiki_20190701_gpu_p2_gpus16_fix_embed_cached
+job 0: 130478
 
 ###############################################################################
 ###############################################################################

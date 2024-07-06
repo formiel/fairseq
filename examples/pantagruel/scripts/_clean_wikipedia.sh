@@ -20,7 +20,7 @@ XMLFILE=${LG}wiki-${DATE}-pages-articles-multistream.xml
 COMPFILE=${XMLFILE}.bz2
 
 GPT2_DICTS=$WORK/pretrained/tokenizers/gpt2_bpe
-BIN_NAME=data-bin-nfc-add-prefix-false
+BIN_NAME=data-bin-add-prefix-false
 
 # ### Download Wikipedia if not exists
 # if [[ ! -f $DST_DIR/${COMPFILE} ]]; then
@@ -175,6 +175,14 @@ fi
 ### Binarized data using fairseq
 # tricky: change fairseq to not having to change tokenizer learned using HuggingFace
 # Line 95 fairseq/tasks/fairseq_task.py: add_special_symbols=False
+# Line 35: fairseq/data/dictionary.py:         
+        # self.nspecial = 0
+        # self.bos_index = 0
+        # self.pad_index = 1
+        # self.eos_index = 2
+        # self.unk_index = 3
+# Line 140: fairseq/tasks/masked_lm.py: self.mask_idx = 4
+
 echo "Binarizing data..."
 if [[ ! -f "$DATA_BIN/${LG}wiki.train.idx"  ]]; then
     python $FAIRSEQ/examples/pantagruel/scripts/_json2dict.py --json $DATA_BIN/encoder.json

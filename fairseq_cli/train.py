@@ -392,7 +392,7 @@ def train(
         valid_losses, should_stop = validate_and_save(
             cfg, trainer, task, epoch_itr, valid_subsets, end_of_epoch
         )
-        if valid_losses[0] is not None:
+        if valid_losses[0] is not None and num_updates % cfg.checkpoint.save_interval_updates == 0:
             reach_time_limit, _epoch_time_queue = get_time_queue_and_check_time_limit(
                     cfg, start_epoch_time=start_epoch_time,
                     epoch_time_queue=epoch_time_queue,

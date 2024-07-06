@@ -122,14 +122,14 @@ MODALITY=speech
 # FAIRSEQ=$HOME/code/fairspeech_torch23
 FAIRSEQ=$HOME/code/fairspeech
 USER_DIR=$FAIRSEQ/examples/data2vec
-TIME_LIMIT=1400
+TIME_LIMIT=1290
 PARTITION=mi250
 
 # submitted using 2 nodes
 GPUs=128
 # GPUs=64
-HOURS=24
-JOBS=5
+HOURS=22
+JOBS=3
 UPDATE=100000
 WARMUP=5000
 
@@ -147,7 +147,7 @@ MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=large_audio_only_lb14k_no_bin_maxtok640k
 # CONFIG=large_audio_only_lb14k_no_bin_maxtok640k_wu5k
 # CONFIG=large_audio_only_lb14k_v4
-CONFIG=large_audio_only_lb14k_v5
+CONFIG=large_audio_only_lb14k_v5_seed2
 
 # SUFFIX=_wu2k 
 SUFFIX= # ===== CHECK THIS =====
@@ -263,9 +263,22 @@ submit run ${PARTITION} ${GPUs} ${HOURS} ${JOBS} ${EXPNAME} "${FAIRSEQ}/fairseq_
 # job 0: 953227 (var too low)
 
 # large_audio_only_lb14k_v5_maxupdate100000_wu5000_mi250_gpus128
-job 0: 955210
-job 0: 962337
-job 1: 962338 (after 962337)
-job 2: 962339 (after 962338)
-job 3: 962340 (after 962339)
-job 4: 962341 (after 962340)
+# job 0: 955210
+# job 0: 962337
+# job 1: 962338 (after 962337)
+# job 2: 962339 (after 962338)
+# job 3: 962340 (after 962339) (8.5h, 2024-06-20 08:17:34,289)
+# job 0: 970383
+# job 0: 972675
+# job 1: 972676 (after 972675)
+# job 2: 972677 (after 972676)
+# job 3: 972678 (after 972677)
+# job 4: 972679 (after 972678)
+# job 0: 1014964
+# job 1: 1014965 (after 1014964)
+# job 2: 1014966 (after 1014965)
+
+# large_audio_only_lb14k_v5_seed2_maxupdate100000_wu5000_mi250_gpus128
+job 0: 1015382
+job 1: 1015383 (after 1015382)
+job 2: 1015384 (after 1015383)

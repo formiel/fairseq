@@ -87,6 +87,11 @@ rsync -zarvm /gpfswork/rech/ahm/umz16dj/experiments/fairseq_checkpoints/pantagru
 rsync -zarvm /gpfswork/rech/ahm/umz16dj/experiments/fairseq_checkpoints/pantagruel/Speech_Base_en_1K/HuggingFace_avg_last_10 \
         tphle@adastra-ccfr.cines.fr:/lus/home/CT10/c1615074/tphle/pantagruel/pretrained_models/Speech_Base_en_1K/
 
+```bash
+# change group permission
+chgrp -R lig3801 $lig3801_SHAREDWORKDIR/*
+```
+
 # Common errors
 ```python
 from omegaconf import open_dict
@@ -416,5 +421,17 @@ module load pytorch-gpu/py3/1.13.0
 cd code/transformers_94b3f54
 
 # current version: module purge && module load python/3.10.4 gcc/9.3.0 nccl/2.19.3-1-cuda && module list
+```
 
+```bash
+# Use with AutoTokenizer
+from transformers import RobertaTokenizerFast, AutoTokenizer
+
+# Save ByteBPE tokenizer to transformers
+tok = RobertaTokenizerFast(vocab_file=(text_model_dir / "bpe-bytelevel-vocab.json").as_posix(), merges_file=(text_model_dir / "bpe-bytelevel-merges.txt").as_posix(), add_prefix_space=False, unicode_normalizer="nfc")
+tok.save_pretrained(text_model_dir.as_posix())
+
+# Load using AutoTokenizer
+auto = AutoTokenizer.from_pretrained(text_model_dir.as_posix())
+encoded_text = auto(SAMPLE_TEXT)
 ```
