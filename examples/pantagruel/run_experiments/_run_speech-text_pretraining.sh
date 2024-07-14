@@ -19,7 +19,7 @@ TIME_LIMIT=1180
 HOURS=20
 JOBS=2
 GPUs=16
-SUFFIX=
+SUFFIX=_debug
 
 MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 
@@ -70,7 +70,6 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 
 # joint speech-text
 submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} --config-name $CONFIG common.user_dir=${USER_DIR} common.time_limit=${TIME_LIMIT} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} task.audio.data=$AUDIO_DATA task.text.data=$TEXT_DATA distributed_training.distributed_world_size=${GPUs} distributed_training.distributed_port=${MASTER_PORT}"
-
 
 
 # base_speech_gpu_p2_gpus16

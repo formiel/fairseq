@@ -555,12 +555,8 @@ class PantagruelMultiModel(BaseFairseqModel):
                             remaining_extractor.decoder,
                             encoder_mask_dummy,
                             )
-                if self.skip_mode is not None:
-                    dx += self.dummy_factor * dummy_out.mean(dim=1).unsqueeze(1)
-                    xs[-1] = dx
-                else:
-                    dx = dummy_out.mean(dim=1).unsqueeze(1)
-                    xs.append(dx)
+                dx += self.dummy_factor * dummy_out.mean(dim=1).unsqueeze(1)
+                xs[-1] = dx
 
         assert len(xs) > 0
 
