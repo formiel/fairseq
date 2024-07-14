@@ -215,7 +215,7 @@ class Dictionary:
         return self.unk_index
 
     @classmethod
-    def load(cls, f, add_special_symbols=True):
+    def load(cls, f, add_special_symbols=True, extra_special_symbols=None):
         """Loads the dictionary from a text file with the format:
 
         ```
@@ -224,7 +224,8 @@ class Dictionary:
         ...
         ```
         """
-        d = cls(add_special_symbols=add_special_symbols)
+        d = cls(add_special_symbols=add_special_symbols, 
+                extra_special_symbols=extra_special_symbols)
         d.add_from_file(f)
         return d
 

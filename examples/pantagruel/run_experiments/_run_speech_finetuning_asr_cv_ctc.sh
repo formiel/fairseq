@@ -47,7 +47,8 @@ LABEL="fr.ltr"
 # PRETRAIN_CONFIG=base_audio_only_task_ngpu16_fr
 PRETRAIN_CONFIG=large_audio_only_lb14k_v5_maxupdate100000_wu5000_mi250_gpus128
 # CKPT=checkpoint_best
-CKPT=avg_last_10_checkpoint
+# CKPT=avg_last_10_checkpoint
+CKPT=avg_best_10_checkpoint
 PRETRAIN_CKPT=$WORK/experiments/fairseq_checkpoints/pantagruel/${MODALITY}/pretraining/${PRETRAIN_CONFIG}/${CKPT}.pt
 # PRETRAIN_CONFIG=large_audio_only_task_ngpu48_fr
 # PRETRAIN_CKPT=$WORK/experiments/fairseq_checkpoints/pantagruel/${PRETRAIN_CONFIG}/checkpoint_best_200k.pt
@@ -67,7 +68,7 @@ submit run gpu_p2 $GPUS 20 3 $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.py -m 
 
 # base_commonvoice_fr.ltr: WER on dev 8.96
 #
-# base_commonvoice_full_fr.ltr: WER on dev 8.92
+# base_commonvoice_full_fr.ltr: WER on dev 8.92, test 
 # (to compare if data loader is ok when doing every 2h)
 
 # base_commonvoice_ngpu16_fr.ltr_pt_base_audio_only_task_ngpu16_fr_avg_last_10_checkpoint
@@ -105,16 +106,28 @@ submit run gpu_p2 $GPUS 20 3 $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.py -m 
 # job 1: 398077 (after 398076)
 # job 2: 398078 (after 398077)
 
+# large_commonvoice_ngpu16_fr.ltr_pt_large_audio_only_lb14k_v5_maxupdate100000_wu5000_mi250_gpus128_avg_best_10_checkpoint
+# job 0: 499779
+# job 1: 499780 (after 499779)
+# job 2: 499781 (after 499780)
+
 # 4.decoding data2vec2.0 model trained with CTC
-SPLIT=test
-CONFIG=fr_finetune_commonvoice
 DATA=$WORK/Data/CommonVoice/fr
-CHECKPOINT=$SCRATCH/Experiments/fairseq_checkpoints/pantagruel/${CONFIG}/checkpoint_best.pt
-# CHECKPOINT=/gpfswork/rech/ahm/umz16dj/pretrained_models/data2vec/v2/speech/${CONFIG}.pt
-python examples/speech_recognition/new/infer.py --config-dir examples/speech_recognition/new/conf \
---config-name infer task=audio_finetuning task.data=${DATA} common.user_dir=examples/data2vec \
-common_eval.results_path=$SCRATCH/Experiments/fairseq_checkpoints/${CONFIG} \
-common_eval.quiet=false
-task.labels=ltr \
-dataset.gen_subset=$SPLIT \
-common_eval.path=${CHECKPOINT} decoding.beam=5
+SPLITS="dev test"
+CONFIGS="base_commonvoice_full_fr.ltr 
+         base_commonvoice_ngpu16_fr.ltr_pt_base_audio_only_task_ngpu16_fr_avg_last_10_checkpoint 
+         large_commonvoice_ngpu16_fr.ltr_pt_large_audio_only_lb14k_v5_maxupdate100000_wu5000_mi250_gpus128_checkpoint_best 
+         large_commonvoice_ngpu16_fr.ltr_pt_large_audio_only_lb14k_v5_maxupdate100000_wu5000_mi250_gpus128_avg_last_10_checkpoint"
+for CONFIG in $CONFIGS; do
+    SAVE_DIR=$WORK/experiments/fairseq_checkpoints/pantagruel/speech/finetuning/${CONFIG}
+    mkdir -p $SAVE_DIR/decoding_${SPLIT}
+    for SPLIT in $SPLITS; do
+        submit run gpu_p13 1 3 1 decoding_${SPLIT}_${CONFIG} "${FAIRSEQ}/examples/speech_recognition/new/infer.py --config-dir examples/speech_recognition/new/conf \
+        --config-name infer task=audio_finetuning task.data=${DATA} common.user_dir=examples/data2vec \
+        common_eval.results_path=${SAVE_DIR}/decoding_${SPLIT}_beam1 \
+        common_eval.quiet=false \
+        task.labels=ltr \
+        dataset.gen_subset=$SPLIT \
+        common_eval.path=${SAVE_DIR}/checkpoint_best.pt decoding.beam=1"
+    done
+done

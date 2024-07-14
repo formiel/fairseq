@@ -9,7 +9,7 @@ common:
   fp16_no_flatten_grads: false
   # memory_efficient_fp16: true
   # fp16_scale_tolerance: 0.25
-  # time_limit: ???
+  time_limit: ???
   user_dir: ???
 
 checkpoint:

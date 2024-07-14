@@ -279,6 +279,6 @@ submit run ${PARTITION} ${GPUs} ${HOURS} ${JOBS} ${EXPNAME} "${FAIRSEQ}/fairseq_
 # job 2: 1014966 (after 1014965)
 
 # large_audio_only_lb14k_v5_seed2_maxupdate100000_wu5000_mi250_gpus128
-job 0: 1015382
-job 1: 1015383 (after 1015382)
-job 2: 1015384 (after 1015383)
+# job 0: 1015382
+# job 1: 1015383 (after 1015382)
+# job 2: 1015384 (after 1015383)

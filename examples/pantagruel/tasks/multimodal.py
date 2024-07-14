@@ -6,32 +6,41 @@
 # can be found in the PATENTS file in the same directory.
 
 import sys
+import logging
 
 from dataclasses import dataclass
 from typing import Optional, List
 from omegaconf import II
 
+from fairseq.data import Dictionary
 from fairseq.data.iterators import GroupedEpochBatchIterator
 
 from fairseq.dataclass import FairseqDataclass
 from fairseq.tasks import FairseqTask, register_task
-from fairseq.tasks.audio_pretraining import AudioPretrainingConfig, AudioPretrainingTask
-from fairseq.tasks.masked_lm import MaskedLMConfig, MaskedLMTask
-from examples.data2vec.tasks.mae_image_pretraining import MaeImagePretrainingConfig, MaeImagePretrainingTask
+from fairseq.tasks.audio_pretraining import AudioPretrainingTask
+from fairseq.tasks.masked_lm import MaskedLMTask
+from examples.data2vec.tasks.mae_image_pretraining import MaeImagePretrainingTask
 from examples.data2vec.data.modality import Modality
 
 from fairseq.data.audio.multi_modality_dataset import (
     MultiModalityDataset,
     ModalityDatasetItem,
 )
-from examples.data2vec.tasks.multimodal import MultimodalPretrainingTask, MultimodalPretrainingConfig
+from examples.data2vec.tasks.multimodal import MultimodalPretrainingConfig
 
+logger = logging.getLogger(__name__)
 
-@register_task("pantagruel_multimodal_pretraining", dataclass=MultimodalPretrainingConfig)
+MASK_SYMBOL = "<mask>"
+
+@dataclass
+class PantagruelMultimodalPretrainingConfig(MultimodalPretrainingConfig):
+    vocab_path: Optional[str] = None
+
+@register_task("pantagruel_multimodal_pretraining", dataclass=PantagruelMultimodalPretrainingConfig)
 class PantagruelMultimodalPretrainingTask(FairseqTask):
-    cfg: MultimodalPretrainingConfig
+    cfg: PantagruelMultimodalPretrainingConfig
 
-    def __init__(self, cfg: MultimodalPretrainingConfig):
+    def __init__(self, cfg: PantagruelMultimodalPretrainingConfig):
         super().__init__(cfg)
         self.audio_task = (
             AudioPretrainingTask(cfg.audio) if cfg.audio is not None else None
@@ -40,11 +49,26 @@ class PantagruelMultimodalPretrainingTask(FairseqTask):
             MaeImagePretrainingTask(cfg.image) if cfg.image is not None else None
         )
         self.text_task = MaskedLMTask(cfg.text) if cfg.text is not None else None
+        if self.audio_task is not None:
+            self.max_sample_size = self.audio_task.cfg.max_sample_size
+        else:
+            self.max_sample_size = 320000
+
+        self.mask_idx = None
+        if self.text_task is not None:
+            self.vocab_size = len(self.text_task.dictionary)
+            self.mask_idx = self.text_task.dictionary.index(MASK_SYMBOL)
+            self.tokens_per_sample = self.text_task.cfg.tokens_per_sample
+        else:
+            if cfg.vocab_path is not None:
+                self.vocab_size = len(self.source_dictionary)
+                self.mask_idx = self.source_dictionary.index(MASK_SYMBOL)
+                self.tokens_per_sample = 512
 
         self.mult_ratios = []
 
     @classmethod
-    def setup_task(cls, cfg: MultimodalPretrainingConfig, **kwargs):
+    def setup_task(cls, cfg: PantagruelMultimodalPretrainingConfig, **kwargs):
         """Setup the task (e.g., load dictionaries).
 
         Args:
@@ -136,6 +160,10 @@ class PantagruelMultimodalPretrainingTask(FairseqTask):
 
     @property
     def source_dictionary(self):
+        if self.cfg.vocab_path is not None:
+            dictionary =  Dictionary.load(self.cfg.vocab_path, add_special_symbols=True, extra_special_symbols=[MASK_SYMBOL])
+            logger.info("dictionary: {} types".format(len(dictionary)))
+            return dictionary
         return None
 
     @property

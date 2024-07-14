@@ -3,7 +3,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-import math
+import logging
 from dataclasses import dataclass
 from functools import partial
 from typing import Callable, Dict, Optional
@@ -37,6 +37,7 @@ class TextTypeEncoder(PantagruelModalitySpecificEncoder):
         task: Optional[FairseqTask],
         token_type_embeddings: Optional[nn.Module],
     ):
+        logging.info(f"TextEncoder::task: {task}")
         text_encoder = TextEncoder(
             modality_cfg=modality_cfg,
             embed_dim=embed_dim,
