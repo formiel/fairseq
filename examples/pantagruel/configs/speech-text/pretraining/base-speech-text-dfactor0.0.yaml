@@ -27,7 +27,7 @@ task:
   audio_ratio: 1
   text_ratio: 1
   # update_freq: [4]
-  vocab_path: /gpfswork/rech/ahm/umz16dj/pretrained/tokenizers/gpt2_bpe/dict.txt
+  # vocab_path: /gpfswork/rech/ahm/umz16dj/pretrained/tokenizers/gpt2_bpe/dict.txt
   audio:
     data: ???
     max_sample_size: 320000

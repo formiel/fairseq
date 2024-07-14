@@ -9,7 +9,7 @@
 # 1. Prepare data: same as speech-only and text-only pretraining
 
 # 2. Run PRE-TRAINING
-PARTITION=gpu_p2
+PARTITION=gpu_p5
 TASK=pretraining
 MODALITY=speech-text
 FAIRSEQ=$HOME/code/fairspeech
@@ -19,7 +19,7 @@ TIME_LIMIT=1180
 HOURS=20
 JOBS=2
 GPUs=16
-SUFFIX=_debug
+SUFFIX=
 
 MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 
@@ -38,10 +38,11 @@ else
     DATA_ROOT=/lus/home/CT10/c1615074/tphle/Data/prepared
 fi
 AUDIO_DATA=$DATA_ROOT/LibriSpeech
-TEXT_DATA=$DATA_ROOT/Wikipedia/enwiki_20240201/data-bin/gpt2_bpe
+TEXT_DATA=$DATA_ROOT/Wikipedia/enwiki_20240201/data-bin/gpt2_bpe/data_small
+
 if [[ $SUFFIX == *"debug"* ]]; then
-    AUDIO_DATA=$AUDIO_DATA/data_small
-    TEXT_DATA=$TEXT_DATA/data_small
+    AUDIO_DATA=$AUDIO_DATA/debug
+    TEXT_DATA=$TEXT_DATA/debug
 fi
 
 # ===== CHECK THIS =====
@@ -72,16 +73,27 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} --config-name $CONFIG common.user_dir=${USER_DIR} common.time_limit=${TIME_LIMIT} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} task.audio.data=$AUDIO_DATA task.text.data=$TEXT_DATA distributed_training.distributed_world_size=${GPUs} distributed_training.distributed_port=${MASTER_PORT}"
 
 
-# base_speech_gpu_p2_gpus16
+# # base_speech_gpu_p2_gpus16 (trained on gpu_p2 32GB, full data, duplicated, validation loss better than original configuration)
+# # TODO: evaludated later to see if pre-trained validation loss is a good proxy for downstream performance
+# max tokens per device = 500000 and max sentences per device = 6
+# loaded 280531, skipped 710 samples
+# dataset Modality.AUDIO batch number is 140455
+# job 0: 675602
+# job 1: 675603 (after 675602)
 
-# base_text_gpu_p2_gpus16
-job 0: 683028
-job 1: 683029 (after 683028)
+# # base_text_gpu_p2_gpus16 (trained on gpu_p2 32GB, full data, cancelled)
+# loaded 190,504,555 examples from: /gpfswork/rech/ahm/umz16dj/Data/Wikipedia/enwiki_20240201/data-bin/gpt2_bpe/train
+# dataset Modality.TEXT batch number is 1615140 
+# job 0: 683028
 
-# base_speech_dummy_text_factor0.0_gpu_p2_gpus16
+# base_speech_dummy_text_factor0.0_gpu_p2_gpus16 (trained on gpu_p2 32GB, full data, to compare with audio-only training)
 job 0: 675609
 job 1: 675610 (after 675609)
 
-# base_speech_dummy_text_factor0.01_gpu_p2_gpus16
+# base_speech_dummy_text_factor0.01_gpu_p2_gpus16 (trained on gpu_p2 32GB, full data, to compare with audio-only training)
 job 0: 675614
 job 1: 675615 (after 675614)
+
+# base-speech-text-dfactor0.0_gpu_p5_gpus16 (trained on gpu_p5 80GB)
+job 0: 683562
+job 1: 683563 (after 683562)

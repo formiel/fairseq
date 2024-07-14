@@ -471,9 +471,8 @@ class Wav2VecEncoder(FairseqEncoder):
 
             model = task.build_model(w2v_args.model, from_checkpoint=True)
 
-            if not self.is_pantagruel_multi:
-                logger.info(f"Removing pre-trained modules...")
-                model.remove_pretraining_modules(modality="audio")
+            logger.info(f"Removing pre-trained modules...")
+            model.remove_pretraining_modules(modality="audio")
             d = w2v_args.model.embed_dim
 
         if state is not None and not cfg.no_pretrained_weights:

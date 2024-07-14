@@ -369,9 +369,12 @@ class PantagruelMultiModel(BaseFairseqModel):
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
         k = prefix + "_ema"
         if self.ema is not None:
-            assert k in state_dict
-            self.ema.restore(state_dict[k], True)
-            del state_dict[k]
+            try:
+                assert k in state_dict
+                self.ema.restore(state_dict[k], True)
+                del state_dict[k]
+            except:
+                pass
         elif k in state_dict:
             del state_dict[k]
 
