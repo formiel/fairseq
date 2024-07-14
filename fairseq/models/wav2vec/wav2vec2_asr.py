@@ -468,6 +468,8 @@ class Wav2VecEncoder(FairseqEncoder):
             else:
                 w2v_args.task.data = cfg.data
             task = tasks.setup_task(w2v_args.task, from_checkpoint=True)
+            if self.is_pantagruel_multi:
+                w2v_args.model.skip_mode = None
 
             model = task.build_model(w2v_args.model, from_checkpoint=True)
 
@@ -578,12 +580,11 @@ class Wav2VecEncoder(FairseqEncoder):
                     model.modality_encoders["AUDIO"].encoder_mask = None
                     del state["model"]["modality_encoders.AUDIO.encoder_mask"]
 
-                if not self.is_pantagruel_multi:
-                    for k in list(state["model"].keys()):
-                        if k.startswith("modality_encoders.") and not k.startswith(
-                            "modality_encoders.AUDIO"
-                        ):
-                            del state["model"][k]
+                for k in list(state["model"].keys()):
+                    if k.startswith("modality_encoders.") and not k.startswith(
+                        "modality_encoders.AUDIO"
+                    ):
+                        del state["model"][k]
 
             print(model)
             model.load_state_dict(state["model"], strict=True)

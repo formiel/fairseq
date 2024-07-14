@@ -10,7 +10,8 @@ USER_DIR=$FAIRSEQ/examples/pantagruel
 MODALITY=speech-text
 TASK=finetuning
 
-PRETRAIN_CONFIG=base_speech_gpu_p2_gpus16
+# PRETRAIN_CONFIG=base_speech_gpu_p2_gpus16
+PRETRAIN_CONFIG=base_speech_dummy_text_factor0.1_gpu_p2_gpus16
 
 EXPNAME=${CONFIG}_pt_${PRETRAIN_CONFIG}
 
@@ -26,3 +27,8 @@ submit run ${PARTITION} $GPUS $HOURS 1 $CONFIG "${FAIRSEQ}/fairseq_cli/hydra_tra
 # base_10h_pt_base_speech_gpu_p2_gpus16
 job 0: 683602
 
+# base_10h_pt_base_speech_dummy_text_factor0.0_gpu_p2_gpus16
+job 0: 683727
+
+# base_10h_pt_base_speech_dummy_text_factor0.1_gpu_p2_gpus16
+job 0: 683950
