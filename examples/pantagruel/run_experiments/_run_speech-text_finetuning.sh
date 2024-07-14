@@ -1,9 +1,9 @@
 CONFIG=base_10h
 GPUS=2
-TIME_LIMIT=240
-HOURS=4
+TIME_LIMIT=590
+HOURS=10
 
-PARTITION=gpu_p5
+PARTITION=gpu_p2
 FAIRSEQ=$HOME/code/fairspeech
 USER_DIR=$FAIRSEQ/examples/pantagruel
 
@@ -23,4 +23,6 @@ CHECKPOINT=$WORK/experiments/fairseq_checkpoints/pantagruel/${MODALITY}/pretrain
 
 submit run ${PARTITION} $GPUS $HOURS 1 $CONFIG "${FAIRSEQ}/fairseq_cli/hydra_train.py -m task.data=$DATA common.user_dir=$USER_DIR common.tensorboard_logdir=${TENSORBOARD_DIR} common.time_limit=${TIME_LIMIT} checkpoint.save_dir=${SAVE_DIR} model.w2v_path=$CHECKPOINT --config-dir examples/pantagruel/configs/${MODALITY}/finetuning --config-name ${CONFIG}"
 
+# base_10h_pt_base_speech_gpu_p2_gpus16
+job 0: 683602
 
