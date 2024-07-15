@@ -6,28 +6,12 @@
 
 
 # Sync data
-rsync -chavzP --stats \
+rsync -chavzP --stats --exclude="*.git*" \
         /Users/hang/github/formiel/fairspeech/ \
         umz16dj@jean-zay.idris.fr:/linkhome/rech/genlig01/umz16dj/fairspeech/
 
 scp -r -p -3 lethip@decore1:ms_data/bert_fr.tar.gz \
         umz16dj@jean-zay.idris.fr:/linkhome/rech/genlig01/umz16dj/Data/
-
-scp -r -p -3 lethip@decore1:/home/getalp/evains/MLS/mls_french \
-        umz16dj@jean-zay.idris.fr:/gpfsscratch/rech/ahm/umz16dj/Data/
-
-cp -rp $mff_CCFRWORK/Data $ahm_CCFRWORK/ 
-
-rsync -chavzP --stats \
-        /Users/hang/github/formiel/fairspeech/ \
-        umz16dj@jean-zay.idris.fr:/linkhome/rech/genlig01/umz16dj/code/fairspeech/
-rsync -chavzP --exclude="*.git*" \
-        /Users/hang/github/formiel/transformers_94b3f54 \
-        umz16dj@jean-zay.idris.fr:/linkhome/rech/genlig01/umz16dj/code/
-
-rsync -chavzP --stats \
-        umz16dj@jean-zay.idris.fr:/gpfsscratch/rech/ahm/umz16dj/Data/mTEDx/fr-en/data/train/wav_splits/If92mr3B_Og_0028.wav \
-        /Users/hang/Downloads/pantagruel/
         
 scp -r -p -3 \
         /Users/hang/Downloads/configuration_utils.py \

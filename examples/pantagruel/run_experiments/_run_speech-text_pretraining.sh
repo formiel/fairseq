@@ -27,8 +27,8 @@ MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 # CONFIG=base_text
 # CONFIG=base_speech_dummy_text_factor0.0
 # CONFIG=base_speech_dummy_text_factor0.01
-# CONFIG=base-speech-text-dfactor0.0
-CONFIG=base-speech-text-dfactor0.01
+CONFIG=base-speech-text-dfactor0.0
+# CONFIG=base-speech-text-dfactor0.01
 
 ## Data
 if [[ $PARTITION != "mi250" ]]; then
@@ -74,7 +74,7 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/hydra_train.py -m --config-dir ${CONFIG_DIR} --config-name $CONFIG common.user_dir=${USER_DIR} common.time_limit=${TIME_LIMIT} common.tensorboard_logdir=${TENSORBOARD_DIR} checkpoint.save_dir=${SAVE_DIR} task.audio.data=$AUDIO_DATA task.text.data=$TEXT_DATA distributed_training.distributed_world_size=${GPUs} distributed_training.distributed_port=${MASTER_PORT}"
 
 
-# # base_speech_gpu_p2_gpus16 (trained on gpu_p2 32GB, full data, duplicated, validation loss better than original configuration)
+# # base_speech_gpu_p2_gpus16 (trained on gpu_p2 32GB, full data, duplicated, validation loss better than original configuration, done)
 # # TODO: evaludated later to see if pre-trained validation loss is a good proxy for downstream performance
 # max tokens per device = 500000 and max sentences per device = 6
 # loaded 280531, skipped 710 samples
@@ -87,18 +87,18 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 # dataset Modality.TEXT batch number is 1615140 
 # job 0: 683028
 
-# # base_speech_dummy_text_factor0.0_gpu_p2_gpus16 (trained on gpu_p2 32GB, full data, to compare with audio-only training)
+# # base_speech_dummy_text_factor0.0_gpu_p2_gpus16 (trained on gpu_p2 32GB, full data, to compare with audio-only training, done)
 # job 0: 675609
 # job 1: 675610 (after 675609)
 
-# # base_speech_dummy_text_factor0.01_gpu_p2_gpus16 (trained on gpu_p2 32GB, full data, to compare with audio-only training)
+# # base_speech_dummy_text_factor0.01_gpu_p2_gpus16 (trained on gpu_p2 32GB, full data, to compare with audio-only training, done)
 # job 0: 675614
 # job 1: 675615 (after 675614)
 
-# base-speech-text-dfactor0.0_gpu_p5_gpus16 (trained on gpu_p5 80GB)
-job 0: 683562
-job 1: 683563 (after 683562)
+# # base-speech-text-dfactor0.0_gpu_p5_gpus16 (trained on gpu_p5 80GB)
+# job 0: 683562
+# job 1: 683563 (after 683562)
 
-# base-speech-text-dfactor0.01_gpu_p5_gpus16
-job 0: 683705
-job 1: 683706 (after 683705)
+# # base-speech-text-dfactor0.01_gpu_p5_gpus16
+# job 0: 683705
+# job 1: 683706 (after 683705)

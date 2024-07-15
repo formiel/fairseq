@@ -11,7 +11,7 @@ MODALITY=speech-text
 TASK=finetuning
 
 # PRETRAIN_CONFIG=base_speech_gpu_p2_gpus16
-PRETRAIN_CONFIG=base_speech_dummy_text_factor0.1_gpu_p2_gpus16
+PRETRAIN_CONFIG=base_speech_dummy_text_factor0.01_gpu_p2_gpus16
 
 EXPNAME=${CONFIG}_pt_${PRETRAIN_CONFIG}
 
@@ -29,6 +29,3 @@ job 0: 683602
 
 # base_10h_pt_base_speech_dummy_text_factor0.0_gpu_p2_gpus16
 job 0: 683727
-
-# base_10h_pt_base_speech_dummy_text_factor0.1_gpu_p2_gpus16
-job 0: 683950
