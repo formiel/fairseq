@@ -419,3 +419,29 @@ tok.save_pretrained(text_model_dir.as_posix())
 auto = AutoTokenizer.from_pretrained(text_model_dir.as_posix())
 encoded_text = auto(SAMPLE_TEXT)
 ```
+
+# Touch files
+CINES:
+cd $SRATCH
+cd /lus/scratch/CT10/lig3801/SHARED/
+
+JEAN ZAY
+cd $SCRATCH
+
+find . -type f -exec touch {} +
+
+# Copy data between spaces in Adastra
+tmux 0 login4
+```
+[c1615074] tphle@login4:~$ wdcp /lus/scratch/CT10/c1615074/tphle/Data $lig3801_STOREDIR/backup_data_15juil2024/
+/lus/scratch/CT10/c1615074/tphle/Data
+source path is /lus/scratch/CT10/c1615074/tphle/Data
+dest path is /lus/store/CT10/lig3801/tphle/backup_data_15juil2024/
+sbatch: INFO : As you didn't ask threads_per_core in your request: 2 was taken as default
+sbatch: INFO : As you didn't ask cpus_per_task in your request: 2 was taken as default
+Submitted batch job 1053097
+             JOBID PARTITION     NAME     USER ST       TIME  NODES NODELIST(REASON)
+           1048130     mi250 large_au    tphle PD       0:00      6 (Dependency)
+           1048129     mi250 large_au    tphle  R    4:14:56      6 g[1244,1247,1250-1252,1254]
+           1053097 transfert dcp_tran    tphle PD       0:00      1 (ReqNodeNotAvail, UnavailableNodes:login1)
+```

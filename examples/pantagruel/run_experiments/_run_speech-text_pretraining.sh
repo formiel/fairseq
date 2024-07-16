@@ -24,10 +24,12 @@ SUFFIX=
 MASTER_PORT=$(shuf -i 20000-30000 -n 1)
 
 # CONFIG=base_speech
+CONFIG=base-speech-replicate
+
 # CONFIG=base_text
 # CONFIG=base_speech_dummy_text_factor0.0
 # CONFIG=base_speech_dummy_text_factor0.01
-CONFIG=base-speech-text-dfactor0.0
+# CONFIG=base-speech-text-dfactor0.0
 # CONFIG=base-speech-text-dfactor0.01
 
 ## Data
@@ -81,6 +83,10 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 # dataset Modality.AUDIO batch number is 140455
 # job 0: 675602
 # job 1: 675603 (after 675602)
+
+# # base-speech-replicate_gpu_p5_gpus16
+job 0: 701792
+job 1: 701793 (after 701792)
 
 # # base_text_gpu_p2_gpus16 (trained on gpu_p2 32GB, full data, cancelled)
 # loaded 190,504,555 examples from: /gpfswork/rech/ahm/umz16dj/Data/Wikipedia/enwiki_20240201/data-bin/gpt2_bpe/train

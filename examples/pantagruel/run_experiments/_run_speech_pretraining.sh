@@ -126,12 +126,12 @@ TIME_LIMIT=1290
 PARTITION=mi250
 
 # submitted using 2 nodes
-GPUs=128
+GPUs=48
 # GPUs=64
-HOURS=22
+HOURS=24
 JOBS=3
-UPDATE=100000
-WARMUP=5000
+UPDATE=300000
+# WARMUP=5000
 
 MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=base_mls1k
@@ -145,14 +145,17 @@ MASTER_PORT=$(shuf -i 20000-40000 -n 1)
 # CONFIG=large_audio_only_lb14k_no_bin
 # CONFIG=large_audio_only_lb14k_no_bin_maxtok320k
 # CONFIG=large_audio_only_lb14k_no_bin_maxtok640k
-# CONFIG=large_audio_only_lb14k_no_bin_maxtok640k_wu5k
+CONFIG=large_audio_only_lb14k_no_bin_maxtok640k_wu5k
 # CONFIG=large_audio_only_lb14k_v4
-CONFIG=large_audio_only_lb14k_v5_seed2
+# CONFIG=large_audio_only_lb14k_v5_seed2
+
+# large_audio_only_lb14k_no_bin_maxtok640k_wu5k_maxupdate300000_mi250_gpus48
 
 # SUFFIX=_wu2k 
 SUFFIX= # ===== CHECK THIS =====
-EXPNAME="${CONFIG}_maxupdate${UPDATE}_wu${WARMUP}_${PARTITION}_gpus${GPUs}${SUFFIX}"
-# EXPNAME="${CONFIG}_${SUFFIX}"
+# EXPNAME="${CONFIG}_maxupdate${UPDATE}_wu${WARMUP}_${PARTITION}_gpus${GPUs}${SUFFIX}"
+EXPNAME="${CONFIG}_maxupdate${UPDATE}_${PARTITION}_gpus${GPUs}${SUFFIX}"
+
 # DATA_DIR=$WORK/Data/prepared/MLS_French
 # DATA_DIR=$SCRATCH/Data/LeBenchmark_prepared/data-bin
 DATA_DIR=$SCRATCH/Data/LeBenchmark_prepared/model_training
@@ -248,6 +251,9 @@ submit run ${PARTITION} ${GPUs} ${HOURS} ${JOBS} ${EXPNAME} "${FAIRSEQ}/fairseq_
 # job 0: 947544
 # job 0: 950391
 # job 0: 953201
+job 0: 1048128
+job 1: 1048129 (after 1048128)
+job 2: 1048130 (after 1048129)
 
 # large_audio_only_lb14k_v2_maxupdate300000_mi250_gpus128
 # job 0: 944378
