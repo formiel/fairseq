@@ -47,8 +47,6 @@ START_JOB_TIME = time()
 
 
 def main(cfg: FairseqConfig) -> None:
-    # record the starting time for time limit
-    start_time = time()
 
     if isinstance(cfg, argparse.Namespace):
         cfg = convert_namespace_to_omegaconf(cfg)
