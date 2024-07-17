@@ -15,9 +15,9 @@ MODALITY=speech-text
 FAIRSEQ=$HOME/code/fairspeech
 # USER_DIR=$FAIRSEQ/examples/data2vec
 USER_DIR=$FAIRSEQ/examples/pantagruel
-TIME_LIMIT=1180
-HOURS=20
-JOBS=2
+TIME_LIMIT=580
+HOURS=10
+JOBS=1
 GPUs=16
 SUFFIX=
 
@@ -87,6 +87,7 @@ submit run ${PARTITION} $GPUs ${HOURS} ${JOBS} $EXPNAME "${FAIRSEQ}/fairseq_cli/
 # # base-speech-replicate_gpu_p5_gpus16
 job 0: 701792
 job 1: 701793 (after 701792)
+job 0: 743882
 
 # # base_text_gpu_p2_gpus16 (trained on gpu_p2 32GB, full data, cancelled)
 # loaded 190,504,555 examples from: /gpfswork/rech/ahm/umz16dj/Data/Wikipedia/enwiki_20240201/data-bin/gpt2_bpe/train
