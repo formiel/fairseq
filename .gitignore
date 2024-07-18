@@ -144,4 +144,6 @@ outputs
 _configs*/*
 _models/*
 _tools*/*
-examples/pantagruel/_*/*
+
+# experiments and notes
+*/*/_*
