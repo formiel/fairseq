@@ -144,3 +144,4 @@ outputs
 _configs*/*
 _models/*
 _tools*/*
+examples/pantagruel/_*/*

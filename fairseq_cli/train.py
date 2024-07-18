@@ -361,8 +361,8 @@ def train(
     logger.info("Start iterating over samples")
     epoch_time_queue = deque(maxlen=3)
     reach_time_limit = False
-    start_timing_epoch = True
-    start_epoch_time = time()
+    start_timing_epoch = True if cfg.checkpoint.save_interval_updates != 0 else False
+    start_epoch_time = time() if start_timing_epoch else None
 
     for i, samples in enumerate(progress):
         # Reset the start time
@@ -390,7 +390,7 @@ def train(
         valid_losses, should_stop = validate_and_save(
             cfg, trainer, task, epoch_itr, valid_subsets, end_of_epoch
         )
-        if valid_losses[0] is not None and num_updates % cfg.checkpoint.save_interval_updates == 0:
+        if valid_losses[0] is not None and cfg.checkpoint.save_interval_updates != 0 and num_updates % cfg.checkpoint.save_interval_updates == 0:
             reach_time_limit, _epoch_time_queue = get_time_queue_and_check_time_limit(
                     cfg, start_epoch_time=start_epoch_time,
                     epoch_time_queue=epoch_time_queue,

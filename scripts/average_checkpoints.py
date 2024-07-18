@@ -55,6 +55,8 @@ def average_checkpoints(inputs):
 
         for k in params_keys:
             p = model_params[k]
+            if "ema" in k:
+                continue
             if isinstance(p, torch.HalfTensor):
                 p = p.float()
             elif isinstance(p, torch.Tensor):
