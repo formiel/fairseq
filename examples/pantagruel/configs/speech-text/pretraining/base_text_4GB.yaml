@@ -75,8 +75,8 @@ criterion:
 
 optimization:
   clip_norm: 1
-  max_update: 200000
-  lr: [0.0001]
+  max_update: 250000
+  lr: [0.0002]
   debug_param_names: true
   # max_update: 1000000
   update_freq: [1]
@@ -89,36 +89,38 @@ optimizer:
 
 lr_scheduler:
   _name: cosine
-  warmup_updates: 5000
-  warmup_init_lr: 1e-7
-  lr_shrink: 1
-  min_lr: 1e-9
+  warmup_updates: 1000
+  # warmup_init_lr: 1e-7
+  # lr_shrink: 1
+  # min_lr: 1e-9
   # lr_period_updates: 24000
 
 model:
   _name: pantagruel_multi
 
   loss_beta: 0
-  loss_scale: null
+  loss_scale: 1
 
   depth: 12
   embed_dim: 768
   clone_batch: 8
 
-  ema_decay: 0.999
+  ema_decay: 0.9999
   ema_end_decay: 0.99999
-  ema_anneal_end_step: 75000
+  ema_anneal_end_step: 25000
   ema_encoder_only: false # speech: false, text: true
 
-  average_top_k_layers: 8
+  average_top_k_layers: 12
   instance_norm_target_layer: true
   layer_norm_target_layer: false
   layer_norm_targets: false
+  batch_norm_target_layer: false
+  instance_norm_targets: false
 
   layerdrop: 0.0
   norm_eps: 1e-5
 
-  use_token_type_embeddings: false
+  # use_token_type_embeddings: false
 
   # shared_decoder:
   #   input_dropout: 0.1
@@ -130,7 +132,7 @@ model:
   #   projection_layers: 2
   #   projection_ratio: 2.0
 
-  supported_modality: 'AUDIO'
+  supported_modality: 'TEXT'
 
   modalities:
     # audio:
