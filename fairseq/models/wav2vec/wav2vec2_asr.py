@@ -469,7 +469,10 @@ class Wav2VecEncoder(FairseqEncoder):
                 w2v_args.task.data = cfg.data
             task = tasks.setup_task(w2v_args.task, from_checkpoint=True)
             if self.is_pantagruel_multi:
+                from examples.data2vec.data.modality import Modality
                 w2v_args.model.skip_mode = None
+                w2v_args.task.text = None
+                w2v_args.model.supported_modality = "AUDIO"
 
             model = task.build_model(w2v_args.model, from_checkpoint=True)
 

@@ -395,12 +395,17 @@ class PantagruelMultiModel(BaseFairseqModel):
                 ]
             )
         else:
-            modalities = task.supported_modalities
+            modalities = (task.supported_modalities 
+                if cfg.supported_modality is None
+                else [cfg.supported_modality]
+            )
         if cfg.skip_mode is not None:
             if "TEXT" in cfg.skip_mode:
                 modalities.append(Modality.TEXT)
             if "AUDIO" in cfg.skip_mode:
-                modalities.append(Modality.AUDIO)
+                modalities.append(Modality.AUDIO)       
+        logger.info(f"modalities::: {modalities}")
+
         return cls(cfg, modalities, task=task, skip_ema=cfg.skip_ema)
         
     def forward(
