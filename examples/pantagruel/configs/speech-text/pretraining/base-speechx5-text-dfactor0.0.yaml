@@ -14,7 +14,7 @@ common:
 
 checkpoint:
   # save_interval: 1
-  save_interval_updates: 2000
+  save_interval_updates: 5000
   # keep_interval_updates: 1
   # no_epoch_checkpoints: true
   keep_best_checkpoints: 10
@@ -24,7 +24,7 @@ checkpoint:
 
 task:
   _name: pantagruel_multimodal_pretraining
-  audio_ratio: 1
+  audio_ratio: 5
   text_ratio: 1
   # update_freq: [4]
   # vocab_path: /gpfswork/rech/ahm/umz16dj/pretrained/tokenizers/gpt2_bpe/dict.txt
@@ -47,7 +47,7 @@ task:
   
 dataset:
   num_workers: 1
-  max_tokens: 500000
+  max_tokens: 1000000
   # batch_size: 16
   batch_size: 6
   # ignore_unused_valid_subsets: true
@@ -76,8 +76,8 @@ criterion:
 
 optimization:
   clip_norm: 1
-  max_update: 200000
-  lr: [0.0001]
+  max_update: 1000000
+  lr: [0.00075]
   debug_param_names: true
   # max_update: 1000000
   update_freq: [1]
