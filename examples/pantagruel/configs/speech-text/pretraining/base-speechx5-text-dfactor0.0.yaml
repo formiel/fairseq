@@ -47,7 +47,7 @@ task:
   
 dataset:
   num_workers: 1
-  max_tokens: 1000000
+  max_tokens: 500000
   # batch_size: 16
   batch_size: 6
   # ignore_unused_valid_subsets: true
