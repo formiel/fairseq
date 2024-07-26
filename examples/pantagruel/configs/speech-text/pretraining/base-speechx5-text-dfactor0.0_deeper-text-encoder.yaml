@@ -167,7 +167,18 @@ model:
       mask_length: 1
       mask_noise_std: 0.01
       prenet_depth: 0
-      # local_grad_mult: 1.0
+      local_grad_mult: 1.0
+      ema_local_encoder: false
+      use_alibi_encoder: true
+      prenet_layerdrop: 0.15
+      prenet_dropout: 0.2
+      conv_pos_depth: 5
+      conv_pos_width: 95
+      conv_pos_groups: 16
+      learned_alibi_scale: true
+      learned_alibi_scale_per_head: true
+      use_project_features: true
+      use_relative_positional_encoder: true
       decoder:
         input_dropout: 0.1
         decoder_dim: 768

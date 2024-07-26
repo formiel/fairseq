@@ -26,8 +26,8 @@ from examples.data2vec.data.modality import Modality
 
 from examples.data2vec.models.modalities.base import (
     MaskSeed,
-    D2vModalityConfig,
     get_annealed_rate,
+    D2vModalityConfig,
 )
 from examples.pantagruel.models.modalities.base_type import (
     PantagruelModalitySpecificEncoder
@@ -48,19 +48,130 @@ from examples.data2vec.models.modalities.images import (
     D2vImageConfig,
     ImageEncoder,
 )
-from examples.data2vec.models.modalities.text import (
-    D2vTextConfig,
-)
 from examples.pantagruel.models.modalities.text_type import (
     TextTypeEncoder,
-)
-from examples.data2vec.models.data2vec2 import (
-    D2vModalitiesConfig,
-    Data2VecMultiConfig,
-    Data2VecMultiModel,
+    PantagruelD2vTextConfig,
 )
 
+
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class PantagruelD2vModalitiesConfig(FairseqDataclass):
+    audio: D2vAudioConfig = D2vAudioConfig()
+    image: D2vImageConfig = D2vImageConfig()
+    text: PantagruelD2vTextConfig = PantagruelD2vTextConfig()
+
+
+@dataclass
+class PantagruelData2VecMultiConfig(FairseqDataclass):
+
+    loss_beta: float = field(
+        default=0, metadata={"help": "beta for smooth l1 loss. 0 means use l2 loss"}
+    )
+    loss_scale: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": "scale the reconstruction loss by this constant. if None then scales by 1/sqrt(dim)"
+        },
+    )
+
+    depth: int = 8
+    start_drop_path_rate: float = 0
+    end_drop_path_rate: float = 0
+    num_heads: int = 12
+    norm_eps: float = 1e-6
+    norm_affine: bool = True
+    encoder_dropout: float = 0.1
+    post_mlp_drop: float = 0.1
+    attention_dropout: float = 0.1
+    activation_dropout: float = 0.0
+    dropout_input: float = 0.0
+    layerdrop: float = 0.0
+    embed_dim: int = 768
+    mlp_ratio: float = 4
+    layer_norm_first: bool = False
+
+    average_top_k_layers: int = field(
+        default=8, metadata={"help": "how many layers to average"}
+    )
+
+    end_of_block_targets: bool = False
+
+    clone_batch: int = 1
+
+    layer_norm_target_layer: bool = False
+    batch_norm_target_layer: bool = False
+    instance_norm_target_layer: bool = False
+    instance_norm_targets: bool = False
+    layer_norm_targets: bool = False
+
+    ema_decay: float = field(default=0.999, metadata={"help": "initial ema decay rate"})
+    ema_same_dtype: bool = True
+    log_norms: bool = True
+    ema_end_decay: float = field(
+        default=0.9999, metadata={"help": "final ema decay rate"}
+    )
+
+    # when to finish annealing ema decay rate
+    ema_anneal_end_step: int = II("optimization.max_update")
+
+    ema_encoder_only: bool = field(
+        default=True,
+        metadata={
+            "help": "whether to momentum update only the shared transformer encoder"
+        },
+    )
+
+    max_update: int = II("optimization.max_update")
+
+    modalities: PantagruelD2vModalitiesConfig = PantagruelD2vModalitiesConfig()
+
+    shared_decoder: Optional[D2vDecoderConfig] = None
+
+    min_target_var: float = field(
+        default=0.1, metadata={"help": "stop training if target var falls below this"}
+    )
+    min_pred_var: float = field(
+        default=0.01,
+        metadata={"help": "stop training if prediction var falls below this"},
+    )
+
+    supported_modality: Optional[Modality] = None
+    mae_init: bool = False
+
+    seed: int = II("common.seed")
+
+    skip_ema: bool = False
+
+    cls_loss: float = 0
+    recon_loss: float = 0
+    d2v_loss: float = 1
+
+    decoder_group: bool = False
+
+    use_token_type_embeddings: bool = False
+    adversarial_loss: float = field(
+        default=0.0,
+        metadata={"help": "Adversarial weight in loss function"},
+    )
+    num_discriminator_layers: int = field(
+        default=-1,
+        metadata={"help": "number of discriminator layers"},
+    )
+    num_discriminator_steps: int = field(
+        default=-1,
+        metadata={"help": "number of discriminator steps"},
+    )
+    dummy_factor: float = 0.0
+    skip_mode: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "skip_mode"
+        },
+    )
+
 
 
 class LinearDiscriminator(nn.Module):
@@ -100,32 +211,8 @@ class LinearDiscriminator(nn.Module):
         return self.layers(input)
 
 
-@dataclass
-class PantagruelMultiConfig(Data2VecMultiConfig):
 
-    use_token_type_embeddings: bool = False
-    adversarial_loss: float = field(
-        default=0.0,
-        metadata={"help": "Adversarial weight in loss function"},
-    )
-    num_discriminator_layers: int = field(
-        default=-1,
-        metadata={"help": "number of discriminator layers"},
-    )
-    num_discriminator_steps: int = field(
-        default=-1,
-        metadata={"help": "number of discriminator steps"},
-    )
-    dummy_factor: float = 0.0
-    skip_mode: Optional[str] = field(
-        default=None,
-        metadata={
-            "help": "skip_mode"
-        },
-    )
-
-
-@register_model("pantagruel_multi", dataclass=PantagruelMultiConfig)
+@register_model("pantagruel_multi", dataclass=PantagruelData2VecMultiConfig)
 class PantagruelMultiModel(BaseFairseqModel):
     def make_modality_type_encoder(
         self,
@@ -160,7 +247,7 @@ class PantagruelMultiModel(BaseFairseqModel):
             token_type_embeddings,
         )
 
-    def __init__(self, cfg: PantagruelMultiConfig, modalities, skip_ema=False, task=None):
+    def __init__(self, cfg: PantagruelData2VecMultiConfig, modalities, skip_ema=False, task=None):
         super().__init__()
 
         self.cfg = cfg
@@ -381,7 +468,7 @@ class PantagruelMultiModel(BaseFairseqModel):
         return super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     @classmethod
-    def build_model(cls, cfg: PantagruelMultiConfig, task=None):
+    def build_model(cls, cfg: PantagruelData2VecMultiConfig, task=None):
         logging.info(f"build_model::task: {task}")
         """Build a new model instance."""
         if task is None or not hasattr(task, "supported_modalities"):
