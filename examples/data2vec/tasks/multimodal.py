@@ -99,12 +99,12 @@ class MultimodalPretrainingTask(FairseqTask):
     @property
     def supported_modalities(self):
         modalities = []
-        if self.cfg.text is not None:
-            modalities.append(Modality.TEXT)
         if self.cfg.audio is not None:
             modalities.append(Modality.AUDIO)
         if self.cfg.image is not None:
             modalities.append(Modality.IMAGE)
+        if self.cfg.text is not None:
+            modalities.append(Modality.TEXT)
 
         return modalities
 
