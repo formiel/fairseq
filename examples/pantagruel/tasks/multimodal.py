@@ -9,8 +9,7 @@ import sys
 import logging
 
 from dataclasses import dataclass
-from typing import Optional, List
-from omegaconf import II
+from typing import Optional
 
 from fairseq.data import Dictionary
 from fairseq.data.iterators import GroupedEpochBatchIterator

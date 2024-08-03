@@ -3,29 +3,18 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-from functools import partial
+from typing import Callable, Dict, Optional
+
 import torch
 import torch.nn as nn
-import numpy as np
-from dataclasses import dataclass, field
-from typing import Callable, Dict, Optional
-from fairseq.models.wav2vec import ConvFeatureExtractionModel
-from fairseq.modules import (
-    LayerNorm,
-    SamePad,
-    TransposeLast,
-)
+
 from fairseq.tasks import FairseqTask
-from .base_type import D2vModalityConfig, PantagruelModalitySpecificEncoder
-from examples.data2vec.models.modalities.base import (
-    get_alibi_bias,
-)
-from examples.data2vec.models.modalities.modules import BlockEncoder, Decoder1d
+from .base_type import PantagruelModalitySpecificEncoder
+
 from examples.data2vec.models.modalities.audio import (
     D2vAudioConfig,
     AudioEncoder,
 )
-from examples.data2vec.data.modality import Modality
 
 
 class AudioTypeEncoder(PantagruelModalitySpecificEncoder):

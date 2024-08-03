@@ -5,33 +5,24 @@
 
 import logging
 from dataclasses import dataclass, field
-from functools import partial
 from typing import Callable, Dict, Optional
 
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
+
 from fairseq.modules import (
-    PositionalEmbedding,
-    FairseqDropout,
     LayerNorm,
     SamePad,
     TransposeLast,
 )
 from fairseq.tasks import FairseqTask
 from .base_type import D2vModalityConfig, PantagruelModalitySpecificEncoder
-from examples.data2vec.models.modalities.base import (
-    get_alibi_bias,
-)
+
 from examples.data2vec.models.modalities.text import (
-    D2vTextConfig,
     TextEncoder,
 )
-from examples.data2vec.models.modalities.modules import BlockEncoder, Decoder1d
 from examples.data2vec.data.modality import Modality
-from examples.data2vec.models.modalities.text import (
-    D2vTextConfig,
-)
+
 
 @dataclass
 class PantagruelD2vTextConfig(D2vModalityConfig):
@@ -71,7 +62,6 @@ class TextTypeEncoder(PantagruelModalitySpecificEncoder):
         task: Optional[FairseqTask],
         token_type_embeddings: Optional[nn.Module],
     ):
-        logging.info(f"TextEncoder::task: {task}")
         text_encoder = TextEncoder(
             modality_cfg=modality_cfg,
             embed_dim=embed_dim,

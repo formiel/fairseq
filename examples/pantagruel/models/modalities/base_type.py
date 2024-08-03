@@ -4,24 +4,13 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-import math
-import numpy as np
+
 import torch
-from torch import Tensor
 import torch.nn as nn
-import torch.nn.functional as F
-from collections import namedtuple
-from dataclasses import dataclass
-from functools import partial
-from omegaconf import MISSING, II
+
 from typing import Optional, Callable
-from fairseq.data.data_utils import compute_mask_indices
-from fairseq.modules import GradMultiply
-from fairseq.utils import index_put
-from examples.data2vec.data.modality import Modality
-from examples.data2vec.models.modalities.modules import D2vDecoderConfig
+
 from examples.data2vec.models.modalities.base import (
-    MaskSeed, MaskInfo,
     D2vModalityConfig,
     ModalitySpecificEncoder,
 )

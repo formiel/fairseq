@@ -173,7 +173,6 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
     )
 
 
-
 class LinearDiscriminator(nn.Module):
     """Adapted from https://github.com/facebookresearch/UnsupervisedMT/blob/main/NMT/src/model/discriminator.py
     """
@@ -299,6 +298,7 @@ class PantagruelMultiModel(BaseFairseqModel):
             )
             self.modality_encoders[mod.name] = enc
 
+        # discriminator
         self.discriminator = None
         self.adversarial_loss = getattr(cfg, "adversarial_loss", 0.0)
         self.num_discriminator_steps = getattr(cfg, "num_discriminator_steps", -1)
