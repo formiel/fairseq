@@ -255,12 +255,12 @@ def resolve_path_from_json(
 
     return utterances
 
-
+# adapted from examples.speech_to_text.data_utils
 def create_zip(
     data: Union[Path, dict], 
     zip_prefix: Path, 
     extensions="wav,flac,npy",
-    max_num_files=None,
+    max_num_files=500000,
 ):
     """
     [OLD code without multiprocessing]
@@ -323,6 +323,7 @@ def include_accented_char(word):
             return True
     return False
 
+# adapted from examples.speech_to_text.data_utils
 def get_zip_manifest(
         zip_path: Path, zip_root: Optional[Path] = None, is_audio=False
 ):

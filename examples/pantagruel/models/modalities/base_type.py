@@ -47,11 +47,10 @@ class PantagruelModalitySpecificEncoder(ModalitySpecificEncoder):
         precomputed_mask=None,
         token_type_ids=None,
     ):
-        x = self.local_features(features)
-        # logger.info(f'x: {x.size()}, norm: {torch.linalg.matrix_norm(x)}')
+        x = self.local_features(features) # B x L x D
         if self.token_type_embeddings is not None:
-            # logger.info(f'token_type_ids: {token_type_ids} size {self.token_type_embeddings(token_type_ids).size()}')
-            x += self.token_type_embeddings(token_type_ids).unsqueeze(1)
+            # self.token_type_embeddings(token_type_ids): 1 x D
+            x += self.token_type_embeddings(token_type_ids)
         return self.contextualized_features(
             x,
             padding_mask,

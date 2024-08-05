@@ -234,7 +234,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                 task = task.text_task
         else:
             raise Exception(f"unsupported modality {cfg.type}")
-        logging.info(f"make_modality::task:{task}")
+
         return enc_cls(
             cfg,
             embed_dim,
@@ -280,7 +280,7 @@ class PantagruelMultiModel(BaseFairseqModel):
         token_type_embeddings = None
         if cfg.use_token_type_embeddings:
             token_type_embeddings = nn.Embedding(len(self.modalities), cfg.embed_dim)
-            nn.init.xavier_normal_(token_type_embeddings.weight)
+            nn.init.kaiming_normal_(token_type_embeddings.weight)
 
         self.alibi_biases = {}
         self.modality_encoders = nn.ModuleDict()
@@ -486,12 +486,17 @@ class PantagruelMultiModel(BaseFairseqModel):
                 if cfg.supported_modality is None
                 else [cfg.supported_modality]
             )
+        
+        # random training for the modalities provided in skip_mode for debugging
         if cfg.skip_mode is not None:
+            if "AUDIO" in cfg.skip_mode:
+                modalities.append(Modality.AUDIO)
+            if "IMAGE" in cfg.skip_mode:
+                modalities.append(Modality.IMAGE)
             if "TEXT" in cfg.skip_mode:
                 modalities.append(Modality.TEXT)
-            if "AUDIO" in cfg.skip_mode:
-                modalities.append(Modality.AUDIO)       
-        logger.info(f"modalities::: {modalities}")
+
+        logger.info(f"modalities supported by model: {modalities}")
 
         return cls(cfg, modalities, task=task, skip_ema=cfg.skip_ema)
         
@@ -523,9 +528,9 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         for it, im in enumerate(self.modalities):
             if im.name == mode:
-                token_type_ids = torch.ones((source.size()[0]), dtype=torch.int64, device=source.device) * it
+                token_type_ids = torch.ones((1), dtype=torch.int64, device=source.device) * it
             else:
-                remaining_token_type_ids[im.name] = torch.ones((source.size()[0]), dtype=torch.int64, device=source.device) * it
+                remaining_token_type_ids[im.name] = torch.ones((1), dtype=torch.int64, device=source.device) * it
 
         mask_seeds = None
         if id is not None:
