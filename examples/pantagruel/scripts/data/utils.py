@@ -261,6 +261,7 @@ def create_zip(
     zip_prefix: Path, 
     extensions="wav,flac,npy",
     max_num_files=500000,
+    numbering=True,
 ):
     """
     [OLD code without multiprocessing]
@@ -287,7 +288,7 @@ def create_zip(
         num_zip_files = math.ceil(len(paths) / max_num_files)
 
     for i in range(num_zip_files):
-        zip_file_i = f"{zip_prefix.as_posix()}_{i}.zip"
+        zip_file_i = f"{zip_prefix.as_posix()}_{i}.zip" if (num_zip_files > 1 or numbering) else f"{zip_prefix.as_posix()}.zip"
         with zipfile.ZipFile(zip_file_i, "w", zipfile.ZIP_STORED) as f:
             for path in tqdm(paths[i*max_num_files : (i+1)*max_num_files]):
                 f.write(path, arcname=path.name)
