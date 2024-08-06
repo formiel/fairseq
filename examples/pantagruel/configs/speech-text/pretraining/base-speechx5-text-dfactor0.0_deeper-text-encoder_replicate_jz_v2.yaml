@@ -49,7 +49,7 @@ dataset:
   num_workers: 1
   max_tokens: 500000
   # batch_size: 16
-  batch_size: 6
+  batch_size: 3
   # ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
   # validate_interval: 1
@@ -76,10 +76,10 @@ criterion:
 
 optimization:
   clip_norm: 1
-  max_update: 150000
-  lr: [0.00075]
+  max_update: 2000000
+  lr: [0.0005]
   debug_param_names: true
-  update_freq: [1]
+  update_freq: [2]
 
 optimizer:
   _name: adam
@@ -89,7 +89,7 @@ optimizer:
 
 lr_scheduler:
   _name: cosine
-  warmup_updates: 5000
+  warmup_updates: 10000
   warmup_init_lr: 1e-7
   lr_shrink: 1
   min_lr: 1e-9
@@ -154,7 +154,7 @@ model:
       prenet_dropout: 0.1
       learned_alibi_scale: true
       learned_alibi_scale_per_head: true
-      local_grad_mult: 1.5
+      local_grad_mult: 1.0
       decoder:
         input_dropout: 0.1
         decoder_dim: 384
