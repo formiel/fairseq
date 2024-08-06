@@ -18,7 +18,6 @@ from torchaudio.datasets import LIBRISPEECH
 
 from tqdm import tqdm
 
-from fairseq.data.audio.audio_utils import convert_waveform
 from utils import (
     create_zip,
     get_zip_manifest,
