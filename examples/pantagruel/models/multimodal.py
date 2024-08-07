@@ -521,7 +521,8 @@ class PantagruelMultiModel(BaseFairseqModel):
             mode = mode.name
 
         feature_extractor = self.modality_encoders[mode]
-        remaining_extractor_names = [m.name for m in self.modalities if m.name != mode]
+        remaining_extractor_names = [m.name for m in self.modalities if m.name != mode 
+                                     and m.name in self.modality_encoders.keys()]
         
         token_type_ids = None
         remaining_token_type_ids = {}
