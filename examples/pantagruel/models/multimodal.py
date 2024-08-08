@@ -52,6 +52,7 @@ from examples.pantagruel.models.modalities.text_type import (
     TextTypeEncoder,
     PantagruelD2vTextConfig,
 )
+from .modules import AltBlockWithModalityExpert
 
 
 logger = logging.getLogger(__name__)
@@ -171,6 +172,7 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
             "help": "skip_mode"
         },
     )
+    use_modality_experts_at_ffn: bool = False
 
 
 class LinearDiscriminator(nn.Module):
@@ -256,13 +258,14 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         self.dummy_factor = getattr(cfg, "dummy_factor", 0.0)
         self.skip_mode = getattr(cfg, "skip_mode", None)
+        self.use_modality_experts_at_ffn = getattr(cfg, "use_modality_experts_at_ffn", False)
 
         make_layer_norm = partial(
             nn.LayerNorm, eps=cfg.norm_eps, elementwise_affine=cfg.norm_affine
         )
 
         def make_block(drop_path, dim=None, heads=None):
-            return AltBlock(
+            return AltBlockWithModalityExpert(
                 cfg.embed_dim if dim is None else dim,
                 cfg.num_heads if heads is None else heads,
                 cfg.mlp_ratio,
@@ -275,6 +278,8 @@ class PantagruelMultiModel(BaseFairseqModel):
                 norm_layer=make_layer_norm,
                 layer_norm_first=cfg.layer_norm_first,
                 ffn_targets=not cfg.end_of_block_targets,
+                modalities=self.modalities if self.use_modality_experts_at_ffn else None,
+                dummy_factor=self.dummy_factor,
             )
 
         token_type_embeddings = None
@@ -605,6 +610,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                     x,
                     padding_mask=masked_padding_mask,
                     alibi_bias=ab,
+                    mode=mode if self.use_modality_experts_at_ffn else None, 
                 )
                 if features_only:
                     layer_results.append(lr)
@@ -745,6 +751,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                     ema_input,
                     padding_mask=ema_padding_mask,
                     alibi_bias=ab,
+                    mode=mode if self.use_modality_experts_at_ffn else None,
                 )
                 y.append(lr[:, extra_tokens:])
                 ema_x.append(ema_input[:, extra_tokens:])
