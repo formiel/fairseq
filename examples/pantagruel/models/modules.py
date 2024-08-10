@@ -41,6 +41,7 @@ class AltBlockWithModalityExpert(AltBlock):
         cosine_attention=False,
         modalities=None,
         dummy_factor=0.0,
+        modality_expert_rank=0,
 
     ):
         super().__init__(dim, num_heads, mlp_ratio, qkv_bias, qk_scale, drop, attn_drop, mlp_drop, post_mlp_drop, drop_path, act_layer, norm_layer, layer_norm_first, ffn_targets, cosine_attention)
@@ -50,9 +51,10 @@ class AltBlockWithModalityExpert(AltBlock):
         self.modalities = modalities
         self.modality_experts = None
         if self.modalities is not None:
+            assert modality_expert_rank > 0
             self.modality_experts = nn.ModuleDict()
             for mod in self.modalities:
-                self.modality_experts[mod.name] = ModalityExpert(dim, dim, dim//2)
+                self.modality_experts[mod.name] = ModalityExpert(dim, dim, modality_expert_rank)
     
     def forward(self, x, padding_mask=None, alibi_bias=None, mode=None):
         if self.modality_experts is None:

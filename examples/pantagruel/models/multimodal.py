@@ -173,6 +173,7 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
         },
     )
     use_modality_experts_at_ffn: bool = False
+    modality_expert_rank: int = 0
 
 
 class LinearDiscriminator(nn.Module):
@@ -280,6 +281,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                 ffn_targets=not cfg.end_of_block_targets,
                 modalities=self.modalities if self.use_modality_experts_at_ffn else None,
                 dummy_factor=self.dummy_factor,
+                modality_expert_rank=getattr(cfg, "modality_expert_rank", 0),
             )
 
         token_type_embeddings = None
