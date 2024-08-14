@@ -80,7 +80,7 @@ optimization:
   lr: [0.0005]
   debug_param_names: true
   # max_update: 1000000
-  update_freq: [1]
+  update_freq: [2]
 
 optimizer:
   _name: adam
