@@ -47,9 +47,9 @@ task:
   
 dataset:
   num_workers: 1
-  max_tokens: 500000
+  max_tokens: 1000000
   # batch_size: 16
-  batch_size: 3
+  batch_size: 6
   # ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
   # validate_interval: 1
@@ -79,6 +79,7 @@ optimization:
   max_update: 1000000
   lr: [0.0005]
   debug_param_names: true
+  # max_update: 1000000
   update_freq: [4]
 
 optimizer:
@@ -99,6 +100,8 @@ model:
   _name: pantagruel_multi
   # skip_mode: 'TEXT'
   dummy_factor: 0.0
+  use_modality_experts_at_ffn: true
+  modality_expert_rank: 2
 
   loss_beta: 0
   loss_scale: null
