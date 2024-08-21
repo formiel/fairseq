@@ -101,7 +101,7 @@ model:
   # skip_mode: 'TEXT'
   dummy_factor: 0.0
   use_modality_experts_at_ffn: true
-  modality_expert_rank: 2
+  modality_expert_rank: 16
 
   loss_beta: 0
   loss_scale: null

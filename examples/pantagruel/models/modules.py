@@ -13,12 +13,21 @@ class ModalityExpert(nn.Module):
     def __init__(self, in_dim, out_dim, rank, alpha=1.0):
         super().__init__()
         std_dev = 1 / torch.sqrt(torch.tensor(rank).float())
-        self.A = torch.nn.Parameter(torch.randn(in_dim, rank) * std_dev)
-        self.B = torch.nn.Parameter(torch.zeros(rank, out_dim))
+        # self.A = nn.Parameter(torch.randn(in_dim, rank) * std_dev)
+        # self.B = nn.Parameter(torch.zeros(rank, out_dim))
+        self.A = nn.Linear(in_features=in_dim,
+                                 out_features=rank,
+                                 bias=False)
+        self.A.weight.data.normal_(mean=0.0, std=std_dev)
+        self.B = nn.Linear(in_features=rank,
+                                 out_features=out_dim,
+                                 bias=False)
+        self.B.weight.data.fill_(0.0)
         self.alpha = alpha
 
     def forward(self, x):
-        x = self.alpha * (x @ self.A @ self.B)
+        # x = self.alpha * (x @ self.A @ self.B)
+        x = self.alpha * self.B(self.A(x))
         return x
     
 
