@@ -1,13 +1,9 @@
-
 import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
+from timm.models.vision_transformer import DropPath, Mlp
 
-from examples.data2vec.models.modalities.modules import (
-    AltBlock,
-)
 
 class ModalityExpert(nn.Module):
     def __init__(self, in_dim, out_dim, rank, alpha=1.0):
@@ -31,7 +27,7 @@ class ModalityExpert(nn.Module):
         return x
     
 
-class AltBlockWithModalityExpert(AltBlock):
+class AltBlockWithModalityExpert(nn.Module):
     def __init__(
         self, dim,
         num_heads,
@@ -48,53 +44,232 @@ class AltBlockWithModalityExpert(AltBlock):
         layer_norm_first=True,
         ffn_targets=False,
         cosine_attention=False,
+        dummy_factor=0.0,
+        modality_expert_rank=0,
+        modality_experts_at_ffn=None,
+        modality_experts_at_mha=None,
+    ):
+        super().__init__()
+
+        self.layer_norm_first = layer_norm_first
+        self.ffn_targets = ffn_targets
+
+        self.norm1 = norm_layer(dim)
+
+        self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
+        self.norm2 = norm_layer(dim)
+        mlp_hidden_dim = int(dim * mlp_ratio)
+        self.mlp = Mlp(
+            in_features=dim,
+            hidden_features=mlp_hidden_dim,
+            act_layer=act_layer,
+            drop=mlp_drop,
+        )
+        self.post_mlp_dropout = nn.Dropout(post_mlp_drop, inplace=False)
+
+        # Modality-specific modules
+        self.modality_experts_at_ffn = modality_experts_at_ffn
+        self.modality_experts_at_mha = modality_experts_at_mha
+        if modality_experts_at_ffn is not None or modality_experts_at_mha is not None:
+            assert modality_expert_rank > 0
+
+        self.dummy_factor = dummy_factor
+        self.modality_experts = None
+        if self.modality_experts_at_ffn is not None:
+            self.modality_experts = nn.ModuleDict()
+            for mod in self.modality_experts_at_ffn:
+                self.modality_experts[mod.name] = ModalityExpert(dim, dim, modality_expert_rank)
+
+        self.attn = AltAttentionWithExperts(
+            dim,
+            num_heads=num_heads,
+            qkv_bias=qkv_bias,
+            qk_scale=qk_scale,
+            attn_drop=attn_drop,
+            proj_drop=drop,
+            cosine_attention=cosine_attention,
+            modalities=modality_experts_at_mha,
+            dummy_factor=dummy_factor,
+            modality_expert_rank=modality_expert_rank,
+        )
+    
+    def forward(self, x, padding_mask=None, alibi_bias=None, mode=None):
+
+        if self.modality_experts is not None:
+            remaining_experts = [
+                m.name for m in self.modality_experts_at_ffn if (
+                    m.name != mode and m.name in self.modality_experts.keys()
+                )
+            ]
+
+        if self.layer_norm_first:
+            x = x + self.drop_path(
+                self.attn(
+                    self.norm1(x), padding_mask, alibi_bias, mode=(
+                        mode if self.modality_experts_at_mha is not None else None)
+                )
+            )
+            x_modality = x = self.norm2(x)
+            r = x = self.mlp(x)
+            if self.modality_experts is not None:
+                x += self.modality_experts[mode](x_modality)
+                for name in remaining_experts:
+                    x += self.dummy_factor * self.modality_experts[name](x_modality)
+            t = x
+            x = r + self.drop_path(self.post_mlp_dropout(x))
+            if not self.ffn_targets:
+                t = x
+        else:
+            x = x + self.drop_path(
+                self.attn(x, padding_mask, alibi_bias, mode=(
+                    mode if self.modality_experts_at_mha is not None else None)
+                    )
+            )
+            r = x = self.norm1(x)
+            x_modality = x
+            x = self.mlp(x)
+            if self.modality_experts is not None:
+                x += self.modality_experts[mode](x_modality)
+                for name in remaining_experts:
+                    x += self.dummy_factor * self.modality_experts[name](x_modality)
+            t = x
+            x = self.norm2(r + self.drop_path(self.post_mlp_dropout(x)))
+            if not self.ffn_targets:
+                t = x
+
+        return x, t
+        
+
+class AltAttentionWithExperts(nn.Module):
+    def __init__(
+        self,
+        dim,
+        num_heads=8,
+        qkv_bias=False,
+        qk_scale=None,
+        attn_drop=0.0,
+        proj_drop=0.0,
+        cosine_attention=False,
         modalities=None,
         dummy_factor=0.0,
         modality_expert_rank=0,
-
     ):
-        super().__init__(dim, num_heads, mlp_ratio, qkv_bias, qk_scale, drop, attn_drop, mlp_drop, post_mlp_drop, drop_path, act_layer, norm_layer, layer_norm_first, ffn_targets, cosine_attention)
+        super().__init__()
+        self.num_heads = num_heads
+        head_dim = dim // num_heads
+        self.scale = qk_scale or head_dim ** -0.5
 
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+
+        self.attn_drop = attn_drop
+        self.proj = nn.Linear(dim, dim)
+        self.proj_drop = proj_drop
+
+        self.cosine_attention = cosine_attention
+
+        if cosine_attention:
+            self.logit_scale = nn.Parameter(
+                torch.log(10 * torch.ones((num_heads, 1, 1))), requires_grad=True
+            )
+
+        # Modality-specific experts
         self.dummy_factor = dummy_factor
-
         self.modalities = modalities
-        self.modality_experts = None
         if self.modalities is not None:
-            assert modality_expert_rank > 0
-            self.modality_experts = nn.ModuleDict()
+            self.modality_experts_qkv = nn.ModuleDict()
             for mod in self.modalities:
-                self.modality_experts[mod.name] = ModalityExpert(dim, dim, modality_expert_rank)
-    
-    def forward(self, x, padding_mask=None, alibi_bias=None, mode=None):
-        if self.modality_experts is None:
-            return super().forward(x, padding_mask, alibi_bias)
-        else:
-            remaining_extractor_names = [m.name for m in self.modalities if m.name != mode 
-                                     and m.name in self.modality_experts.keys()]
+                self.modality_experts_qkv[mod.name] = ModalityExpert(dim, dim*3, modality_expert_rank)
 
-            if self.layer_norm_first:
-                x = x + self.drop_path(self.attn(self.norm1(x), padding_mask, alibi_bias))
-                x = self.norm2(x)
-                x_modality = x
-                r = x = self.mlp(x)
-                x += self.modality_experts[mode](x_modality)
-                for name in remaining_extractor_names:
-                    x += self.dummy_factor * self.modality_experts[name](x_modality)
-                t = x
-                x = r + self.drop_path(self.post_mlp_dropout(x))
-                if not self.ffn_targets:
-                    t = x
+    def forward(self, x, padding_mask=None, alibi_bias=None, fast=True, mode=None):
+        B, N, C = x.shape
+        qkv = (
+            self.qkv(x)
+            .reshape(B, N, 3, self.num_heads, C // self.num_heads)
+            .permute(2, 0, 3, 1, 4)  # qkv x B x H x L x D
+        )
+        q, k, v = (
+            qkv[0],
+            qkv[1],
+            qkv[2],
+        )  # make torchscript happy (cannot use tensor as tuple)
+        if self.modalities is not None:
+            qkv_experts = (
+                self.modality_experts_qkv[mode](x)
+                .reshape(B, N, 3, self.num_heads, C // self.num_heads)
+                .permute(2, 0, 3, 1, 4)
+            )
+            q += qkv_experts[0]
+            k += qkv_experts[1]
+            v += qkv_experts[2]
+
+            remaining_experts = [
+                m.name for m in self.modalities if (
+                    m.name != mode and m.name in self.modality_experts_qkv.keys()
+                )
+            ]
+            for name in remaining_experts:
+                qkv_remainings = (
+                    self.modality_experts_qkv[name](x)
+                    .reshape(B, N, 3, self.num_heads, C // self.num_heads)
+                    .permute(2, 0, 3, 1, 4)
+                )
+                q += self.dummy_factor * qkv_remainings[0]
+                k += self.dummy_factor * qkv_remainings[1]
+                v += self.dummy_factor * qkv_remainings[2]
+
+        dtype = q.dtype
+
+        if not fast:
+            if self.cosine_attention:
+                # cosine attention
+                attn = F.normalize(q, dim=-1) @ F.normalize(k, dim=-1).transpose(-2, -1)
+                logit_scale = torch.clamp(
+                    self.logit_scale, max=torch.log(torch.tensor(1.0 / 0.01))
+                ).exp()
+                attn = attn * logit_scale
             else:
-                x = x + self.drop_path(self.attn(x, padding_mask, alibi_bias))
-                r = x = self.norm1(x)
-                x_modality = x
-                x = self.mlp(x)
-                x += self.modality_experts[mode](x_modality)
-                for name in remaining_extractor_names:
-                    x += self.dummy_factor * self.modality_experts[name](x_modality)
-                t = x
-                x = self.norm2(r + self.drop_path(self.post_mlp_dropout(x)))
-                if not self.ffn_targets:
-                    t = x
+                q = q * self.scale
+                attn = q @ k.transpose(-2, -1) # B x C//H x L x L
 
-            return x, t
+            if alibi_bias is not None:
+                attn = attn.type_as(alibi_bias)
+                attn[:, : alibi_bias.size(1)] += alibi_bias
+
+            if padding_mask is not None and padding_mask.any():
+                attn = attn.masked_fill(
+                    padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool),
+                    float("-inf"),
+                )
+
+            attn = attn.softmax(dim=-1, dtype=torch.float32).to(dtype=dtype)
+            # attn = self.attn_drop(attn)
+            attn = F.dropout(attn, p=self.attn_drop)
+            x = (attn @ v).transpose(1, 2)
+        else:
+            # Using pytorch 2's sdpa
+            assert not self.cosine_attention, "Not support cosine attention yet"
+            # Integrate padding_mask and alibi_bias
+            if padding_mask is not None and padding_mask.any():
+                if alibi_bias is not None:
+                    padding_mask = alibi_bias.masked_fill(
+                            padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool),
+                            float("-inf"),
+                        ).to(dtype=dtype)
+                else:
+                    padding_mask = padding_mask.unsqueeze(1).unsqueeze(2).to(
+                        torch.bool).to(dtype=dtype)
+            else:
+                if alibi_bias is not None:
+                    padding_mask = alibi_bias.to(dtype=dtype)
+                else:
+                    padding_mask = None
+            x = F.scaled_dot_product_attention(q, k, v, 
+                                attn_mask=padding_mask, 
+                                dropout_p=self.attn_drop if self.training else 0.0,
+                                scale=self.scale).transpose(1, 2)
+
+        x = x.reshape(B, N, C)
+        x = self.proj(x)
+        # x = self.proj_drop(x)
+        x = F.dropout(x, p=self.proj_drop if self.training else 0.0)
+        return x

@@ -173,6 +173,7 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
         },
     )
     use_modality_experts_at_ffn: bool = False
+    use_modality_experts_at_mha: bool = False
     modality_expert_rank: int = 0
 
 
@@ -260,6 +261,7 @@ class PantagruelMultiModel(BaseFairseqModel):
         self.dummy_factor = getattr(cfg, "dummy_factor", 0.0)
         self.skip_mode = getattr(cfg, "skip_mode", None)
         self.use_modality_experts_at_ffn = getattr(cfg, "use_modality_experts_at_ffn", False)
+        self.use_modality_experts_at_mha = getattr(cfg, "use_modality_experts_at_mha", False)
 
         make_layer_norm = partial(
             nn.LayerNorm, eps=cfg.norm_eps, elementwise_affine=cfg.norm_affine
@@ -279,9 +281,14 @@ class PantagruelMultiModel(BaseFairseqModel):
                 norm_layer=make_layer_norm,
                 layer_norm_first=cfg.layer_norm_first,
                 ffn_targets=not cfg.end_of_block_targets,
-                modalities=self.modalities if self.use_modality_experts_at_ffn else None,
                 dummy_factor=self.dummy_factor,
                 modality_expert_rank=getattr(cfg, "modality_expert_rank", 0),
+                modality_experts_at_ffn=(
+                    self.modalities if self.use_modality_experts_at_ffn else None
+                ),
+                modality_experts_at_mha=(
+                    self.modalities if self.use_modality_experts_at_mha else None
+                ),
             )
 
         token_type_embeddings = None
@@ -612,7 +619,11 @@ class PantagruelMultiModel(BaseFairseqModel):
                     x,
                     padding_mask=masked_padding_mask,
                     alibi_bias=ab,
-                    mode=mode if self.use_modality_experts_at_ffn else None, 
+                    mode=(
+                        mode if self.use_modality_experts_at_ffn or 
+                        self.use_modality_experts_at_mha
+                        else None
+                    ), 
                 )
                 if features_only:
                     layer_results.append(lr)
@@ -753,7 +764,9 @@ class PantagruelMultiModel(BaseFairseqModel):
                     ema_input,
                     padding_mask=ema_padding_mask,
                     alibi_bias=ab,
-                    mode=mode if self.use_modality_experts_at_ffn else None,
+                    mode=(
+                        mode if self.use_modality_experts_at_ffn or self.use_modality_experts_at_mha else None
+                    ),
                 )
                 y.append(lr[:, extra_tokens:])
                 ema_x.append(ema_input[:, extra_tokens:])
