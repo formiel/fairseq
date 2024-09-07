@@ -669,14 +669,15 @@ class PantagruelMultiModel(BaseFairseqModel):
                 remaining_extractor_names, x_dummies, encoder_mask_dummies
             ):
                 remaining_extractor = self.modality_encoders[name]
-                dummy_out = self.forward_decoder(
-                            x_dummy,
-                            remaining_extractor,
-                            remaining_extractor.decoder,
-                            encoder_mask_dummy,
-                            )
-                dx += self.dummy_factor * dummy_out.mean(dim=1).unsqueeze(1)
-                xs[-1] = dx
+                if remaining_extractor.decoder is not None:
+                    dummy_out = self.forward_decoder(
+                                x_dummy,
+                                remaining_extractor,
+                                remaining_extractor.decoder,
+                                encoder_mask_dummy,
+                                )
+                    dx += self.dummy_factor * dummy_out.mean(dim=1).unsqueeze(1)
+                    xs[-1] = dx
 
         assert len(xs) > 0
 
