@@ -178,7 +178,7 @@ model:
       conv_pos_groups: 16
       learned_alibi_scale: true
       learned_alibi_scale_per_head: true
-      use_project_features: false
+      use_project_features: true
       use_relative_positional_encoder: true
       decoder:
         input_dropout: 0.1

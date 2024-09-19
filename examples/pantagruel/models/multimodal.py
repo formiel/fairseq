@@ -316,7 +316,11 @@ class PantagruelMultiModel(BaseFairseqModel):
             )
             if self.freeze_project_features:
                 logging.info(f'Freezeing project features layer of {enc.__class__.__name__}: {enc.project_features.__class__.__name__}')
-                enc.project_features.requires_grad_(False)
+                for _, m in enumerate(enc.project_features):
+                    if isinstance(m, nn.Linear):
+                        nn.init.xavier_normal_(m.weight)
+                        nn.init.zeros_(m.bias)
+                    m.requires_grad_(False)
             self.modality_encoders[mod.name] = enc
 
         # discriminator

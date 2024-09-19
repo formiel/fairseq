@@ -73,11 +73,15 @@ class TextTypeEncoder(PantagruelModalitySpecificEncoder):
         )
         project_features = nn.Identity()
         if getattr(modality_cfg, "use_project_features", False):
+            # project_features = nn.Sequential(
+            #     nn.LayerNorm(embed_dim),
+            #     nn.Linear(embed_dim, embed_dim*3),
+            #     nn.ReLU(),
+            #     nn.Linear(embed_dim*3, embed_dim)
+            # )
             project_features = nn.Sequential(
                 nn.LayerNorm(embed_dim),
-                nn.Linear(embed_dim, embed_dim*3),
-                nn.ReLU(),
-                nn.Linear(embed_dim*3, embed_dim)
+                nn.Linear(embed_dim, embed_dim),
             )
         positional_encoder = None
         if getattr(modality_cfg, "use_relative_positional_encoder", False):
