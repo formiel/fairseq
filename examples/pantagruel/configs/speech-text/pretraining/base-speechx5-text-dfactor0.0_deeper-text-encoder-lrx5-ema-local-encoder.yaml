@@ -65,7 +65,7 @@ distributed_training:
   distributed_port: ???
 
 criterion:
-  _name: pantagruel_multi_loss
+  _name: model
   log_keys:
     - ema_decay
     - target_var
@@ -149,7 +149,7 @@ model:
       mask_noise_std: 0.01
       mask_dropout: 0
       add_masks: false
-      ema_local_encoder: false
+      ema_local_encoder: true
       use_alibi_encoder: true
       prenet_layerdrop: 0.05
       prenet_dropout: 0.1
@@ -168,7 +168,7 @@ model:
       mask_noise_std: 0.01
       prenet_depth: 0
       local_grad_mult: 1.0
-      ema_local_encoder: false
+      ema_local_encoder: true
       use_alibi_encoder: true
       prenet_layerdrop: 0.15
       prenet_dropout: 0.2

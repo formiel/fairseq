@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from typing import List
 
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 from fairseq import utils
 from fairseq.logging import metrics
@@ -20,12 +22,16 @@ class PantagruelMultiConfig(FairseqDataclass):
         metadata={"help": "weight of data2vec loss"},
     )
     ctr_weight: float = field(
-        default=1.0,
+        default=0.0,
         metadata={"help": "weight of contrastive loss"},
     )
     log_keys: List[str] = field(
         default_factory=list,
         metadata={"help": "additional output keys to log"},
+    )
+    softmax_temperature: float = field(
+        default=1.0,
+        metadata={"help": "softmax temperature"},
     )
 
 
@@ -37,11 +43,13 @@ class PantagruelMultiCriterion(FairseqCriterion):
         d2v_weight,
         ctr_weight,
         log_keys=None,
+        softmax_temperature=1.0,
     ):
         super().__init__(task)
         self.d2v_weight = d2v_weight
         self.ctr_weight = ctr_weight
         self.log_keys = log_keys
+        self.T = softmax_temperature
         assert self.d2v_weight >=0 or self.ctr_weight >=0
 
     def forward(self, model, sample, reduce=True):
@@ -94,12 +102,48 @@ class PantagruelMultiCriterion(FairseqCriterion):
                     l = l.sum()
                 logging_output[f"loss_{lk}"] = l.item()
 
+        # contrastive loss
+        if self.ctr_weight > 0:
+            ctr_loss = self.compute_contrastive_loss(net_output["q"], net_output["k"])
+            logging_output[f"loss_contrastive"] = ctr_loss
+            loss += self.ctr_weight * ctr_loss
+
         if "logs" in net_output:
             for lgw in net_output["logs"]:
                 logging_output[lgw] = net_output["logs"][lgw]
 
         return loss, sample_size, logging_output
     
+    def compute_contrastive_loss(self, q, k):
+        # normalize
+        q = F.normalize(q, dim=1) # M x C where M=Nxclone_batch
+        k = F.normalize(k, dim=1) # N x C
+        
+        logits = torch.mm(q, k.T) / self.T # M x N
+        M, N = logits.size()
+        labels = torch.arange(N).repeat_interleave(M//N).to(device=logits.device)
+        return F.cross_entropy(logits, labels) * (2 * self.T)
+
+    # def compute_contrastive_loss(self, q):
+    #     q = F.normalize(q, dim=1) # M x C where M=Nxclone_batch
+    #     logits = torch.mm(q, q.T) # M x M
+    #     M = logits.size()[0]
+
+    #     def create_tensor(M, N):
+    #         # Initialize an M x M tensor filled with ones
+    #         tensor = torch.ones((M, M), dtype=torch.int32)
+            
+    #         # Set pairs of ones for each block of N rows
+    #         for i in range(M // N):
+    #             start_index = i * N
+    #             tensor[start_index:start_index + N, i * 2:i * 2 + 2] = 0
+            
+    #         return tensor
+        
+    #     zeroed_out_tensor = create_tensor(M, 8).to(device=logits.device)
+    #     logits = torch.max(logits * zeroed_out_tensor, torch.zeros_like(logits))
+    #     return logits.sum() * 2
+
     @staticmethod
     def reduce_metrics(logging_outputs) -> None:
         """Aggregate logging outputs from data parallel training."""

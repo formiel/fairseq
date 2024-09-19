@@ -175,6 +175,8 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
     use_modality_experts_at_ffn: bool = False
     use_modality_experts_at_mha: bool = False
     modality_expert_rank: int = 0
+    mlp_after_local_encoder: bool = False
+    freeze_project_features: bool = False
 
 
 class LinearDiscriminator(nn.Module):
@@ -262,6 +264,8 @@ class PantagruelMultiModel(BaseFairseqModel):
         self.skip_mode = getattr(cfg, "skip_mode", None)
         self.use_modality_experts_at_ffn = getattr(cfg, "use_modality_experts_at_ffn", False)
         self.use_modality_experts_at_mha = getattr(cfg, "use_modality_experts_at_mha", False)
+        self.mlp_after_local_encoder = getattr(cfg, "mlp_after_local_encoder", False)
+        self.freeze_project_features = getattr(cfg, "freeze_project_features", False)
 
         make_layer_norm = partial(
             nn.LayerNorm, eps=cfg.norm_eps, elementwise_affine=cfg.norm_affine
@@ -310,6 +314,9 @@ class PantagruelMultiModel(BaseFairseqModel):
                 task,
                 token_type_embeddings,
             )
+            if self.freeze_project_features:
+                logging.info(f'Freezeing project features layer of {enc.__class__.__name__}: {enc.project_features.__class__.__name__}')
+                enc.project_features.requires_grad_(False)
             self.modality_encoders[mod.name] = enc
 
         # discriminator
@@ -324,6 +331,11 @@ class PantagruelMultiModel(BaseFairseqModel):
                 hidden_dim=cfg.embed_dim * 2,
                 layers=cfg.num_discriminator_layers,
             )
+        # add mlp after local encoder
+        self.predictor = None
+        if self.mlp_after_local_encoder:
+            # self.predictor = nn.Linear(cfg.embed_dim, cfg.embed_dim, bias=False)
+            self.predictor = self._build_mlp(2, cfg.embed_dim, cfg.embed_dim*4, cfg.embed_dim, last_bn=True)
         
         self.ema = None
 
@@ -372,6 +384,25 @@ class PantagruelMultiModel(BaseFairseqModel):
                 p.param_group = "decoder"
 
         self.num_updates = 0
+
+    # copied from Moco-v3: https://github.com/facebookresearch/moco-v3/blob/main/moco/builder.py
+    def _build_mlp(self, num_layers, input_dim, mlp_dim, output_dim, last_bn=True):
+        mlp = []
+        for l in range(num_layers):
+            dim1 = input_dim if l == 0 else mlp_dim
+            dim2 = output_dim if l == num_layers - 1 else mlp_dim
+
+            mlp.append(nn.Linear(dim1, dim2, bias=False))
+
+            if l < num_layers - 1:
+                mlp.append(nn.BatchNorm1d(dim2))
+                mlp.append(nn.ReLU(inplace=True))
+            elif last_bn:
+                # follow SimCLR's design: https://github.com/google-research/simclr/blob/master/model_util.py#L157
+                # for simplicity, we further removed gamma in BN
+                mlp.append(nn.BatchNorm1d(dim2, affine=False))
+
+        return nn.Sequential(*mlp)
 
     def _init_weights(self, m):
 
@@ -483,7 +514,6 @@ class PantagruelMultiModel(BaseFairseqModel):
 
     @classmethod
     def build_model(cls, cfg: PantagruelData2VecMultiConfig, task=None):
-        logging.info(f"build_model::task: {task}")
         """Build a new model instance."""
         if task is None or not hasattr(task, "supported_modalities"):
             modalities = (
@@ -580,7 +610,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                 dtype=torch.float16, 
                 device=source.device
             )
-            # Whether to perform masking for dummy inputs?
+            # forward dummy inputs
             x_dummies, encoder_mask_dummies = [], []
             for name in remaining_extractor_names:
                 dummy = dummy_source_audio if name == "AUDIO" else dummy_source_text
@@ -598,6 +628,11 @@ class PantagruelMultiModel(BaseFairseqModel):
         if self.dropout_input is not None:
             x = self.dropout_input(x)
         x_feat = x
+
+        # predictor
+        q = None
+        if self.predictor is not None:
+            q = self.predictor(x_feat.mean(dim=1)) # B*clone_batch x C
 
         layer_results = []
         for i, blk in enumerate(self.blocks):
@@ -727,7 +762,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                         else source.to(dtype=ema_dtype)
                     )
                     ema_input = tm.modality_encoders[mode](
-                        inp,
+                        inp.to(dtype=torch.int64) if mode=="TEXT" else inp,
                         padding_mask,
                         mask=False,
                         remove_masked=False,
@@ -747,6 +782,11 @@ class PantagruelMultiModel(BaseFairseqModel):
             ema_alibi_bias = ema_input.get("alibi_bias", None)
             ema_alibi_scale = ema_input.get("alibi_scale", None)
             ema_input = ema_input["x"]
+
+            # predictor
+            k = None
+            if self.predictor is not None:
+                k = tm.predictor(ema_input.mean(dim=1))
 
             y = []
             ema_x = []
@@ -792,6 +832,8 @@ class PantagruelMultiModel(BaseFairseqModel):
         result = {
             "losses": {},
             "sample_size": sample_size,
+            "q": q,
+            "k": k,
         }
 
         sample_size = result["sample_size"]
