@@ -34,7 +34,6 @@ from examples.pantagruel.models.modalities.base_type import (
 )
 from examples.data2vec.models.modalities.modules import (
     D2vDecoderConfig,
-    AltBlock,
     Decoder1d,
 )
 
