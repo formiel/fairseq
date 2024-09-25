@@ -1054,3 +1054,11 @@ class PantagruelMultiModel(BaseFairseqModel):
                 )
                 if not keep_decoder:
                     self.modality_encoders[k].decoder = None
+
+    def merge_modality_experts(self, modality=None):
+        if self.use_modality_experts_at_mha:
+            for i, blk in enumerate(self.blocks):
+                logging.info(f'block {i} before merged: {torch.norm(blk.attn.qkv.weight.data)}')
+                blk.attn.qkv.weight.data += blk.attn.modality_experts_qkv[modality.upper()].B.weight @ blk.attn.modality_experts_qkv[modality.upper()].A.weight
+                logging.info(f'block {i} after merged: {torch.norm(blk.attn.qkv.weight.data)}')
+                self.blocks[i].attn.modality_experts_qkv = None

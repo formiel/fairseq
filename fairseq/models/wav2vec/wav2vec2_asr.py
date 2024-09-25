@@ -475,9 +475,12 @@ class Wav2VecEncoder(FairseqEncoder):
                 w2v_args.task.text = None
                 w2v_args.model.supported_modality = "AUDIO"
 
-            logger.info(f"Removing pre-trained modules...")
+            logger.info("Removing pre-trained modules...")
             model.remove_pretraining_modules(modality="audio")
             d = w2v_args.model.embed_dim
+            if w2v_args.model.use_modality_experts_at_mha:
+                model.merge_modality_experts(modality="audio")
+                w2v_args.model.use_modality_experts_at_mha = False
 
         if state is not None and not cfg.no_pretrained_weights:
             if cfg.load_ema:
