@@ -107,7 +107,7 @@ class TextTypeEncoder(PantagruelModalitySpecificEncoder):
             ],
             TransposeLast(),
         )
-
+            text_encoder.local_encoder.embed_positions = None
 
         super().__init__(
             modality_cfg=modality_cfg,

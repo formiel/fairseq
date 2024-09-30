@@ -494,7 +494,9 @@ class PantagruelMultiModel(BaseFairseqModel):
         self.num_updates = num_updates
 
     def state_dict(self, destination=None, prefix="", keep_vars=False):
-        state = super().state_dict(destination, prefix, keep_vars)
+        state = super().state_dict(destination=destination, 
+                                    prefix=prefix, 
+                                    keep_vars=keep_vars)
 
         if self.ema is not None:
             state[prefix + "_ema"] = self.ema.fp32_params
