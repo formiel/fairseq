@@ -167,7 +167,7 @@ model:
       mask_length: 1
       mask_noise_std: 0.01
       prenet_depth: 0
-      local_grad_mult: 0.5
+      local_grad_mult: 0.65
       ema_local_encoder: false
       use_alibi_encoder: true
       prenet_layerdrop: 0.15
@@ -181,7 +181,7 @@ model:
       use_relative_positional_encoder: true
       decoder:
         input_dropout: 0.1
-        decoder_dim: 768
+        decoder_dim: 384
         decoder_groups: 1
         decoder_kernel: 9
         decoder_layers: 5
