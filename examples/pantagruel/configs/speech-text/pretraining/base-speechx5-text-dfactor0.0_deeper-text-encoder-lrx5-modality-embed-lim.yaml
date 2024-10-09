@@ -46,7 +46,7 @@ task:
     d2v2_multi: True
   
 dataset:
-  num_workers: 3
+  num_workers: 1
   max_tokens: 1000000
   # batch_size: 16
   batch_size: 6
@@ -65,7 +65,7 @@ distributed_training:
   distributed_port: ???
 
 criterion:
-  _name: model
+  _name: pantagruel_multi_loss
   log_keys:
     - ema_decay
     - target_var
@@ -73,11 +73,12 @@ criterion:
     - model_norm
     - ema_norm
     - masked_pct
+  lim_weight: 1.0
 
 optimization:
   clip_norm: 1
   max_update: 1000000
-  lr: [0.0005]
+  lr: [0.0075]
   debug_param_names: true
   # max_update: 1000000
   update_freq: [1]
@@ -121,7 +122,7 @@ model:
   layerdrop: 0.0
   norm_eps: 1e-5
 
-  use_token_type_embeddings: false
+  use_token_type_embeddings: true
 
   # shared_decoder:
   #   input_dropout: 0.1
@@ -177,7 +178,7 @@ model:
       conv_pos_groups: 16
       learned_alibi_scale: true
       learned_alibi_scale_per_head: true
-      use_project_features: true
+      use_project_features: false
       use_relative_positional_encoder: true
       decoder:
         input_dropout: 0.1

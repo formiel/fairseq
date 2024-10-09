@@ -257,6 +257,9 @@ class CommonConfig(FairseqDataclass):
             stopped if the estimated time for next epoch exceeds the remaining time"
         },
     )
+    enable_tf32: bool = field(
+        default=False, metadata={"help": "enable tf32"}
+    )
 
 
 @dataclass

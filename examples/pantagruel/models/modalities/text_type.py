@@ -82,6 +82,7 @@ class TextTypeEncoder(PantagruelModalitySpecificEncoder):
             project_features = nn.Sequential(
                 nn.LayerNorm(embed_dim),
                 nn.Linear(embed_dim, embed_dim),
+                nn.ReLU(),
             )
         positional_encoder = None
         if getattr(modality_cfg, "use_relative_positional_encoder", False):

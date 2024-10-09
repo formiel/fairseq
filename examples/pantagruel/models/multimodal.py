@@ -834,11 +834,16 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         sample_size = masked.sum().long()
 
+        local_features = {modality: None for modality in self.modality_encoders.keys()}
+        # org_B, _, C =  extractor_out["local_features"].size()
+        # local_features[mode] = extractor_out["x"].view(org_B, self.cfg.clone_batch, -1, C).mean(dim=1)
+        local_features[mode] = extractor_out["local_features"]
         result = {
             "losses": {},
             "sample_size": sample_size,
             "q": q,
             "k": k,
+            "local_features": local_features,
         }
 
         sample_size = result["sample_size"]

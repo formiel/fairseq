@@ -1,3 +1,4 @@
+import os
 import logging
 import math
 from dataclasses import dataclass, field
@@ -6,6 +7,7 @@ from typing import List
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.distributed as dist
 
 from fairseq import utils
 from fairseq.logging import metrics
@@ -13,6 +15,7 @@ from fairseq.criterions import FairseqCriterion, register_criterion
 from fairseq.dataclass import FairseqDataclass
 
 from fairseq.logging.meters import safe_round
+from examples.pantagruel.data.utils import get_random_crops
 
 
 @dataclass
@@ -33,6 +36,14 @@ class PantagruelMultiConfig(FairseqDataclass):
         default=1.0,
         metadata={"help": "softmax temperature"},
     )
+    lim_weight: float = field(
+        default=0.0,
+        metadata={"help": "weight of local info max loss"},
+    )
+    # vig_reg_weight: float = field(
+    #     default=0.0,
+    #     metadata={"help": "weight of contrastive loss"},
+    # )
 
 
 @register_criterion("pantagruel_multi_loss", dataclass=PantagruelMultiConfig)
@@ -44,6 +55,8 @@ class PantagruelMultiCriterion(FairseqCriterion):
         ctr_weight,
         log_keys=None,
         softmax_temperature=1.0,
+        lim_weight=0.0,
+        # vig_reg_weight=0.0,
     ):
         super().__init__(task)
         self.d2v_weight = d2v_weight
@@ -51,6 +64,15 @@ class PantagruelMultiCriterion(FairseqCriterion):
         self.log_keys = log_keys
         self.T = softmax_temperature
         assert self.d2v_weight >=0 or self.ctr_weight >=0
+        self.lim_weight = lim_weight
+        # self.vig_reg_weight = vig_reg_weight
+        # if self.vig_red_weight > 0:
+        #     self.expander = build_mlp(1, 768, 1024, 768)
+        if self.lim_weight > 0:
+            self.projector = nn.Sequential(
+                nn.Linear(768, 1024),
+                nn.ReLU(),
+            )
 
     def forward(self, model, sample, reduce=True):
         """Compute the loss for the given sample.
@@ -105,14 +127,80 @@ class PantagruelMultiCriterion(FairseqCriterion):
         # contrastive loss
         if self.ctr_weight > 0:
             ctr_loss = self.compute_contrastive_loss(net_output["q"], net_output["k"])
-            logging_output[f"loss_contrastive"] = ctr_loss
+            logging_output["loss_contrastive"] = ctr_loss
             loss += self.ctr_weight * ctr_loss
+
+        if self.lim_weight > 0:
+            lim_weight = self.compute_lim_weight(net_output["local_features"])
+            logging_output["loss_lim"] = lim_weight
+
+        # # VIGReg loss
+        # if self.vig_reg_weight > 0:
+        #     # if self.step_counter % 1000 == 0 and self.step_counter != 0:
+        #     vig_reg_loss, logging_output = self.compute_vig_reg_loss(
+        #         net_output["local_features"], logging_output
+        #     )
+        #     # logging_output["loss_vig_reg"] = vig_reg_loss
+        #     loss += self.vig_reg_weight * vig_reg_loss
 
         if "logs" in net_output:
             for lgw in net_output["logs"]:
                 logging_output[lgw] = net_output["logs"][lgw]
 
         return loss, sample_size, logging_output
+    
+    def compute_lim_weight(self, local_features, eps=1e-9):
+        # local_features: B x T x C
+        for mode, feature in local_features.items():
+            if feature is not None:
+                crops1, crops2 = get_random_crops(feature) # B x crop_size x C
+                Y1 = self.projector(crops1).mean(dim=1) # B x D
+                Y2 = self.projector(crops2).mean(dim=1) # B x D
+                B, _ = Y1.size()
+                # Y2_all = (GatherLayer.apply(Y2) if (
+                #     dist.is_available() and dist.is_initialized()
+                # ) else Y2)
+                Y2_all = concat_all_gather(Y2) if dist.is_available() and dist.is_initialized() else Y2
+                neg_idx = torch.randint(0, Y2_all.size(0), size=(B,))
+                Y_R = Y2_all[neg_idx]
+                pos = F.cosine_similarity(Y1, Y2, dim=-1)
+                neg = F.cosine_similarity(Y1, Y_R, dim=-1)
+                pos = torch.clamp(torch.sigmoid(pos), eps, 1.0 - eps)
+                neg = torch.clamp(torch.sigmoid(neg), eps, 1.0 - eps)
+                loss = -torch.mean(torch.log(pos)) - torch.mean(torch.log(1 - neg))
+                return loss
+
+
+    # def compute_vig_reg_loss(self, local_features, logging_output):
+    #     # local_features: B x T x C
+    #     for mode, feature in local_features.items():
+    #         if feature is not None:
+    #             x, y = get_avg_random_crops(feature)
+    #             # x = self.expander(x)
+    #             # y = self.expander(y)
+    #             x = F.normalize(x, dim=1)
+    #             y = F.normalize(y, dim=1)
+
+    #             _, C = x.size()
+    #             # repr_loss = F.mse_loss(x, y)
+    #             # x = torch.cat(FullGatherLayer.apply(x), dim=0)
+    #             # y = torch.cat(FullGatherLayer.apply(y), dim=0)
+
+    #             # std_x = torch.sqrt(x.var(dim=0) + 1e-04)
+    #             # std_y = torch.sqrt(y.var(dim=0) + 1e-04)
+    #             # std_loss = torch.mean(F.relu(1 - std_x)) + torch.mean(F.relu(1 - std_y))
+                
+    #             x = x - x.mean(dim=0)
+    #             y = y - y.mean(dim=0)
+    #             N, _ = x.size()
+    #             cov_x = (x @ x.T) / (N - 1)
+    #             cov_y = (y @ y.T) / (N - 1)
+    #             cov_loss = off_diagonal(cov_x).pow_(2).sum().div(
+    #                 C) + off_diagonal(cov_y).pow_(2).sum().div(C)
+    #             # loss = 1 * repr_loss + 1 * std_loss + 0.04 * cov_loss
+    #             loss = cov_loss
+    #             logging_output[f"loss_vig_reg_{mode}"] = loss
+    #             return loss, logging_output
     
     def compute_contrastive_loss(self, q, k):
         # normalize
@@ -204,3 +292,41 @@ class PantagruelMultiCriterion(FairseqCriterion):
         to True will improves distributed training speed.
         """
         True
+
+class GatherLayer(torch.autograd.Function):
+    """
+    Gather tensors from all process and support backward propagation
+    for the gradients across processes.
+    """
+
+    @staticmethod
+    def forward(ctx, x):
+        # output = [torch.zeros_like(x) for _ in range(dist.get_world_size())]
+        # dist.all_gather(output, x, async_op=False)
+        # return torch.cat(output, dim=0)
+    
+        tensors_gather = [torch.ones_like(x) for _ in range(dist.get_world_size())]
+        dist.all_gather(tensors_gather, x, async_op=False)
+
+        return torch.cat(tensors_gather, dim=0)
+
+
+    @staticmethod
+    def backward(ctx, *grads):
+        all_gradients = torch.stack(grads)
+        dist.all_reduce(all_gradients)
+        return all_gradients[dist.get_rank()]
+
+
+@torch.no_grad()
+def concat_all_gather(tensor):
+    """
+    Performs all_gather operation on the provided tensors.
+    *** Warning ***: torch.distributed.all_gather has no gradient.
+    """
+    tensors_gather = [torch.ones_like(tensor)
+        for _ in range(dist.get_world_size())]
+    dist.all_gather(tensors_gather, tensor, async_op=False)
+
+    output = torch.cat(tensors_gather, dim=0)
+    return output

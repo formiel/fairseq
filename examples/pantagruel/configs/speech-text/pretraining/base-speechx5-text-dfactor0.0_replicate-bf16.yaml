@@ -1,16 +1,20 @@
 # @package _group_
 
 common:
-  fp16: true
+  # fp16: true
   log_format: json
   log_interval: 200
   tensorboard_logdir: ???
   min_loss_scale: 1e-6
-  fp16_no_flatten_grads: false
+  # fp16_no_flatten_grads: false
   # memory_efficient_fp16: true
   # fp16_scale_tolerance: 0.25
   # time_limit: ???
   user_dir: ???
+  bf16: true
+  memory_efficient_bf16: true
+  # amp: true
+  # enable_tf32: true
 
 checkpoint:
   # save_interval: 1
@@ -46,10 +50,10 @@ task:
     d2v2_multi: True
   
 dataset:
-  num_workers: 3
-  max_tokens: 1000000
+  num_workers: 2
+  max_tokens: 500000
   # batch_size: 16
-  batch_size: 6
+  batch_size: 3
   # ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
   # validate_interval: 1
@@ -79,7 +83,6 @@ optimization:
   max_update: 1000000
   lr: [0.0005]
   debug_param_names: true
-  # max_update: 1000000
   update_freq: [1]
 
 optimizer:
