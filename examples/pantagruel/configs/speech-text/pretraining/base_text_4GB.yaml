@@ -80,6 +80,7 @@ optimization:
   debug_param_names: true
   # max_update: 1000000
   update_freq: [1]
+  max_epoch: 3
 
 optimizer:
   _name: adam

@@ -9,17 +9,17 @@ common:
   # fp16_no_flatten_grads: false
   # memory_efficient_fp16: true
   # fp16_scale_tolerance: 0.25
-  # time_limit: ???
+  time_limit: ???
   user_dir: ???
   # bf16: true
   # memory_efficient_bf16: true
   # amp: true
-  profile: true
-  enable_tf32: true
+  # profile: true
+  # enable_tf32: true
 
 checkpoint:
   # save_interval: 1
-  save_interval_updates: 5000
+  save_interval_updates: 1000
   # keep_interval_updates: 1
   # no_epoch_checkpoints: true
   keep_best_checkpoints: 10
@@ -51,7 +51,7 @@ task:
     d2v2_multi: True
   
 dataset:
-  num_workers: 2
+  num_workers: 1
   max_tokens: 500000
   # batch_size: 16
   batch_size: 3
@@ -85,6 +85,7 @@ optimization:
   lr: [0.0005]
   debug_param_names: true
   update_freq: [1]
+  max_epoch: 3
 
 optimizer:
   _name: adam
