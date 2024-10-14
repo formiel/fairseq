@@ -135,7 +135,7 @@ class Decoder1d(DecoderBase):
                 ),
                 SamePad(cfg.decoder_kernel),
                 TransposeLast(),
-                LayerNorm(cfg.decoder_dim, elementwise_affine=False),
+                nn.LayerNorm(cfg.decoder_dim, elementwise_affine=False),
                 TransposeLast(),
                 nn.GELU(),
             ]
