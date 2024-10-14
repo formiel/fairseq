@@ -877,7 +877,7 @@ class ConvFeatureExtractionModel(nn.Module):
                     nn.Dropout(p=dropout),
                     nn.Sequential(
                         TransposeLast(),
-                        Fp32LayerNorm(dim, elementwise_affine=True),
+                        nn.LayerNorm(dim, elementwise_affine=True),
                         TransposeLast(),
                     ),
                     nn.GELU(),

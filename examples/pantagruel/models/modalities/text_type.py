@@ -48,7 +48,12 @@ class PantagruelD2vTextConfig(D2vModalityConfig):
         metadata={"help": "depth of positional encoder network"},
     )
     conv_pos_pre_ln: bool = False
-
+    mlp_spec: str = field(
+        default="{'num_layers': 1, 'mlp_dim': 128}",
+        metadata={
+            "help": "specs of project feature layers: {'num_layers': 0, 'mlp_dim': 128}"
+        },
+    )
 
 class TextTypeEncoder(PantagruelModalitySpecificEncoder):
     def __init__(
@@ -73,16 +78,12 @@ class TextTypeEncoder(PantagruelModalitySpecificEncoder):
         )
         project_features = nn.Identity()
         if getattr(modality_cfg, "use_project_features", False):
-            # project_features = nn.Sequential(
-            #     nn.LayerNorm(embed_dim),
-            #     nn.Linear(embed_dim, embed_dim*3),
-            #     nn.ReLU(),
-            #     nn.Linear(embed_dim*3, embed_dim)
-            # )
-            project_features = nn.Sequential(
-                nn.LayerNorm(embed_dim),
-                nn.Linear(embed_dim, embed_dim),
-                nn.ReLU(),
+            mlp_spec = eval(getattr(modality_cfg.mlp_spec, "{'num_layers': 1, 'mlp_dim': 128}"))
+            project_features = self._build_mlp(
+                num_layers=mlp_spec['num_layers'],
+                input_dim=embed_dim,
+                mlp_dim=mlp_spec['mlp_dim'],
+                output_dim=embed_dim
             )
         positional_encoder = None
         if getattr(modality_cfg, "use_relative_positional_encoder", False):
@@ -100,7 +101,7 @@ class TextTypeEncoder(PantagruelModalitySpecificEncoder):
                     ),
                     SamePad(k),
                     TransposeLast(),
-                    LayerNorm(embed_dim, elementwise_affine=False),
+                    nn.LayerNorm(embed_dim, elementwise_affine=False),
                     TransposeLast(),
                     nn.GELU(),
                 )
@@ -122,6 +123,16 @@ class TextTypeEncoder(PantagruelModalitySpecificEncoder):
             get_alibi_bias=text_encoder.get_alibi_bias,
             token_type_embeddings=token_type_embeddings,
         )
+
+    def _build_mlp(self, num_layers, input_dim, mlp_dim, output_dim):
+        mlp = []
+        for l in range(num_layers):
+            dim1 = input_dim if l == 0 else mlp_dim
+            dim2 = output_dim if l == num_layers - 1 else mlp_dim
+            mlp.append(nn.LayerNorm(dim1))
+            mlp.append(nn.Linear(dim1, dim2, bias=False))
+            mlp.append(nn.ReLU(inplace=True))
+        return nn.Sequential(*mlp)
     
     def reset_parameters(self):
         super().reset_parameters()

@@ -148,3 +148,4 @@ _tools*/*
 # experiments and notes
 */*/_*
 fairseq_cli/train_profile.py
+examples/pantagruel/configs/speech-text-old*
