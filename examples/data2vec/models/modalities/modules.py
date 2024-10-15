@@ -196,7 +196,7 @@ class Decoder2d(DecoderBase):
                 ),
                 SamePad2d(cfg.decoder_kernel),
                 TransposeLast(tranpose_dim=-3),
-                LayerNorm(cfg.decoder_dim, elementwise_affine=False),
+                nn.LayerNorm(cfg.decoder_dim, elementwise_affine=False),
                 TransposeLast(tranpose_dim=-3),
                 nn.GELU(),
             ]

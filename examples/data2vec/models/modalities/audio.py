@@ -9,7 +9,7 @@ import torch.nn as nn
 import numpy as np
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Optional
-from fairseq.models.wav2vec import ConvFeatureExtractionModel
+from fairseq.models.wav2vec.wav2vec2 import ConvFeatureExtractionModel
 from fairseq.modules import (
     LayerNorm,
     SamePad,
@@ -94,7 +94,7 @@ class AudioEncoder(ModalitySpecificEncoder):
                     ),
                     SamePad(k),
                     TransposeLast(),
-                    LayerNorm(embed_dim, elementwise_affine=False),
+                    nn.LayerNorm(embed_dim, elementwise_affine=False),
                     TransposeLast(),
                     nn.GELU(),
                 )
@@ -104,7 +104,7 @@ class AudioEncoder(ModalitySpecificEncoder):
         )
 
         if modality_cfg.conv_pos_pre_ln:
-            positional_encoder = nn.Sequential(LayerNorm(embed_dim), positional_encoder)
+            positional_encoder = nn.Sequential(nn.LayerNorm(embed_dim), positional_encoder)
 
         dpr = np.linspace(
             modality_cfg.start_drop_path_rate,

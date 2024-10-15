@@ -317,7 +317,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                 logging.info(f'Freezeing project features layer of {enc.__class__.__name__}: {enc.project_features.__class__.__name__}')
                 for _, m in enumerate(enc.project_features):
                     if isinstance(m, nn.Linear):
-                        nn.init.xavier_normal_(m.weight)
+                        nn.init.kaiming_normal_(m.weight)
                         nn.init.zeros_(m.bias)
                     m.requires_grad_(False)
             self.modality_encoders[mod.name] = enc
@@ -409,22 +409,17 @@ class PantagruelMultiModel(BaseFairseqModel):
 
     def _init_weights(self, m):
 
-        try:
-            from apex.normalization import FusedLayerNorm
-
-            fn = FusedLayerNorm
-        except:
-            fn = nn.LayerNorm
-
         if isinstance(m, nn.Linear):
-            torch.nn.init.xavier_uniform_(m.weight)
+            torch.nn.init.kaiming_normal_(m.weight)
             if isinstance(m, nn.Linear) and m.bias is not None:
                 nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm) or isinstance(m, fn):
+        elif isinstance(m, nn.LayerNorm):
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
             if m.weight is not None:
                 nn.init.constant_(m.weight, 1.0)
+        elif isinstance(m, nn.Conv1d):
+            nn.init.kaiming_normal_(m.weight)
 
     @torch.no_grad()
     def make_ema_teacher(self, ema_decay):

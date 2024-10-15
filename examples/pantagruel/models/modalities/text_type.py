@@ -78,7 +78,7 @@ class TextTypeEncoder(PantagruelModalitySpecificEncoder):
         )
         project_features = nn.Identity()
         if getattr(modality_cfg, "use_project_features", False):
-            mlp_spec = eval(getattr(modality_cfg.mlp_spec, "{'num_layers': 1, 'mlp_dim': 128}"))
+            mlp_spec = eval(getattr(modality_cfg, "mlp_spec", "{'num_layers': 1, 'mlp_dim': 128}"))
             project_features = self._build_mlp(
                 num_layers=mlp_spec['num_layers'],
                 input_dim=embed_dim,
@@ -131,7 +131,8 @@ class TextTypeEncoder(PantagruelModalitySpecificEncoder):
             dim2 = output_dim if l == num_layers - 1 else mlp_dim
             mlp.append(nn.LayerNorm(dim1))
             mlp.append(nn.Linear(dim1, dim2, bias=False))
-            mlp.append(nn.ReLU(inplace=True))
+            if l < num_layers - 1:
+                mlp.append(nn.ReLU(inplace=False))
         return nn.Sequential(*mlp)
     
     def reset_parameters(self):
