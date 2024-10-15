@@ -14,7 +14,7 @@ common:
 
 checkpoint:
   # save_interval: 1
-  save_interval_updates: 10000
+  save_interval_updates: 25000
   keep_interval_updates: 1
   # no_epoch_checkpoints: true
   keep_best_checkpoints: 10
@@ -74,7 +74,7 @@ criterion:
     - masked_pct
 
 optimization:
-  clip_norm: 1
+  # clip_norm: 1
   max_update: 400000
   lr: [0.00075]
   debug_param_names: true
