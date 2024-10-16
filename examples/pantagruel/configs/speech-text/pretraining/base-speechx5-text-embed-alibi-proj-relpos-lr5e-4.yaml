@@ -76,7 +76,7 @@ criterion:
 
 optimization:
   clip_norm: 1
-  max_update: 500000
+  max_update: 1000000
   lr: [0.0005]
   debug_param_names: true
   # max_update: 1000000
@@ -119,10 +119,10 @@ model:
   layer_norm_target_layer: false
   layer_norm_targets: false
 
-  layerdrop: 0.05
+  layerdrop: 0.0
   norm_eps: 1e-5
 
-  use_token_type_embeddings: true
+  use_token_type_embeddings: false
 
   # shared_decoder:
   #   input_dropout: 0.1
@@ -176,7 +176,7 @@ model:
       learned_alibi_scale: true
       learned_alibi_scale_per_head: true
       use_project_features: true
-      mlp_spec: '{"num_layers": 1, "mlp_dim": 128}'
+      mlp_spec: '{"num_layers": 2, "mlp_dim": 512}'
       use_relative_positional_encoder: true
       conv_pos_depth: 5
       conv_pos_width: 95
