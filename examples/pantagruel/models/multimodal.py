@@ -418,8 +418,6 @@ class PantagruelMultiModel(BaseFairseqModel):
                 nn.init.constant_(m.bias, 0)
             if m.weight is not None:
                 nn.init.constant_(m.weight, 1.0)
-        elif isinstance(m, nn.Conv1d):
-            nn.init.kaiming_normal_(m.weight)
 
     @torch.no_grad()
     def make_ema_teacher(self, ema_decay):
