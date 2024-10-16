@@ -297,7 +297,7 @@ class PantagruelMultiModel(BaseFairseqModel):
         token_type_embeddings = None
         if cfg.use_token_type_embeddings:
             token_type_embeddings = nn.Embedding(len(self.modalities), cfg.embed_dim)
-            nn.init.kaiming_normal_(token_type_embeddings.weight)
+            # nn.init.kaiming_normal_(token_type_embeddings.weight)
 
         self.alibi_biases = {}
         self.modality_encoders = nn.ModuleDict()
@@ -316,9 +316,9 @@ class PantagruelMultiModel(BaseFairseqModel):
             if self.freeze_project_features:
                 logging.info(f'Freezeing project features layer of {enc.__class__.__name__}: {enc.project_features.__class__.__name__}')
                 for _, m in enumerate(enc.project_features):
-                    if isinstance(m, nn.Linear):
-                        nn.init.kaiming_normal_(m.weight)
-                        nn.init.zeros_(m.bias)
+                    # if isinstance(m, nn.Linear):
+                    #     nn.init.kaiming_normal_(m.weight)
+                    #     nn.init.zeros_(m.bias)
                     m.requires_grad_(False)
             self.modality_encoders[mod.name] = enc
 
