@@ -24,26 +24,14 @@ class PantagruelMultiConfig(FairseqDataclass):
         default=1.0,
         metadata={"help": "weight of data2vec loss"},
     )
-    ctr_weight: float = field(
+    lim_weight: float = field(
         default=0.0,
-        metadata={"help": "weight of contrastive loss"},
+        metadata={"help": "weight of local info max loss"},
     )
     log_keys: List[str] = field(
         default_factory=list,
         metadata={"help": "additional output keys to log"},
     )
-    softmax_temperature: float = field(
-        default=1.0,
-        metadata={"help": "softmax temperature"},
-    )
-    lim_weight: float = field(
-        default=0.0,
-        metadata={"help": "weight of local info max loss"},
-    )
-    # vig_reg_weight: float = field(
-    #     default=0.0,
-    #     metadata={"help": "weight of contrastive loss"},
-    # )
 
 
 @register_criterion("pantagruel_multi_loss", dataclass=PantagruelMultiConfig)
@@ -52,25 +40,18 @@ class PantagruelMultiCriterion(FairseqCriterion):
         self,
         task,
         d2v_weight,
-        ctr_weight,
-        log_keys=None,
-        softmax_temperature=1.0,
         lim_weight=0.0,
-        # vig_reg_weight=0.0,
+        log_keys=None,
     ):
         super().__init__(task)
-        self.d2v_weight = d2v_weight
-        self.ctr_weight = ctr_weight
+        
         self.log_keys = log_keys
-        self.T = softmax_temperature
-        assert self.d2v_weight >=0 or self.ctr_weight >=0
+        self.d2v_weight = d2v_weight
         self.lim_weight = lim_weight
-        # self.vig_reg_weight = vig_reg_weight
-        # if self.vig_red_weight > 0:
-        #     self.expander = build_mlp(1, 768, 1024, 768)
         if self.lim_weight > 0:
             self.projector = nn.Sequential(
-                nn.Linear(768, 1024),
+                nn.LayerNorm(768),
+                nn.Linear(768, 384),
                 nn.ReLU(),
             )
 
@@ -124,24 +105,9 @@ class PantagruelMultiCriterion(FairseqCriterion):
                     l = l.sum()
                 logging_output[f"loss_{lk}"] = l.item()
 
-        # contrastive loss
-        if self.ctr_weight > 0:
-            ctr_loss = self.compute_contrastive_loss(net_output["q"], net_output["k"])
-            logging_output["loss_contrastive"] = ctr_loss
-            loss += self.ctr_weight * ctr_loss
-
         if self.lim_weight > 0:
             lim_weight = self.compute_lim_weight(net_output["local_features"])
             logging_output["loss_lim"] = lim_weight
-
-        # # VIGReg loss
-        # if self.vig_reg_weight > 0:
-        #     # if self.step_counter % 1000 == 0 and self.step_counter != 0:
-        #     vig_reg_loss, logging_output = self.compute_vig_reg_loss(
-        #         net_output["local_features"], logging_output
-        #     )
-        #     # logging_output["loss_vig_reg"] = vig_reg_loss
-        #     loss += self.vig_reg_weight * vig_reg_loss
 
         if "logs" in net_output:
             for lgw in net_output["logs"]:
@@ -169,68 +135,6 @@ class PantagruelMultiCriterion(FairseqCriterion):
                 neg = torch.clamp(torch.sigmoid(neg), eps, 1.0 - eps)
                 loss = -torch.mean(torch.log(pos)) - torch.mean(torch.log(1 - neg))
                 return loss
-
-
-    # def compute_vig_reg_loss(self, local_features, logging_output):
-    #     # local_features: B x T x C
-    #     for mode, feature in local_features.items():
-    #         if feature is not None:
-    #             x, y = get_avg_random_crops(feature)
-    #             # x = self.expander(x)
-    #             # y = self.expander(y)
-    #             x = F.normalize(x, dim=1)
-    #             y = F.normalize(y, dim=1)
-
-    #             _, C = x.size()
-    #             # repr_loss = F.mse_loss(x, y)
-    #             # x = torch.cat(FullGatherLayer.apply(x), dim=0)
-    #             # y = torch.cat(FullGatherLayer.apply(y), dim=0)
-
-    #             # std_x = torch.sqrt(x.var(dim=0) + 1e-04)
-    #             # std_y = torch.sqrt(y.var(dim=0) + 1e-04)
-    #             # std_loss = torch.mean(F.relu(1 - std_x)) + torch.mean(F.relu(1 - std_y))
-                
-    #             x = x - x.mean(dim=0)
-    #             y = y - y.mean(dim=0)
-    #             N, _ = x.size()
-    #             cov_x = (x @ x.T) / (N - 1)
-    #             cov_y = (y @ y.T) / (N - 1)
-    #             cov_loss = off_diagonal(cov_x).pow_(2).sum().div(
-    #                 C) + off_diagonal(cov_y).pow_(2).sum().div(C)
-    #             # loss = 1 * repr_loss + 1 * std_loss + 0.04 * cov_loss
-    #             loss = cov_loss
-    #             logging_output[f"loss_vig_reg_{mode}"] = loss
-    #             return loss, logging_output
-    
-    def compute_contrastive_loss(self, q, k):
-        # normalize
-        q = F.normalize(q, dim=1) # M x C where M=Nxclone_batch
-        k = F.normalize(k, dim=1) # N x C
-        
-        logits = torch.mm(q, k.T) / self.T # M x N
-        M, N = logits.size()
-        labels = torch.arange(N).repeat_interleave(M//N).to(device=logits.device)
-        return F.cross_entropy(logits, labels) * (2 * self.T)
-
-    # def compute_contrastive_loss(self, q):
-    #     q = F.normalize(q, dim=1) # M x C where M=Nxclone_batch
-    #     logits = torch.mm(q, q.T) # M x M
-    #     M = logits.size()[0]
-
-    #     def create_tensor(M, N):
-    #         # Initialize an M x M tensor filled with ones
-    #         tensor = torch.ones((M, M), dtype=torch.int32)
-            
-    #         # Set pairs of ones for each block of N rows
-    #         for i in range(M // N):
-    #             start_index = i * N
-    #             tensor[start_index:start_index + N, i * 2:i * 2 + 2] = 0
-            
-    #         return tensor
-        
-    #     zeroed_out_tensor = create_tensor(M, 8).to(device=logits.device)
-    #     logits = torch.max(logits * zeroed_out_tensor, torch.zeros_like(logits))
-    #     return logits.sum() * 2
 
     @staticmethod
     def reduce_metrics(logging_outputs) -> None:
