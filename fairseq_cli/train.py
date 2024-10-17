@@ -361,7 +361,10 @@ def train(
     logger.info("Start iterating over samples")
     epoch_time_queue = deque(maxlen=3)
     reach_time_limit = False
-    start_timing_epoch = True if cfg.checkpoint.save_interval_updates != 0 else False
+    start_timing_epoch = (
+        True if cfg.checkpoint.save_interval_updates != 0 
+        and num_updates % cfg.checkpoint.save_interval_updates == 0 else False
+    )
 
     start_epoch_time = time() if start_timing_epoch else None
 

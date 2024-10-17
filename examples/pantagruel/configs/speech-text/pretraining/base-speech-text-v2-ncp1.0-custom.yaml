@@ -17,7 +17,7 @@ checkpoint:
   save_interval_updates: 5000
   keep_interval_updates: 1
   # no_epoch_checkpoints: true
-  keep_best_checkpoints: 10
+  # keep_best_checkpoints: 10
   keep_last_epochs: 10
   # patience: 10
   save_dir: ???
@@ -74,7 +74,8 @@ criterion:
     - ema_norm
     - masked_pct
   d2v_weight: 1.0
-  lim_weight: 1.0
+  ncp_weight: 1.0
+  ncp_loss_fn: custom
 
 optimization:
   clip_norm: 1

@@ -15,7 +15,7 @@ from fairseq.criterions import FairseqCriterion, register_criterion
 from fairseq.dataclass import FairseqDataclass
 
 from fairseq.logging.meters import safe_round
-from examples.pantagruel.data.utils import get_random_crops
+from examples.pantagruel.data.utils import get_random_crops, create_negative_pairs
 
 
 @dataclass
@@ -24,9 +24,13 @@ class PantagruelMultiConfig(FairseqDataclass):
         default=1.0,
         metadata={"help": "weight of data2vec loss"},
     )
-    lim_weight: float = field(
+    ncp_weight: float = field(
         default=0.0,
-        metadata={"help": "weight of local info max loss"},
+        metadata={"help": "weight of next chunk prediction loss"},
+    )
+    ncp_loss_fn: str = field(
+        default="none",
+        metadata={"help": "type of loss function"},
     )
     log_keys: List[str] = field(
         default_factory=list,
@@ -40,20 +44,24 @@ class PantagruelMultiCriterion(FairseqCriterion):
         self,
         task,
         d2v_weight,
-        lim_weight=0.0,
+        ncp_weight=0.0,
+        ncp_loss_fn=None,
         log_keys=None,
     ):
         super().__init__(task)
         
         self.log_keys = log_keys
         self.d2v_weight = d2v_weight
-        self.lim_weight = lim_weight
-        if self.lim_weight > 0:
-            self.projector = nn.Sequential(
-                nn.LayerNorm(768),
-                nn.Linear(768, 384),
-                nn.ReLU(),
+        self.ncp_weight = ncp_weight
+        self.ncp_loss_fn = ncp_loss_fn
+        if self.ncp_weight > 0:
+            self.nc_projector = nn.Sequential(
+                nn.Linear(768*2, 384),
+                nn.LeakyReLU(),
+                nn.Linear(384, 1),
+                nn.Sigmoid(),
             )
+            assert ncp_loss_fn in ["bce", "custom"]
 
     def forward(self, model, sample, reduce=True):
         """Compute the loss for the given sample.
@@ -82,7 +90,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
             loss = loss.sum()
 
         logging_output = {
-            "loss": loss.data,
+            "loss_d2v": loss.data,
             "ntokens": sample_size,
             "nsentences": sample["id"].numel(),
             "sample_size": sample_size,
@@ -105,27 +113,65 @@ class PantagruelMultiCriterion(FairseqCriterion):
                     l = l.sum()
                 logging_output[f"loss_{lk}"] = l.item()
 
-        if self.lim_weight > 0:
-            lim_weight = self.compute_lim_weight(net_output["local_features"])
-            logging_output["loss_lim"] = lim_weight
+        if self.ncp_weight > 0:
+            ncp_loss, ncp_acc = self.compute_ncp_loss(
+                net_output["local_features"], loss_fn=self.ncp_loss_fn
+            )
+            logging_output["loss_ncp"] = ncp_loss
+            logging_output["acc_ncp"] = ncp_acc * 100
+            loss += ncp_loss
 
         if "logs" in net_output:
             for lgw in net_output["logs"]:
                 logging_output[lgw] = net_output["logs"][lgw]
 
+        logging_output["loss"] = loss.data
+
         return loss, sample_size, logging_output
     
-    def compute_lim_weight(self, local_features, eps=1e-9):
+    def compute_ncp_loss(self, local_features, loss_fn="bce"):
         # local_features: B x T x C
-        for mode, feature in local_features.items():
+        for _, feature in local_features.items():
             if feature is not None:
                 crops1, crops2 = get_random_crops(feature) # B x crop_size x C
-                Y1 = self.projector(crops1).mean(dim=1) # B x D
-                Y2 = self.projector(crops2).mean(dim=1) # B x D
+                Y1 = crops1.mean(dim=1) # B x D
+                Y2 = crops2.mean(dim=1) # B x D
+
+                X_pos = torch.cat(
+                    (Y1, Y2), dim=-1
+                ) # B x 2D
+                X_neg = create_negative_pairs(Y1, Y2) # B(B-1) x 2D
+
+                logits_pos = self.nc_projector(X_pos) # (B, 1)
+                logits_neg = self.nc_projector(X_neg) # B(B-1) x 1
+                logits = torch.cat([logits_pos, logits_neg], dim=0)  # Shape (B + B*(B-1), 1)
+                # logging.info(f'logits_pos: {logits_pos}')
+                # logging.info(f'logits_neg: {logits_neg}')
+
+                if loss_fn == "bce":
+                    targets_pos = torch.ones_like(logits_pos)
+                    targets_neg = torch.zeros_like(logits_neg)
+                    targets = torch.cat([targets_pos, targets_neg], dim=0)
+                    loss = F.binary_cross_entropy(logits, targets, reduction="sum")
+                else:
+                    loss = ((1 - logits_pos)**2).sum() + (logits_neg ** 2).sum()
+
+                # Calculate the total accuracy for both positive and negative logits
+                num_samples = logits_pos.numel() + logits_neg.numel()
+                accuracy = (
+                    (logits_pos >= 0.5).sum() + (logits_neg < 0.5).sum()
+                ) / (num_samples)
+ 
+                return loss, accuracy
+    
+    def compute_lim_weight_gather(self, local_features, eps=1e-9):
+        # local_features: B x T x C
+        for _, feature in local_features.items():
+            if feature is not None:
+                crops1, crops2 = get_random_crops(feature) # B x crop_size x C
+                Y1 = self.nc_projector(crops1).mean(dim=1) # B x D
+                Y2 = self.nc_projector(crops2).mean(dim=1) # B x D
                 B, _ = Y1.size()
-                # Y2_all = (GatherLayer.apply(Y2) if (
-                #     dist.is_available() and dist.is_initialized()
-                # ) else Y2)
                 Y2_all = concat_all_gather(Y2) if dist.is_available() and dist.is_initialized() else Y2
                 neg_idx = torch.randint(0, Y2_all.size(0), size=(B,))
                 Y_R = Y2_all[neg_idx]
@@ -169,7 +215,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
             if k not in builtin_keys and not k.startswith("_"):
                 val = sum(log.get(k, 0) for log in logging_outputs)
                 if k.startswith("loss_"):
-                    metrics.log_scalar(k, val / sample_size, sample_size, round=3)
+                    metrics.log_scalar(k, val / nsentences, nsentences, round=3)
                 else:
                     metrics.log_scalar(k, val / world_size, round=3)
 
@@ -196,30 +242,6 @@ class PantagruelMultiCriterion(FairseqCriterion):
         to True will improves distributed training speed.
         """
         True
-
-class GatherLayer(torch.autograd.Function):
-    """
-    Gather tensors from all process and support backward propagation
-    for the gradients across processes.
-    """
-
-    @staticmethod
-    def forward(ctx, x):
-        # output = [torch.zeros_like(x) for _ in range(dist.get_world_size())]
-        # dist.all_gather(output, x, async_op=False)
-        # return torch.cat(output, dim=0)
-    
-        tensors_gather = [torch.ones_like(x) for _ in range(dist.get_world_size())]
-        dist.all_gather(tensors_gather, x, async_op=False)
-
-        return torch.cat(tensors_gather, dim=0)
-
-
-    @staticmethod
-    def backward(ctx, *grads):
-        all_gradients = torch.stack(grads)
-        dist.all_reduce(all_gradients)
-        return all_gradients[dist.get_rank()]
 
 
 @torch.no_grad()
