@@ -76,8 +76,8 @@ criterion:
 
 optimization:
   clip_norm: 1
-  max_update: 500000
-  lr: [0.0001]
+  max_update: 1000000
+  lr: [0.0005]
   debug_param_names: true
   # max_update: 1000000
   update_freq: [1]
@@ -92,9 +92,9 @@ optimizer:
 lr_scheduler:
   _name: cosine
   warmup_updates: 5000
-  # warmup_init_lr: 1e-7
-  # lr_shrink: 1
-  # min_lr: 1e-9
+  warmup_init_lr: 1e-7
+  lr_shrink: 1
+  min_lr: 1e-9
   # lr_period_updates: 24000
 
 model:
@@ -119,7 +119,7 @@ model:
   layer_norm_target_layer: false
   layer_norm_targets: false
 
-  layerdrop: 0.05
+  layerdrop: 0.0
   norm_eps: 1e-5
 
   use_token_type_embeddings: false
@@ -156,7 +156,7 @@ model:
       prenet_dropout: 0.1
       learned_alibi_scale: true
       learned_alibi_scale_per_head: true
-      local_grad_mult: 7.5
+      local_grad_mult: 2.5
       decoder:
         input_dropout: 0.1
         decoder_dim: 384
