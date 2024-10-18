@@ -17,7 +17,7 @@ checkpoint:
   save_interval_updates: 5000
   keep_interval_updates: 1
   # no_epoch_checkpoints: true
-  keep_best_checkpoints: 10
+  # keep_best_checkpoints: 10
   keep_last_epochs: 10
   # patience: 10
   save_dir: ???
