@@ -73,9 +73,6 @@ criterion:
     - model_norm
     - ema_norm
     - masked_pct
-  d2v_weight: 1.0
-  ncp_weight: 1.0
-  ncp_loss_fn: bce
 
 optimization:
   clip_norm: 1
@@ -171,7 +168,19 @@ model:
       mask_length: 1
       mask_noise_std: 0.01
       prenet_depth: 0
-      # local_grad_mult: 1.0
+      local_grad_mult: 1.0
+      ema_local_encoder: false
+      use_alibi_encoder: true
+      prenet_layerdrop: 0.15
+      prenet_dropout: 0.2
+      learned_alibi_scale: true
+      learned_alibi_scale_per_head: true
+      use_project_features: true
+      mlp_spec: '{"num_layers": 2, "mlp_dim": 512}'
+      use_relative_positional_encoder: true
+      conv_pos_depth: 5
+      conv_pos_width: 95
+      conv_pos_groups: 16
       decoder:
         input_dropout: 0.1
         decoder_dim: 768
