@@ -126,7 +126,7 @@ model:
   layerdrop: 0.0
   norm_eps: 1e-5
 
-  use_token_type_embeddings: false
+  use_token_type_embeddings: true
 
   # shared_decoder:
   #   input_dropout: 0.1
