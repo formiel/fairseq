@@ -5,15 +5,19 @@ common:
   log_format: json
   log_interval: 200
   tensorboard_logdir: ???
-  min_loss_scale: 1e-6
   fp16_no_flatten_grads: true
   user_dir: ???
   time_limit: ???
 
 checkpoint:
+  # no_epoch_checkpoints: true
   save_interval_updates: 50000
   keep_interval_updates: 1
-  # no_epoch_checkpoints: true
+
+distributed_training:
+  distributed_world_size: ???
+  ddp_backend: legacy_ddp
+  distributed_port: ???
 
 task:
   _name: masked_lm
@@ -28,17 +32,6 @@ task:
   d2v2_multi: True
   mask_idx_in_vocab: true
 
-dataset:
-  batch_size: 4
-  ignore_unused_valid_subsets: true
-  skip_invalid_size_inputs_valid_test: true
-  # disable_validation: true
-
-distributed_training:
-  distributed_world_size: ???
-  ddp_backend: c10d
-  distributed_port: ???
-
 criterion:
   _name: model
   log_keys:
@@ -49,10 +42,17 @@ criterion:
     - ema_norm
     - masked_pct
 
+dataset:
+  batch_size: 8
+  ignore_unused_valid_subsets: true
+  skip_invalid_size_inputs_valid_test: true
+  # disable_validation: true
+
 optimization:
-  max_update: 1000000
   clip_norm: 1
   lr: [0.003]
+  max_update: 1000000
+  update_freq: [1]
 
 optimizer:
   _name: composite
@@ -77,9 +77,8 @@ model:
   loss_beta: 0
   loss_scale: 1
 
-  depth: 24
-  num_heads: 16
-  embed_dim: 1024
+  depth: 12
+  embed_dim: 768
   clone_batch: 8
 
   ema_decay: 0.9999
@@ -87,11 +86,11 @@ model:
   ema_anneal_end_step: 100000
   ema_encoder_only: true
 
-  average_top_k_layers: 24
-  layer_norm_target_layer: true
-  instance_norm_target_layer: false
+  average_top_k_layers: 12
+  layer_norm_target_layer: false
+  instance_norm_target_layer: true
   batch_norm_target_layer: false
-  instance_norm_targets: true
+  instance_norm_targets: false
   layer_norm_targets: false
 
   layerdrop: 0

@@ -30,6 +30,7 @@ task:
   include_index: True
   skip_masking: True
   d2v2_multi: True
+  mask_idx_in_vocab: true
 
 criterion:
   _name: model
