@@ -214,8 +214,10 @@ class PantagruelMultiCriterion(FairseqCriterion):
         for k in logging_outputs[0]:
             if k not in builtin_keys and not k.startswith("_"):
                 val = sum(log.get(k, 0) for log in logging_outputs)
-                if k.startswith("loss_"):
+                if k == "loss_ncp":
                     metrics.log_scalar(k, val / nsentences, nsentences, round=3)
+                elif k.startswith("loss_"):
+                    metrics.log_scalar(k, val / sample_size, sample_size, round=3)
                 else:
                     metrics.log_scalar(k, val / world_size, round=3)
 

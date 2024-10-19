@@ -50,7 +50,7 @@ class PantagruelModalitySpecificEncoder(ModalitySpecificEncoder):
         x = self.local_features(features) # B x L x D
         if self.token_type_embeddings is not None:
             # self.token_type_embeddings(token_type_ids): 1 x D
-            x += self.token_type_embeddings(token_type_ids)
+            x = x + self.token_type_embeddings(token_type_ids)
         return self.contextualized_features(
             x,
             padding_mask,

@@ -123,6 +123,10 @@ class MaskedLMConfig(FairseqDataclass):
         default=False,
         metadata={"help": "prepare dataset for data2vec_multi"},
     )
+    mask_idx_in_vocab: bool = field(
+        default=False,
+        metadata={"help": "mask index is included in dict.txt already"}
+    )
 
 
 @register_task("masked_lm", dataclass=MaskedLMConfig)
@@ -137,7 +141,10 @@ class MaskedLMTask(FairseqTask):
         self.dictionary = dictionary or self.load_dict(cfg)
 
         # add mask token
-        self.mask_idx = self.dictionary.add_symbol("<mask>")
+        if not cfg.mask_idx_in_vocab:
+            self.mask_idx = self.dictionary.add_symbol("<mask>")
+        else:
+            self.mask_idx = self.dictionary.index("<mask>")
 
     @classmethod
     def setup_task(cls, cfg: MaskedLMConfig, **kwargs):
@@ -148,7 +155,8 @@ class MaskedLMTask(FairseqTask):
     def load_dict(cls, cfg):
         paths = utils.split_paths(cfg.data)
         assert len(paths) > 0
-        dictionary = Dictionary.load(os.path.join(paths[0], "dict.txt"))
+        extra_special_symbols = ["<mask>"] if cfg.mask_idx_in_vocab else None
+        dictionary = Dictionary.load(os.path.join(paths[0], "dict.txt"), extra_special_symbols=extra_special_symbols)
         logger.info("dictionary: {} types".format(len(dictionary)))
         return dictionary
 
