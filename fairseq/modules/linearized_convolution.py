@@ -27,7 +27,7 @@ class LinearizedConvolution(ConvTBC):
     def __init__(self, in_channels, out_channels, kernel_size, **kwargs):
         super().__init__(in_channels, out_channels, kernel_size, **kwargs)
         self._linearized_weight = None
-        self.register_backward_hook(self._clear_linearized_weight)
+        self.register_full_backward_hook(self._clear_linearized_weight)
 
     def state_dict(self, destination=None, prefix="", keep_vars=False):
         state = ConvTBC.state_dict(self, destination, prefix, keep_vars=keep_vars)

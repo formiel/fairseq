@@ -271,7 +271,7 @@ def update_kmeans_on_backwards(module):
         for m in module.kmean_modules:
             m.update()
 
-    return module.register_backward_hook(hook)
+    return module.register_full_backward_hook(hook)
 
 
 def similarity(x, means):

@@ -75,7 +75,7 @@ class Fp32LayerNorm(nn.Module):
         )
         if clamp_grad:
             hook = partial(layer_norm_backward_hook, clamp_value=max_grad_value)
-            self.torch_module.register_backward_hook(hook)
+            self.torch_module.register_full_backward_hook(hook)
 
     def forward(self, input):
         output = torch.nn.functional.layer_norm(
