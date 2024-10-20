@@ -44,9 +44,10 @@ criterion:
 
 dataset:
   batch_size: 8
-  num_workers: 8
+  num_workers: 64
   ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
+  dataset_impl: mmap
   # disable_validation: true
 
 optimization:
