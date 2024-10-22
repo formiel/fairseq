@@ -18,12 +18,13 @@ distributed_training:
   distributed_world_size: ???
   ddp_backend: legacy_ddp
   distributed_port: ???
+  # distributed_no_spawn: true
 
 task:
   _name: masked_lm
   data: ???
   sample_break_mode: none
-  tokens_per_sample: 512
+  tokens_per_sample: 2048
   include_target_tokens: true
   random_token_prob: 0
   leave_unmasked_prob: 0
@@ -48,6 +49,7 @@ dataset:
   ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
   # disable_validation: true
+  dataset_impl: mmap
 
 optimization:
   clip_norm: 1

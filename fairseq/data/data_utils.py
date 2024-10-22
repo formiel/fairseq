@@ -91,6 +91,7 @@ def load_indexed_dataset(
     from fairseq.data.concat_dataset import ConcatDataset
 
     datasets = []
+    num_examples = 0
     for k in itertools.count():
         path_k = path + (str(k) if k > 0 else "")
         try:
@@ -112,7 +113,9 @@ def load_indexed_dataset(
         )
         if dataset is None:
             break
-        logger.info("loaded {:,} examples from: {}".format(len(dataset), path_k))
+        _num_examples = len(dataset)
+        logger.info("loaded {:,} examples from: {}".format(_num_examples, path_k))
+        num_examples += _num_examples
         datasets.append(dataset)
         if not combine:
             break
@@ -121,7 +124,12 @@ def load_indexed_dataset(
     elif len(datasets) == 1:
         return datasets[0]
     else:
-        return ConcatDataset(datasets)
+        logger.info(f"Total number of examples: {num_examples:,}")
+        if num_examples <= 1e9:
+            return ConcatDataset(datasets)
+        else:
+            from fairseq.data.concat_dataset_large import ConcatDatasetLarge
+            return ConcatDatasetLarge(datasets)
 
 
 @contextlib.contextmanager
