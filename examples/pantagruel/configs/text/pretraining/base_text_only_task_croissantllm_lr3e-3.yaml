@@ -11,14 +11,13 @@ common:
 
 checkpoint:
   # no_epoch_checkpoints: true
-  save_interval_updates: 50000
+  save_interval_updates: 15000
   keep_interval_updates: 1
 
 distributed_training:
   distributed_world_size: ???
   ddp_backend: legacy_ddp
   distributed_port: ???
-  # distributed_no_spawn: true
 
 task:
   _name: masked_lm
@@ -32,6 +31,7 @@ task:
   skip_masking: True
   d2v2_multi: True
   mask_idx_in_vocab: true
+  # dataset_impl: mmap
 
 criterion:
   _name: model
@@ -44,16 +44,17 @@ criterion:
     - masked_pct
 
 dataset:
-  batch_size: 8
-  num_workers: 8
+  batch_size: 32
+  num_workers: 3
   ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
   # disable_validation: true
-  dataset_impl: mmap
+  # dataset_impl: mmap
+  valid_subset: valid
 
 optimization:
   clip_norm: 1
-  lr: [0.003]
+  lr: [0.0032]
   max_update: 1000000
   update_freq: [1]
 
@@ -62,7 +63,7 @@ optimizer:
   dynamic_groups: true
   groups:
     default:
-      lr_float: 0.003
+      lr_float: 0.0032
       optimizer:
         _name: adam
         adam_betas: [0.9,0.98]
