@@ -23,7 +23,7 @@ task:
   _name: masked_lm
   data: ???
   sample_break_mode: none
-  tokens_per_sample: 2048
+  tokens_per_sample: 512
   include_target_tokens: true
   random_token_prob: 0
   leave_unmasked_prob: 0
