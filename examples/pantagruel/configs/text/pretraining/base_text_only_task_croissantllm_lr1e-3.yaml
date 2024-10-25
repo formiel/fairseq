@@ -57,7 +57,7 @@ dataset:
 
 optimization:
   clip_norm: 1
-  lr: [0.0032]
+  lr: [0.001]
   max_update: 1000000
   update_freq: [1]
 
@@ -66,7 +66,7 @@ optimizer:
   dynamic_groups: true
   groups:
     default:
-      lr_float: 0.0032
+      lr_float: 0.001
       optimizer:
         _name: adam
         adam_betas: [0.9,0.98]
@@ -107,7 +107,7 @@ model:
 
   modalities:
     text:
-      mask_prob: 0.5
+      mask_prob: 0.48
       mask_length: 1
       mask_noise_std: 0.01
       prenet_depth: 0
