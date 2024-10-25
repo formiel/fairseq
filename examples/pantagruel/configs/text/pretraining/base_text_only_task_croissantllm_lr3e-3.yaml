@@ -13,6 +13,9 @@ checkpoint:
   # no_epoch_checkpoints: true
   save_interval_updates: 15000
   keep_interval_updates: 1
+  keep_last_epochs: 10
+  # patience: 10
+  save_dir: ???
 
 distributed_training:
   distributed_world_size: ???
