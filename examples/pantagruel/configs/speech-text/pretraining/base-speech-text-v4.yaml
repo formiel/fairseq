@@ -103,7 +103,7 @@ model:
   dummy_factor: 0.0
 
   loss_beta: 0
-  loss_scale: 'null'
+  loss_scale: null
 
   depth: 12
   embed_dim: 768

@@ -97,13 +97,14 @@ optimizer:
         warmup_updates: 9000
 
 lr_scheduler: pass_through
+
 model:
   _name: pantagruel_multi
   # skip_mode: 'TEXT'
   dummy_factor: 0.0
 
   loss_beta: 0
-  loss_scale: 'null'
+  loss_scale: null
 
   depth: 12
   embed_dim: 768
