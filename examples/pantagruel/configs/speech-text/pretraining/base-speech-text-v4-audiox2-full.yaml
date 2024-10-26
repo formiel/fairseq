@@ -6,7 +6,7 @@ common:
   log_interval: 200
   tensorboard_logdir: ???
   min_loss_scale: 1e-6
-  fp16_no_flatten_grads: false
+  fp16_no_flatten_grads: true
   # memory_efficient_fp16: true
   # fp16_scale_tolerance: 0.25
   # time_limit: ???

@@ -6,7 +6,7 @@ common:
   log_interval: 200
   tensorboard_logdir: ???
   min_loss_scale: 1e-6
-  fp16_no_flatten_grads: false
+  fp16_no_flatten_grads: true
   # memory_efficient_fp16: true
   # fp16_scale_tolerance: 0.25
   # time_limit: ???
@@ -41,10 +41,10 @@ task:
     include_target_tokens: true
     random_token_prob: 0
     leave_unmasked_prob: 0
-    include_index: True
-    skip_masking: True
-    d2v2_multi: True
-  
+    include_index: true
+    skip_masking: true
+    d2v2_multi: true
+
 dataset:
   num_workers: 2
   max_tokens: 500000
@@ -67,12 +67,12 @@ distributed_training:
 criterion:
   _name: model
   log_keys:
-    - ema_decay
-    - target_var
-    - pred_var
-    - model_norm
-    - ema_norm
-    - masked_pct
+  - ema_decay
+  - target_var
+  - pred_var
+  - model_norm
+  - ema_norm
+  - masked_pct
 
 optimization:
   clip_norm: 1
@@ -88,7 +88,7 @@ optimizer:
       lr_float: 0.0005
       optimizer:
         _name: adam
-        adam_betas: [0.9,0.98]
+        adam_betas: [0.9, 0.98]
         adam_eps: 1e-06
         weight_decay: 0.01
       lr_scheduler:
@@ -103,7 +103,7 @@ model:
   dummy_factor: 0.0
 
   loss_beta: 0
-  loss_scale: null
+  loss_scale: 'null'
 
   depth: 12
   embed_dim: 768
