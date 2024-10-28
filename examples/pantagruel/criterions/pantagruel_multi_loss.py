@@ -89,10 +89,12 @@ class PantagruelMultiCriterion(FairseqCriterion):
         if reduce and loss.numel() > 1:
             loss = loss.sum()
 
+        nsentences = sample["id"].numel()
+        loss_d2v = loss
         logging_output = {
-            "loss_d2v": loss.data,
+            "loss_d2v": loss_d2v.data,
             "ntokens": sample_size,
-            "nsentences": sample["id"].numel(),
+            "nsentences": nsentences,
             "sample_size": sample_size,
             "_world_size": 1,
         }
@@ -117,9 +119,9 @@ class PantagruelMultiCriterion(FairseqCriterion):
             ncp_loss, ncp_acc = self.compute_ncp_loss(
                 net_output["local_features"], loss_fn=self.ncp_loss_fn
             )
-            logging_output["loss_ncp"] = ncp_loss
+            logging_output["loss_ncp"] = self.ncp_weight * (sample_size/nsentences) * ncp_loss
             logging_output["acc_ncp"] = ncp_acc * 100
-            loss += ncp_loss
+            loss = loss + logging_output["loss_ncp"]
 
         if "logs" in net_output:
             for lgw in net_output["logs"]:
@@ -152,7 +154,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
                     targets_pos = torch.ones_like(logits_pos)
                     targets_neg = torch.zeros_like(logits_neg)
                     targets = torch.cat([targets_pos, targets_neg], dim=0)
-                    loss = F.binary_cross_entropy(logits, targets, reduction="sum")
+                    loss = F.binary_cross_entropy(logits, targets, reduction="none").sum()
                 else:
                     loss = ((1 - logits_pos)**2).sum() + (logits_neg ** 2).sum()
 
@@ -214,9 +216,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
         for k in logging_outputs[0]:
             if k not in builtin_keys and not k.startswith("_"):
                 val = sum(log.get(k, 0) for log in logging_outputs)
-                if k == "loss_ncp":
-                    metrics.log_scalar(k, val / nsentences, nsentences, round=3)
-                elif k.startswith("loss_"):
+                if k.startswith("loss_"):
                     metrics.log_scalar(k, val / sample_size, sample_size, round=3)
                 else:
                     metrics.log_scalar(k, val / world_size, round=3)

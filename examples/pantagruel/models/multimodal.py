@@ -907,7 +907,7 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         if self.cfg.d2v_loss > 0:
             for i, x in enumerate(xs):
-                reg_loss = self.d2v_loss(x, y)
+                reg_loss = self.d2v_loss(x, y) # x: TxD, y: TxD, reg_loss: TxD
                 n = f"{mode}_regression_{i}" if len(xs) > 1 else f"{mode}_regression"
                 result["losses"][n] = reg_loss * self.cfg.d2v_loss
 

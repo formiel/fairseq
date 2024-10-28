@@ -1,6 +1,6 @@
 import torch
 
-def get_random_crops(input_tensor, frame_length=6):
+def get_random_crops(input_tensor, frame_length=200):
     """
     Sample two non-overlapping frames from a batch of encoded embeddings.
     """
