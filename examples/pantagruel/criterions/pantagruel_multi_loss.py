@@ -32,6 +32,10 @@ class PantagruelMultiConfig(FairseqDataclass):
         default="none",
         metadata={"help": "type of loss function"},
     )
+    ncp_loss_scale: str = field(
+        default=0.0,
+        metadata={"help": "scale the loss ncp by 1 / ncp_loss_scale"},
+    )
     log_keys: List[str] = field(
         default_factory=list,
         metadata={"help": "additional output keys to log"},
@@ -46,6 +50,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
         d2v_weight,
         ncp_weight=0.0,
         ncp_loss_fn=None,
+        ncp_loss_scale=0.0,
         log_keys=None,
     ):
         super().__init__(task)
@@ -54,6 +59,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
         self.d2v_weight = d2v_weight
         self.ncp_weight = ncp_weight
         self.ncp_loss_fn = ncp_loss_fn
+        self.ncp_loss_scale = ncp_loss_scale
         if self.ncp_weight > 0:
             self.nc_projector = nn.Sequential(
                 nn.Linear(768*2, 384),
@@ -61,6 +67,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
                 nn.Linear(384, 1),
                 nn.Sigmoid(),
             )
+            assert self.ncp_loss_scale != 0
             assert ncp_loss_fn in ["bce", "custom"]
 
     def forward(self, model, sample, reduce=True):
@@ -119,9 +126,9 @@ class PantagruelMultiCriterion(FairseqCriterion):
             ncp_loss, ncp_acc = self.compute_ncp_loss(
                 net_output["local_features"], loss_fn=self.ncp_loss_fn
             )
-            logging_output["loss_ncp"] = self.ncp_weight * (sample_size/nsentences) * ncp_loss
+            logging_output["loss_ncp"] = ncp_loss * (1 / self.ncp_loss_scale) 
             logging_output["acc_ncp"] = ncp_acc * 100
-            loss = loss + logging_output["loss_ncp"]
+            loss = loss + self.ncp_weight * logging_output["loss_ncp"]
 
         if "logs" in net_output:
             for lgw in net_output["logs"]:
