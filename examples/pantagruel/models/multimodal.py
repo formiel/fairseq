@@ -177,6 +177,8 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
     mlp_after_local_encoder: bool = False
     freeze_project_features: bool = False
     init_v2: bool = False
+    ncp_loss_after_local_encoder: bool = False
+    ncp_loss_after_encoder: bool = False
 
 
 class LinearDiscriminator(nn.Module):
@@ -266,6 +268,8 @@ class PantagruelMultiModel(BaseFairseqModel):
         self.use_modality_experts_at_mha = getattr(cfg, "use_modality_experts_at_mha", False)
         self.mlp_after_local_encoder = getattr(cfg, "mlp_after_local_encoder", False)
         self.freeze_project_features = getattr(cfg, "freeze_project_features", False)
+        self.ncp_loss_after_local_encoder = getattr(cfg, "ncp_loss_after_local_encoder", False)
+        self.ncp_loss_after_encoder = getattr(cfg, "ncp_loss_after_encoder", False)
 
         make_layer_norm = partial(
             nn.LayerNorm, eps=cfg.norm_eps, elementwise_affine=cfg.norm_affine
@@ -846,9 +850,12 @@ class PantagruelMultiModel(BaseFairseqModel):
         sample_size = masked.sum().long()
 
         local_features = {modality: None for modality in self.modality_encoders.keys()}
-        # org_B, _, C =  extractor_out["local_features"].size()
-        # local_features[mode] = extractor_out["x"].view(org_B, self.cfg.clone_batch, -1, C).mean(dim=1)
-        local_features[mode] = extractor_out["local_features"]
+        if self.ncp_loss_after_local_encoder:
+            local_features[mode] = extractor_out["local_features"]
+        elif self.ncp_loss_after_encoder:
+            org_B, _, C =  extractor_out["local_features"].size()
+            local_features[mode] = extractor_out["x"].view(org_B, self.cfg.clone_batch, -1, C)
+        
         result = {
             "losses": {},
             "sample_size": sample_size,

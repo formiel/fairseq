@@ -4,7 +4,7 @@ def get_random_crops(input_tensor, frame_length=200):
     """
     Sample two non-overlapping frames from a batch of encoded embeddings.
     """
-    B, T, C = input_tensor.size()
+    B, T, _ = input_tensor.size()
     frame_length = min(T//2, frame_length)
 
     # get the first crop
@@ -28,16 +28,17 @@ def get_random_crops(input_tensor, frame_length=200):
     return [crops1, crops2]
 
 
-def create_negative_pairs(X, Y):
+def create_negative_pairs(X, Y, nclone=1):
     """create negative pairs"""
-    B, D = X.size()
-    X_rep = X.unsqueeze(1).expand(B, B-1, D)
+    M, D = X.size()
+    X_rep = X.unsqueeze(1).expand(M, M-nclone, D)
 
-    mask = torch.eye(B, dtype=torch.bool)
+    mask = torch.eye(M // nclone, dtype=torch.bool)
+    mask = mask.repeat_interleave(nclone, 1).repeat_interleave(nclone, 0)
 
-    Y_negs = [Y[~mask[:,i]] for i in range(B)] # [list of (B-1, D)]
-    Y_negs = torch.stack(Y_negs, dim=0) # (B, B-1, D)
+    Y_negs = [Y[~mask[:,i]] for i in range(M)] # [list of M elements of (M-nclone, D)]
+    Y_negs = torch.stack(Y_negs, dim=0) # (M, M-nclone, D)
 
-    out = torch.cat((X_rep, Y_negs), dim=-1) # (B, B-1, 2D)
+    out = torch.cat((X_rep, Y_negs), dim=-1) # (M, M-nclone, 2D)
 
     return out.view(-1, 2*D)

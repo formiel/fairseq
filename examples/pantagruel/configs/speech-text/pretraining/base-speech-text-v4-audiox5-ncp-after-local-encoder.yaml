@@ -127,6 +127,7 @@ model:
   norm_eps: 1e-5
 
   use_token_type_embeddings: false
+  ncp_loss_after_local_encoder: true
 
   # shared_decoder:
   #   input_dropout: 0.1

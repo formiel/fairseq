@@ -32,7 +32,7 @@ class PantagruelMultiConfig(FairseqDataclass):
         default="none",
         metadata={"help": "type of loss function"},
     )
-    ncp_loss_scale: str = field(
+    ncp_loss_scale: float = field(
         default=0.0,
         metadata={"help": "scale the loss ncp by 1 / ncp_loss_scale"},
     )
@@ -139,21 +139,28 @@ class PantagruelMultiCriterion(FairseqCriterion):
         return loss, sample_size, logging_output
     
     def compute_ncp_loss(self, local_features, loss_fn="bce"):
-        # local_features: B x T x C
+        # local_features: B x T x C or B x clone_batch x T x C
         for _, feature in local_features.items():
             if feature is not None:
-                crops1, crops2 = get_random_crops(feature) # B x crop_size x C
-                Y1 = crops1.mean(dim=1) # B x D
-                Y2 = crops2.mean(dim=1) # B x D
+                if feature.dim() == 4:
+                    B, nclone, T, C = feature.size()
+                    feature = feature.reshape(B*nclone, T, C) # M = Bxnclone
+                else:
+                    B, T, C = feature.size()
+                    nclone = 1
+
+                crops1, crops2 = get_random_crops(feature) # M x crop_size x D
+                Y1 = crops1.mean(dim=1) # M x D
+                Y2 = crops2.mean(dim=1) # M x D
 
                 X_pos = torch.cat(
                     (Y1, Y2), dim=-1
-                ) # B x 2D
-                X_neg = create_negative_pairs(Y1, Y2) # B(B-1) x 2D
+                ) # M x 2D
+                X_neg = create_negative_pairs(Y1, Y2, nclone=nclone) # M(M-nclone) x 2D
 
-                logits_pos = self.nc_projector(X_pos) # (B, 1)
-                logits_neg = self.nc_projector(X_neg) # B(B-1) x 1
-                logits = torch.cat([logits_pos, logits_neg], dim=0)  # Shape (B + B*(B-1), 1)
+                logits_pos = self.nc_projector(X_pos) # (M, 1)
+                logits_neg = self.nc_projector(X_neg) # M(M-nclone) x 1
+                logits = torch.cat([logits_pos, logits_neg], dim=0)  # Shape (M + M*(M-nclone), 1)
                 # logging.info(f'logits_pos: {logits_pos}')
                 # logging.info(f'logits_neg: {logits_neg}')
 
@@ -161,6 +168,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
                     targets_pos = torch.ones_like(logits_pos)
                     targets_neg = torch.zeros_like(logits_neg)
                     targets = torch.cat([targets_pos, targets_neg], dim=0)
+                    logits = torch.clamp(logits, min=1e-7, max=1 - 1e-7)
                     loss = F.binary_cross_entropy(logits, targets, reduction="none").sum()
                 else:
                     loss = ((1 - logits_pos)**2).sum() + (logits_neg ** 2).sum()
