@@ -59,7 +59,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
         self.d2v_weight = d2v_weight
         self.ncp_weight = ncp_weight
         self.ncp_loss_fn = ncp_loss_fn
-        self.ncp_loss_scale = ncp_loss_scale
+        self.ncp_loss_scale = float(ncp_loss_scale)
         if self.ncp_weight > 0:
             self.nc_projector = nn.Sequential(
                 nn.Linear(768*2, 384),
