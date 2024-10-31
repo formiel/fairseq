@@ -361,11 +361,18 @@ def train(
     logger.info("Start iterating over samples")
     epoch_time_queue = deque(maxlen=3)
     reach_time_limit = False
-    start_timing_epoch = (
-        True if cfg.checkpoint.save_interval_updates != 0 
-        and num_updates % cfg.checkpoint.save_interval_updates == 0 else False
-    )
-
+    time_limit = getattr(cfg.common, "time_limit", -1)
+    save_interval_steps = cfg.checkpoint.save_interval_updates
+    check_time_limit_intervals = (
+        True if save_interval_steps != 0 and time_limit > 0 else False
+    ) # compute time limit for save_interval updates
+    start_timing_epoch = True if check_time_limit_intervals else False # for first iterations
+    if check_time_limit_intervals > 0:
+        intrplt_finised_step_ratio = (
+            1 if num_updates % save_interval_steps == 0 else (
+                save_interval_steps / (num_updates % save_interval_steps)
+            )
+        )
     start_epoch_time = time() if start_timing_epoch else None
 
     for i, samples in enumerate(progress):
@@ -394,10 +401,26 @@ def train(
         valid_losses, should_stop = validate_and_save(
             cfg, trainer, task, epoch_itr, valid_subsets, end_of_epoch
         )
-        if valid_losses[0] is not None and cfg.checkpoint.save_interval_updates != 0 and num_updates % cfg.checkpoint.save_interval_updates == 0:
+        if valid_losses[0] is not None and check_time_limit_intervals:
+            if num_updates % save_interval_steps == 0:
+                # next number of steps to check for time
+                next_save_number_steps = min(
+                    len(epoch_itr)*epoch_itr.epoch - num_updates, #remaining steps until end of epoch
+                    save_interval_steps
+                )
+            elif end_of_epoch:
+                next_save_number_steps = min(
+                    ((num_updates//save_interval_steps)+1)*save_interval_steps - num_updates,
+                    save_interval_steps
+                )
+            else:
+                raise ValueError
+            logger.info(f"next_save_number_steps={next_save_number_steps}")
             reach_time_limit, _epoch_time_queue = get_time_queue_and_check_time_limit(
                     cfg, start_epoch_time=start_epoch_time,
                     epoch_time_queue=epoch_time_queue,
+                    intrplt_ratio_finished_steps=intrplt_finised_step_ratio,
+                    intrplt_ratio_next_steps=next_save_number_steps/save_interval_steps,
                 )
             epoch_time_queue = _epoch_time_queue
             start_timing_epoch = True
@@ -514,17 +537,19 @@ def get_training_stats(stats: Dict[str, Any]) -> Dict[str, Any]:
 
 def get_time_queue_and_check_time_limit(
     cfg, start_epoch_time, epoch_time_queue,
+    intrplt_ratio_finished_steps=1,
+    intrplt_ratio_next_steps=1,
 ):
     reach_time_limit = False
     time_limit = getattr(cfg.common, "time_limit", -1)
 
     # epoch time in minutes
-    epoch_time = (time() - start_epoch_time)/60
+    epoch_time = ((time() - start_epoch_time)/60) * intrplt_ratio_finished_steps
     # average duration of the last 3 epochs
     epoch_time_queue.append(epoch_time)
     avg_time = sum(epoch_time_queue)/len(epoch_time_queue)
     # if the next epoch likely surpasses the time limit, then stop here
-    estimated_next_total_time = (time() - START_JOB_TIME)/60 + avg_time
+    estimated_next_total_time = (time() - START_JOB_TIME)/60 + avg_time * intrplt_ratio_next_steps
     # Distributed training: taking the highest estimate from all processes
     if cfg.common.model_parallel_size > 1:
         estimated_times = [

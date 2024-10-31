@@ -76,7 +76,7 @@ criterion:
   d2v_weight: 1.0
   ncp_weight: 1.0
   ncp_loss_fn: bce
-  ncp_loss_scale: 0.0001
+  ncp_loss_scale: 0.01
 
 optimization:
   clip_norm: 1

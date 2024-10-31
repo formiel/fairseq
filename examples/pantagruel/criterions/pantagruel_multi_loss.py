@@ -36,6 +36,14 @@ class PantagruelMultiConfig(FairseqDataclass):
         default=0.0,
         metadata={"help": "scale the loss ncp by 1 / ncp_loss_scale"},
     )
+    moco_weight: float = field(
+        default=0.0,
+        metadata={"help": "weight of MoCo-v3 loss"},
+    )
+    moco_temperature: float = field(
+        default=0.0,
+        metadata={"help": "temperature for MoCo-v3 loss"},
+    )
     log_keys: List[str] = field(
         default_factory=list,
         metadata={"help": "additional output keys to log"},
@@ -51,6 +59,8 @@ class PantagruelMultiCriterion(FairseqCriterion):
         ncp_weight=0.0,
         ncp_loss_fn=None,
         ncp_loss_scale=0.0,
+        moco_weight=0.0,
+        moco_temperature=0.0,
         log_keys=None,
     ):
         super().__init__(task)
@@ -69,6 +79,8 @@ class PantagruelMultiCriterion(FairseqCriterion):
             )
             assert self.ncp_loss_scale != 0
             assert ncp_loss_fn in ["bce", "custom"]
+        self.moco_weight = moco_weight
+        self.moco_temperature = moco_temperature
 
     def forward(self, model, sample, reduce=True):
         """Compute the loss for the given sample.
@@ -129,6 +141,12 @@ class PantagruelMultiCriterion(FairseqCriterion):
             logging_output["loss_ncp"] = ncp_loss * (1 / self.ncp_loss_scale) 
             logging_output["acc_ncp"] = ncp_acc * 100
             loss = loss + self.ncp_weight * logging_output["loss_ncp"]
+        if self.moco_weight > 0:
+            moco_loss = self.compute_moco_loss(
+                net_output["q"], net_output["k"]
+            )
+            logging_output["loss_moco"] = moco_loss
+            loss = loss + self.moco_weight * moco_loss
 
         if "logs" in net_output:
             for lgw in net_output["logs"]:
@@ -180,6 +198,21 @@ class PantagruelMultiCriterion(FairseqCriterion):
                 ) / (num_samples)
  
                 return loss, accuracy
+            
+    def compute_moco_loss(self, q, k):
+        if q is None or k is None:
+            return 0
+        # q: B x nclone x C, k: BxC
+        B, nclone, C = q.size()
+        q = q.reshape(-1, C) # MxC
+        q = F.normalize(q, dim=-1)
+        k = F.normalize(k, dim=-1)
+        logits = torch.matmul(q, k.T) / self.moco_temperature # MxB
+        logits = torch.clamp(logits, min=1e-7, max=1 - 1e-7)
+        labels = torch.arange(B, dtype=torch.long, device=q.device)
+        labels = labels.repeat_interleave(nclone, 0)
+
+        return nn.CrossEntropyLoss()(logits, labels) * (2 * self.moco_temperature)
     
     def compute_lim_weight_gather(self, local_features, eps=1e-9):
         # local_features: B x T x C
@@ -262,14 +295,15 @@ class PantagruelMultiCriterion(FairseqCriterion):
 
 
 @torch.no_grad()
-def concat_all_gather(tensor):
+def concat_all_gather(z: torch.Tensor):
     """
     Performs all_gather operation on the provided tensors.
     *** Warning ***: torch.distributed.all_gather has no gradient.
     """
-    tensors_gather = [torch.ones_like(tensor)
+    gathered_zs = [torch.zeros_like(z)
         for _ in range(dist.get_world_size())]
-    dist.all_gather(tensors_gather, tensor, async_op=False)
+    dist.all_gather(tensor_list=gathered_zs, tensor=z.contiguous())
+    gathered_zs[dist.get_rank()] = z
 
-    output = torch.cat(tensors_gather, dim=0)
+    output = torch.cat(gathered_zs, dim=0)
     return output

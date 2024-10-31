@@ -24,7 +24,7 @@ checkpoint:
 
 task:
   _name: pantagruel_multimodal_pretraining
-  audio_ratio: 3
+  audio_ratio: 1
   text_ratio: 1
   # update_freq: [4]
   # vocab_path: /gpfswork/rech/ahm/umz16dj/pretrained/tokenizers/gpt2_bpe/dict.txt
@@ -74,9 +74,8 @@ criterion:
   - ema_norm
   - masked_pct
   d2v_weight: 1.0
-  ncp_weight: 1.0
-  ncp_loss_fn: bce
-  ncp_loss_scale: 0.0001
+  moco_weight: 1.0
+  moco_temperature: 100.0
 
 optimization:
   clip_norm: 1
@@ -127,7 +126,7 @@ model:
   norm_eps: 1e-5
 
   use_token_type_embeddings: false
-  ncp_loss_after_local_encoder: true
+  contrastive_loss_after_encoder: true
 
   # shared_decoder:
   #   input_dropout: 0.1

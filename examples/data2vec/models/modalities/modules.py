@@ -64,7 +64,7 @@ class BlockEncoder(nn.Module):
         self.norm = norm_layer
         self.layer_norm_first = layer_norm_first
         self.layerdrop = layerdrop
-        self.dropout = nn.Dropout(dropout, inplace=True)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, padding_mask, alibi_bias, alibi_scale):
         if self.norm is not None and not self.layer_norm_first:

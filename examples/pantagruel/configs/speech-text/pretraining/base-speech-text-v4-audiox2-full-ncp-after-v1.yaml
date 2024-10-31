@@ -76,13 +76,15 @@ criterion:
   d2v_weight: 1.0
   ncp_weight: 1.0
   ncp_loss_fn: bce
-  ncp_loss_scale: 0.0001
+  ncp_loss_scale: 0.01
+
 
 optimization:
   clip_norm: 1
   lr: [0.0005]
   max_update: 650000
   update_freq: [1]
+  # max_epoch: 2
 
 optimizer:
   _name: composite
@@ -127,7 +129,7 @@ model:
   norm_eps: 1e-5
 
   use_token_type_embeddings: false
-  ncp_loss_after_local_encoder: true
+  ncp_loss_after_encoder: true
 
   # shared_decoder:
   #   input_dropout: 0.1
@@ -143,7 +145,7 @@ model:
 
   modalities:
     audio:
-      feature_encoder_spec: '[(512, 10, 5)] + [(512, 3, 2)] * 4 + [(512,2,2)] + [(512,2,2)]'
+      feature_encoder_spec: '[(512, 10, 5)] + [(512, 3, 2)] * 4 + [(512,2,2)] + [(512,2,2)] + [(512,2,2)]'
       conv_pos_depth: 5
       conv_pos_width: 95
       conv_pos_groups: 16
@@ -169,11 +171,23 @@ model:
         decoder_kernel: 7
         decoder_layers: 4
     text:
-      mask_prob: 0.48
+      mask_prob: 0.5
       mask_length: 1
       mask_noise_std: 0.01
       prenet_depth: 0
       # local_grad_mult: 1.0
+      ema_local_encoder: false
+      use_alibi_encoder: true
+      prenet_layerdrop: 0.15
+      prenet_dropout: 0.2
+      learned_alibi_scale: true
+      learned_alibi_scale_per_head: true
+      use_project_features: true
+      mlp_spec: '{"num_layers": 2, "mlp_dim": 512}'
+      use_relative_positional_encoder: true
+      conv_pos_depth: 5
+      conv_pos_width: 95
+      conv_pos_groups: 16
       decoder:
         input_dropout: 0.1
         decoder_dim: 768

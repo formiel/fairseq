@@ -179,6 +179,7 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
     init_v2: bool = False
     ncp_loss_after_local_encoder: bool = False
     ncp_loss_after_encoder: bool = False
+    contrastive_loss_after_encoder: bool = False
 
 
 class LinearDiscriminator(nn.Module):
@@ -270,6 +271,7 @@ class PantagruelMultiModel(BaseFairseqModel):
         self.freeze_project_features = getattr(cfg, "freeze_project_features", False)
         self.ncp_loss_after_local_encoder = getattr(cfg, "ncp_loss_after_local_encoder", False)
         self.ncp_loss_after_encoder = getattr(cfg, "ncp_loss_after_encoder", False)
+        self.contrastive_loss_after_encoder = getattr(cfg, "contrastive_loss_after_encoder", False)
 
         make_layer_norm = partial(
             nn.LayerNorm, eps=cfg.norm_eps, elementwise_affine=cfg.norm_affine
@@ -341,9 +343,26 @@ class PantagruelMultiModel(BaseFairseqModel):
             )
         # add mlp after local encoder
         self.predictor = None
+        self.project_mlp, self.predictor_mlp = None, None
         if self.mlp_after_local_encoder:
             # self.predictor = nn.Linear(cfg.embed_dim, cfg.embed_dim, bias=False)
             self.predictor = self._build_mlp(2, cfg.embed_dim, cfg.embed_dim*4, cfg.embed_dim, last_bn=True)
+        if self.contrastive_loss_after_encoder:
+            self.project_mlp = nn.Sequential(
+                nn.Linear(cfg.embed_dim, cfg.embed_dim*2, bias=True),
+                nn.LayerNorm(cfg.embed_dim*2),
+                nn.Tanh(),
+                nn.Linear(cfg.embed_dim*2, cfg.embed_dim*2, bias=True),
+                nn.LayerNorm(cfg.embed_dim*2),
+                nn.Tanh(),
+                nn.Linear(cfg.embed_dim*2, cfg.embed_dim, bias=True),
+            )
+            self.predictor_mlp = nn.Sequential(
+                nn.Linear(cfg.embed_dim, cfg.embed_dim*2, bias=True),
+                nn.LayerNorm(cfg.embed_dim*2),
+                nn.Tanh(),
+                nn.Linear(cfg.embed_dim*2, cfg.embed_dim, bias=True),
+            )
         
         self.ema = None
 
@@ -479,6 +498,9 @@ class PantagruelMultiModel(BaseFairseqModel):
                     mod_enc.local_encoder = None
                     mod_enc.project_features = None
 
+        if self.contrastive_loss_after_encoder:
+            model_copy.predictor_mlp = None
+
         model_copy.requires_grad_(False)
         return model_copy
 
@@ -601,6 +623,7 @@ class PantagruelMultiModel(BaseFairseqModel):
         if id is not None:
             mask_seeds = MaskSeed(seed=self.cfg.seed, update=self.num_updates, ids=id)
 
+        B, _ = source.size()
         extractor_out = feature_extractor(
             source, # B x T
             padding_mask,
@@ -612,8 +635,7 @@ class PantagruelMultiModel(BaseFairseqModel):
             token_type_ids=token_type_ids,
         )
 
-        x = extractor_out["x"] # B x T x C
-        B, _, _ = x.size()
+        x = extractor_out["x"] # M x T x C (M=B*clone_batch)
 
         x_dummies, encoder_mask_dummies = None, None
         if len(remaining_extractor_names) > 0:
@@ -637,9 +659,10 @@ class PantagruelMultiModel(BaseFairseqModel):
                 dummy_outs = self.modality_encoders[name](
                     dummy, None, False, False, token_type_ids=remaining_token_type_ids[name]
                 )
-                x_dummies.append(dummy_outs["x"]) # B x T x C
+                _x_dummy = dummy_outs["x"].repeat_interleave(self.cfg.clone_batch,0) #BxTxC -> M x T x C
+                x_dummies.append(_x_dummy)
                 encoder_mask_dummies.append(dummy_outs["encoder_mask"])
-                x += self.dummy_factor * dummy_outs["x"].mean(dim=1).unsqueeze(1)
+                x += self.dummy_factor * _x_dummy.mean(dim=1).unsqueeze(1)
         encoder_mask = extractor_out["encoder_mask"]
         masked_padding_mask = extractor_out["padding_mask"]
         masked_alibi_bias = extractor_out.get("alibi_bias", None)
@@ -652,7 +675,11 @@ class PantagruelMultiModel(BaseFairseqModel):
         # predictor
         q = None
         if self.predictor is not None:
-            q = self.predictor(x_feat.mean(dim=1)) # B*clone_batch x C
+            q = self.predictor(x_feat.mean(dim=1)).reshape(B, self.cfg.clone_batch, -1) # MxTxC->MxC->B x clone_batch x C
+        if self.project_mlp is not None:
+            q = self.predictor_mlp(
+                self.project_mlp(x_feat.mean(dim=1)).reshape(B, self.cfg.clone_batch, -1)
+            )
 
         layer_results = []
         for i, blk in enumerate(self.blocks):
@@ -807,6 +834,9 @@ class PantagruelMultiModel(BaseFairseqModel):
             k = None
             if self.predictor is not None:
                 k = tm.predictor(ema_input.mean(dim=1))
+            if tm.project_mlp is not None:
+                k = tm.project_mlp(ema_input.mean(dim=1)) # BxC
+                k = k.detach()
 
             y = []
             ema_x = []
