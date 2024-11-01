@@ -82,7 +82,7 @@ class AudioPretrainingConfig(FairseqDataclass):
         metadata={"help": "number of buckets"},
     )
     tpu: bool = II("common.tpu")
-    text_compression_level: ChoiceEnum([x.name for x in TextCompressionLevel]) = field(
+    text_compression_level: ChoiceEnum([x.name for x in TextCompressionLevel]) = field( # type: ignore
         default="none",
         metadata={
             "help": "compression level for texts (e.g. audio filenames, "
