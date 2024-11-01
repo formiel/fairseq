@@ -405,7 +405,7 @@ def train(
             if num_updates % save_interval_steps == 0:
                 # next number of steps to check for time
                 next_save_number_steps = min(
-                    len(epoch_itr)*epoch_itr.epoch - num_updates, #remaining steps until end of epoch
+                    itr.total * epoch_itr.epoch - num_updates, #remaining steps until end of epoch
                     save_interval_steps
                 )
             elif end_of_epoch:
