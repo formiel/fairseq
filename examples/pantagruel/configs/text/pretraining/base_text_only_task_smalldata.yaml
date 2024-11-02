@@ -11,7 +11,7 @@ common:
 
 checkpoint:
   # save_interval: 1
-  save_interval_updates: 25000
+  # save_interval_updates: 5000
   # keep_interval_updates: 1
   # no_epoch_checkpoints: true
   # keep_best_checkpoints: 10
