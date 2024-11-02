@@ -48,15 +48,15 @@ criterion:
     - masked_pct
 
 dataset:
-  batch_size: 16
+  batch_size: 56
   # ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
   # disable_validation: true
 
 optimization:
   clip_norm: 1
-  lr: [0.0003]
-  max_update: 500000
+  lr: [0.001]
+  max_update: 200000
   update_freq: [1]
 
 optimizer:
@@ -64,7 +64,7 @@ optimizer:
   dynamic_groups: true
   groups:
     default:
-      lr_float: 0.0003
+      lr_float: 0.001
       optimizer:
         _name: adam
         adam_betas: [0.9,0.98]
@@ -72,7 +72,7 @@ optimizer:
         weight_decay: 0.01
       lr_scheduler:
         _name: cosine
-        warmup_updates: 25000
+        warmup_updates: 5000
 
 lr_scheduler: pass_through
 
@@ -88,7 +88,7 @@ model:
 
   ema_decay: 0.999
   ema_end_decay: 0.9999
-  ema_anneal_end_step: 250000
+  ema_anneal_end_step: 100000
   ema_encoder_only: true
 
   average_top_k_layers: 12
