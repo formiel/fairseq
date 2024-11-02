@@ -19,21 +19,29 @@ from fairseq.tasks import FairseqTask, register_task
 from fairseq.tasks.audio_pretraining import AudioPretrainingTask
 from fairseq.tasks.masked_lm import MaskedLMTask
 from examples.data2vec.tasks.mae_image_pretraining import MaeImagePretrainingTask
-from examples.data2vec.data.modality import Modality
+from ..data.modality import Modality
 
 from fairseq.data.audio.multi_modality_dataset import (
     MultiModalityDataset,
     ModalityDatasetItem,
 )
 from examples.data2vec.tasks.multimodal import MultimodalPretrainingConfig
+from examples.pantagruel.data.aligned_audio_text_dataset import (
+    AlignedSpeechTextConfig,
+    AlignedSpeechTextDataset,
+)
 
 logger = logging.getLogger(__name__)
 
 MASK_SYMBOL = "<mask>"
 
+
 @dataclass
 class PantagruelMultimodalPretrainingConfig(MultimodalPretrainingConfig):
     vocab_path: Optional[str] = None
+    aligned_audio_text: Optional[AlignedSpeechTextConfig] = None
+    aligned_audio_text_ratio: float = 1
+
 
 @register_task("pantagruel_multimodal_pretraining", dataclass=PantagruelMultimodalPretrainingConfig)
 class PantagruelMultimodalPretrainingTask(FairseqTask):
@@ -48,6 +56,8 @@ class PantagruelMultimodalPretrainingTask(FairseqTask):
             MaeImagePretrainingTask(cfg.image) if cfg.image is not None else None
         )
         self.text_task = MaskedLMTask(cfg.text) if cfg.text is not None else None
+        self.aligned_audio_text_cfg = getattr(cfg, "aligned_audio_text", None)
+
         if self.audio_task is not None:
             self.max_sample_size = self.audio_task.cfg.max_sample_size
         else:
@@ -96,6 +106,25 @@ class PantagruelMultimodalPretrainingTask(FairseqTask):
         load_ds(self.audio_task, Modality.AUDIO, self.cfg.audio_ratio)
         load_ds(self.image_task, Modality.IMAGE, self.cfg.image_ratio)
         load_ds(self.text_task, Modality.TEXT, self.cfg.text_ratio)
+
+        if self.aligned_audio_text_cfg is not None:
+            assert isinstance(self.aligned_audio_text_cfg, AlignedSpeechTextConfig)
+            ds = AlignedSpeechTextDataset._load_data_from_csv(
+                split=split,
+                cfg=self.aligned_audio_text_cfg,
+            )
+            assert len(ds.tokenizer) == self.vocab_size, "Length of the dictionaries for ssl and supervised tasks must match"
+
+            datasets.append(
+                ModalityDatasetItem(
+                    datasetname=Modality.AUDIO_TEXT,
+                    dataset=ds,
+                    max_positions=self.audio_task.max_positions(),
+                    max_tokens=self.cfg.max_tokens,
+                    max_sentences=self.cfg.batch_size,
+                )
+            )
+            self.mult_ratios.append(self.cfg.aligned_audio_text_ratio)
 
         assert len(datasets) > 0
 

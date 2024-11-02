@@ -94,6 +94,11 @@ class AlignedSpeechTextDataset(FairseqDataset):
         self,
         split: str,
         cfg: AlignedSpeechTextConfig,
+        audios: List[str],
+        texts: List[str],
+        n_frames: List[int],
+        ids: Optional[List[str]] = None,
+        speakers: Optional[List[str]] = None,
         speaker_to_id=None,
     ):
         self.split = split
@@ -106,7 +111,9 @@ class AlignedSpeechTextDataset(FairseqDataset):
         self.pad_idx = self.tokenizer.encode(PAD_TOKEN)[0]
         self.unk_idx = self.tokenizer.encode(UNK_TOKEN)[0]
 
-        self.ids, self.speakers, self.n_frames, self.audios, self.texts = self._load_data_from_csv(self.cfg, split)
+        self.ids, self.speakers, self.n_frames, self.audios, self.texts = (
+            ids, speakers, n_frames, audios, texts
+        )
         self.n_samples = len(self.audios)
 
         self.text_lens = self.get_text_lens_and_check_oov()
@@ -140,7 +147,10 @@ class AlignedSpeechTextDataset(FairseqDataset):
     def __len__(self):
         return self.n_samples
 
-    def _load_data_from_csv(self, cfg: AlignedSpeechTextConfig, split):
+    @classmethod
+    def _load_data_from_csv(
+        cls, split:str, cfg: AlignedSpeechTextConfig, speaker_to_id=None
+    ):
         # load samples from csv
         tsv_path = Path(cfg.data_root) / f"{split}.tsv"
         if not tsv_path.is_file():
@@ -164,7 +174,9 @@ class AlignedSpeechTextDataset(FairseqDataset):
         n_frames = [s["n_frames"] for s in samples]
         audios = [s["audio"] for s in samples]
         texts = [s["src_text"] for s in samples]
-        return ids, speakers, n_frames, audios, texts
+        return cls(
+            split=split, cfg=cfg, audios=audios, texts=texts, n_frames=n_frames, ids=ids, speakers=speakers, speaker_to_id=speaker_to_id
+        )
     
     def get_text_tokens(self, index: int):
         text = self.texts[index]
