@@ -137,7 +137,7 @@ class AlignedSpeechTextDataset(FairseqDataset):
             f"vocab size={len(self.tokenizer)}, "
             f"prepend_bos={self.cfg.text.prepend_bos}, "
             f"append_eos={self.cfg.text.append_eos}, "
-            f"normalized audio={self.cfg.audio.normalize})"
+            f"normalized_audio={self.cfg.audio.normalize})"
         )
     
     def __len__(self):

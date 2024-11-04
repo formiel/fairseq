@@ -7,6 +7,7 @@
 
 import sys
 import logging
+import os
 
 from dataclasses import dataclass
 from typing import Optional
@@ -39,8 +40,10 @@ MASK_SYMBOL = "<mask>"
 @dataclass
 class PantagruelMultimodalPretrainingConfig(MultimodalPretrainingConfig):
     vocab_path: Optional[str] = None
-    aligned_audio_text: Optional[AlignedSpeechTextConfig] = None
-    aligned_audio_text_ratio: float = 1
+    aligned_st_cfg: Optional[AlignedSpeechTextConfig] = None
+    aligned_st_data_root: Optional[str] = None
+    aligned_text_tokenzizer_root: Optional[str] = None
+    aligned_st_ratio: float = 1
 
 
 @register_task("pantagruel_multimodal_pretraining", dataclass=PantagruelMultimodalPretrainingConfig)
@@ -56,7 +59,9 @@ class PantagruelMultimodalPretrainingTask(FairseqTask):
             MaeImagePretrainingTask(cfg.image) if cfg.image is not None else None
         )
         self.text_task = MaskedLMTask(cfg.text) if cfg.text is not None else None
-        self.aligned_audio_text_cfg = getattr(cfg, "aligned_audio_text", None)
+        self.aligned_st_cfg = getattr(cfg, "aligned_st_cfg", None)
+        if self.aligned_st_cfg:
+            self.aligned_st_cfg = AlignedSpeechTextConfig(**self.aligned_st_cfg)
 
         if self.audio_task is not None:
             self.max_sample_size = self.audio_task.cfg.max_sample_size
@@ -107,11 +112,14 @@ class PantagruelMultimodalPretrainingTask(FairseqTask):
         load_ds(self.image_task, Modality.IMAGE, self.cfg.image_ratio)
         load_ds(self.text_task, Modality.TEXT, self.cfg.text_ratio)
 
-        if self.aligned_audio_text_cfg is not None:
-            assert isinstance(self.aligned_audio_text_cfg, AlignedSpeechTextConfig)
+        if self.aligned_st_cfg is not None:
+            assert isinstance(self.aligned_st_cfg, AlignedSpeechTextConfig)
+            assert os.path.isdir(self.cfg.aligned_text_tokenzizer_root)
             ds = AlignedSpeechTextDataset._load_data_from_csv(
+                data_root=self.cfg.aligned_st_data_root,
                 split=split,
-                cfg=self.aligned_audio_text_cfg,
+                tokenizer_root=self.cfg.aligned_text_tokenzizer_root,
+                cfg=self.aligned_st_cfg,
             )
             assert len(ds.tokenizer) == self.vocab_size, "Length of the dictionaries for ssl and supervised tasks must match"
 
@@ -124,7 +132,7 @@ class PantagruelMultimodalPretrainingTask(FairseqTask):
                     max_sentences=self.cfg.batch_size,
                 )
             )
-            self.mult_ratios.append(self.cfg.aligned_audio_text_ratio)
+            self.mult_ratios.append(self.cfg.aligned_st_ratio)
 
         assert len(datasets) > 0
 
@@ -139,6 +147,8 @@ class PantagruelMultimodalPretrainingTask(FairseqTask):
             modalities.append(Modality.IMAGE)
         if self.cfg.text is not None:
             modalities.append(Modality.TEXT)
+        if self.cfg.aligned_st_cfg is not None:
+            modalities.append(Modality.AUDIO_TEXT)
 
         return modalities
 
@@ -189,7 +199,7 @@ class PantagruelMultimodalPretrainingTask(FairseqTask):
     @property
     def source_dictionary(self):
         if self.cfg.vocab_path is not None:
-            dictionary =  Dictionary.load(self.cfg.vocab_path, add_special_symbols=True, extra_special_symbols=[MASK_SYMBOL])
+            dictionary =  Dictionary.load(self.cfg.vocab_path)
             logger.info("dictionary: {} types".format(len(dictionary)))
             return dictionary
         return None

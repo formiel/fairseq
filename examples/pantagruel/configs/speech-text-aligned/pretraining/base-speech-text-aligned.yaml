@@ -26,9 +26,11 @@ task:
   _name: pantagruel_multimodal_pretraining
   audio_ratio: 5
   text_ratio: 1
-  aligned_audio_text_ratio: 1
+  aligned_st_ratio: 1
+  aligned_st_data_root: ???
+  aligned_text_tokenzizer_root: /lustre/fswork/projects/rech/ahm/umz16dj/Data/croissantLLM/data-bin/tokenizer_fast
   # update_freq: [4]
-  # vocab_path: /gpfswork/rech/ahm/umz16dj/pretrained/tokenizers/gpt2_bpe/dict.txt
+  vocab_path: /lustre/fswork/projects/rech/ahm/umz16dj/Data/croissantLLM/data-bin/tokenizer_fast/dict.txt
   audio:
     data: ???
     max_sample_size: 320000
@@ -45,12 +47,12 @@ task:
     include_index: true
     skip_masking: true
     d2v2_multi: true
-  aligned_audio_text:
-    data: ???
+  aligned_st_cfg:
     audio:
       normalize: true
     text:
-      tokenizer_dir: ???
+      prepend_bos: true
+      append_eos: true
 
 dataset:
   num_workers: 2
@@ -68,7 +70,7 @@ dataset:
 distributed_training:
   # find_unused_parameters: true
   distributed_world_size: ???
-  ddp_backend: legacy_ddp
+  ddp_backend: no_c10d
   distributed_port: ???
 
 criterion:
