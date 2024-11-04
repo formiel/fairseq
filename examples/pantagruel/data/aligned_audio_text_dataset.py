@@ -94,7 +94,7 @@ class AlignedSpeechTextConfig(FairseqDataclass):
     audio: Optional[AudioDataConfig] = None
     text: Optional[TextDataConfig] = None
     shuffle: bool = field(
-        default=False,
+        default=True,
         metadata={"help": "shuffle data"},
     )
 
