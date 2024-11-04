@@ -8,7 +8,7 @@ import os
 from dataclasses import dataclass, field
 
 import numpy as np
-from omegaconf import II, MISSING, OmegaConf
+from omegaconf import II, MISSING
 
 from fairseq import utils
 from fairseq.data import (
@@ -125,7 +125,7 @@ class MaskedLMConfig(FairseqDataclass):
     )
     mask_idx_in_vocab: bool = field(
         default=False,
-        metadata={"help": "mask index is included in dict.txt already"}
+        metadata={"help": "mask index is included in vocab already."}
     )
 
 
@@ -146,9 +146,7 @@ class MaskedLMTask(FairseqTask):
         else:
             self.mask_idx = self.dictionary.index("<mask>")
         if self.dictionary:
-            logger.info(f'bos:{self.dictionary.bos_index}, pad:{self.dictionary.pad_index}, \
-                        eos:{self.dictionary.eos_index}, unk:{self.dictionary.unk_index}, \
-                        mask_idx={self.mask_idx}')
+            logger.info(f'bos:{self.dictionary.bos()}, pad:{self.dictionary.pad()}, eos:{self.dictionary.eos()}, unk:{self.dictionary.unk()}, mask_idx={self.mask_idx}')
             logger.info("dictionary: {} types".format(len(self.dictionary)))
 
     @classmethod
@@ -157,11 +155,10 @@ class MaskedLMTask(FairseqTask):
         return cls(cfg, dictionary)
 
     @classmethod
-    def load_dict(cls, cfg):
+    def load_dict(cls, cfg: MaskedLMConfig):
         paths = utils.split_paths(cfg.data)
         assert len(paths) > 0
-        extra_special_symbols = ["<mask>"] if cfg.mask_idx_in_vocab else None
-        dictionary = Dictionary.load(os.path.join(paths[0], "dict.txt"), extra_special_symbols=extra_special_symbols)
+        dictionary = Dictionary.load(os.path.join(paths[0], "dict.txt"))
         logger.info("dictionary: {} types".format(len(dictionary)))
         return dictionary
 

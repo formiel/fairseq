@@ -64,7 +64,7 @@ class BlockEncoder(nn.Module):
         self.norm = norm_layer
         self.layer_norm_first = layer_norm_first
         self.layerdrop = layerdrop
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(dropout, inplace=True)
 
     def forward(self, x, padding_mask, alibi_bias, alibi_scale):
         if self.norm is not None and not self.layer_norm_first:
@@ -135,7 +135,7 @@ class Decoder1d(DecoderBase):
                 ),
                 SamePad(cfg.decoder_kernel),
                 TransposeLast(),
-                nn.LayerNorm(cfg.decoder_dim, elementwise_affine=False),
+                LayerNorm(cfg.decoder_dim, elementwise_affine=False),
                 TransposeLast(),
                 nn.GELU(),
             ]
@@ -196,7 +196,7 @@ class Decoder2d(DecoderBase):
                 ),
                 SamePad2d(cfg.decoder_kernel),
                 TransposeLast(tranpose_dim=-3),
-                nn.LayerNorm(cfg.decoder_dim, elementwise_affine=False),
+                LayerNorm(cfg.decoder_dim, elementwise_affine=False),
                 TransposeLast(tranpose_dim=-3),
                 nn.GELU(),
             ]
@@ -392,7 +392,7 @@ class AltAttention(nn.Module):
 
             attn = attn.softmax(dim=-1, dtype=torch.float32).to(dtype=dtype)
             # attn = self.attn_drop(attn)
-            attn = F.dropout(attn, p=self.attn_drop)
+            attn = F.dropout(attn, p=self.attn_drop if self.training else 0.0)
             x = (attn @ v).transpose(1, 2)
         else:
             # Using pytorch 2's sdpa
@@ -500,7 +500,7 @@ class EncDecAttention(nn.Module):
 
             attn = attn.softmax(dim=-1, dtype=torch.float32).to(dtype=dtype)
             # attn = self.attn_drop(attn)
-            attn = F.dropout(attn, p=self.attn_drop)
+            attn = F.dropout(attn, p=self.attn_drop if self.training else 0.0)
             x = (attn @ v).transpose(1, 2)  #
         else:
             assert not self.cosine_attention, "Not support cosine attention yet"

@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import os
+import logging
 from collections import Counter
 from multiprocessing import Pool
 
@@ -13,6 +14,8 @@ from fairseq.data import data_utils
 from fairseq.file_chunker_utils import Chunker, find_offsets
 from fairseq.file_io import PathManager
 from fairseq.tokenizer import tokenize_line
+
+logger = logging.getLogger(__name__)
 
 
 class Dictionary:
@@ -261,7 +264,7 @@ class Dictionary:
                 count = int(field)
                 word = line
                 if word in self and not overwrite:
-                    raise RuntimeError(
+                    logger.warning(
                         "Duplicate word found when loading Dictionary: '{}'. "
                         "Duplicate words can overwrite earlier ones by adding the "
                         "#fairseq:overwrite flag at the end of the corresponding row "

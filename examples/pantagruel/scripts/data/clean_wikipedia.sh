@@ -180,14 +180,11 @@ fi
 
 ### Binarized data using fairseq
 # tricky: change fairseq to not having to change tokenizer learned using HuggingFace
-# Line 95 fairseq/tasks/fairseq_task.py: add_special_symbols=False
-# Line 35: fairseq/data/dictionary.py:         
-        # self.nspecial = 0
-        # self.bos_index = 0
-        # self.pad_index = 1
-        # self.eos_index = 2
-        # self.unk_index = 3
-# Line 140: fairseq/tasks/masked_lm.py: self.mask_idx = 4
+# - when binarizing data: use dictionary with extra special symbols (and without 4 standard special tokens: BOS, EOS, PAD, UNK)
+# - when training models 
+# tail -n ${V-4} dict_full.txt > dict.txt
+# after binarizing data
+# tail -n ${V-5} dict_full.txt > dict.txt # +1 for mask index
 
 echo "Binarizing data..."
 if [[ ! -f "$DATA_BIN/${LG}wiki.train.idx"  ]]; then
