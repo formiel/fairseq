@@ -43,7 +43,7 @@ MASK_TOKEN = "<mask>"
 class AlignedSpeechTextDatasetItem(object):
     index: int
     audio: torch.Tensor
-    text: Optional[torch.Tensor] = None
+    text: torch.Tensor
     speaker_id: Optional[int] = None
 
 
@@ -64,6 +64,22 @@ class AudioDataConfig(FairseqDataclass):
     normalize: bool = field(
         default=True,
         metadata={"help": "if set, normalizes audio waveform to have 0 mean and unit variance"},
+    )
+    pad: bool = field(
+        default=True,
+        metadata={"help": "if set, normalizes audio waveform to have 0 mean and unit variance"},
+    )
+    max_sample_size: int = field(
+        default=320000,
+        metadata={
+            "help": "target sample rate. audio files will be up/down sampled to this rate"
+        },
+    )
+    min_sample_size: int = field(
+        default=320000,
+        metadata={
+            "help": "target sample rate. audio files will be up/down sampled to this rate"
+        },
     )
     sample_rate: int = field(
         default=16000,
@@ -89,7 +105,7 @@ class AlignedSpeechTextDataset(FairseqDataset):
         self,
         split: str,
         cfg: AlignedSpeechTextConfig,
-        tokenizer: str,
+        tokenizer: PreTrainedTokenizerFast,
         audios: List[str],
         texts: List[str],
         n_frames: List[int],
@@ -101,7 +117,7 @@ class AlignedSpeechTextDataset(FairseqDataset):
         self.cfg = cfg
         self.speaker_to_id = speaker_to_id
 
-        self.tokenizer = PreTrainedTokenizerFast.from_pretrained(tokenizer)
+        self.tokenizer = tokenizer
         self.bos_idx = self.tokenizer.encode(BOS_TOKEN)[0]
         self.eos_idx = self.tokenizer.encode(EOS_TOKEN)[0]
         self.pad_idx = self.tokenizer.encode(PAD_TOKEN)[0]
@@ -137,6 +153,9 @@ class AlignedSpeechTextDataset(FairseqDataset):
             f"vocab size={len(self.tokenizer)}, "
             f"prepend_bos={self.cfg.text.prepend_bos}, "
             f"append_eos={self.cfg.text.append_eos}, "
+            f"padded_audio={self.cfg.audio.pad}, "
+            f"max_sample_size={self.cfg.audio.max_sample_size}, "
+            f"min_sample_size={self.cfg.audio.min_sample_size}, "
             f"normalized_audio={self.cfg.audio.normalize})"
         )
     
@@ -145,7 +164,7 @@ class AlignedSpeechTextDataset(FairseqDataset):
 
     @classmethod
     def _load_data_from_csv(
-        cls, data_root: str, split: str, tokenizer_root: str, 
+        cls, data_root: str, split: str, tokenizer: PreTrainedTokenizerFast, 
         cfg: AlignedSpeechTextConfig,
         speaker_to_id=None
     ):
@@ -169,11 +188,11 @@ class AlignedSpeechTextDataset(FairseqDataset):
         # build data
         ids = [s["id"] for s in samples]
         speakers = [s["speaker"] for s in samples]
-        n_frames = [s["n_frames"] for s in samples]
+        n_frames = [int(s["n_frames"]) for s in samples]
         audios = [s["audio"] for s in samples]
         texts = [s["src_text"] for s in samples]
         return cls(
-            split=split, cfg=cfg, tokenizer=tokenizer_root, audios=audios, texts=texts, n_frames=n_frames, ids=ids, speakers=speakers, speaker_to_id=speaker_to_id
+            split=split, cfg=cfg, tokenizer=tokenizer, audios=audios, texts=texts, n_frames=n_frames, ids=ids, speakers=speakers, speaker_to_id=speaker_to_id
         )
     
     def get_text_tokens(self, index: int):
@@ -249,6 +268,7 @@ class AlignedSpeechTextDataset(FairseqDataset):
         )
     
     def collater(self, samples: List[AlignedSpeechTextDatasetItem], return_order: bool = False) -> Dict:
+        samples = [s for s in samples if torch.numel(s.audio) > 2 and torch.numel(s.text) > 2]
         if len(samples) == 0:
             return {}
         

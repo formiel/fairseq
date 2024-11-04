@@ -114,11 +114,20 @@ class PantagruelMultimodalPretrainingTask(FairseqTask):
 
         if self.aligned_st_cfg is not None:
             assert isinstance(self.aligned_st_cfg, AlignedSpeechTextConfig)
+
+            try:
+                from transformers import PreTrainedTokenizerFast
+            except ImportError:
+                raise ImportError("The 'transformers' library is not installed. Please install it by running 'pip install transformers'.")
+
             assert os.path.isdir(self.cfg.aligned_text_tokenzizer_root)
+            
             ds = AlignedSpeechTextDataset._load_data_from_csv(
                 data_root=self.cfg.aligned_st_data_root,
                 split=split,
-                tokenizer_root=self.cfg.aligned_text_tokenzizer_root,
+                tokenizer=PreTrainedTokenizerFast.from_pretrained(
+                    self.cfg.aligned_text_tokenzizer_root
+                ),
                 cfg=self.aligned_st_cfg,
             )
             assert len(ds.tokenizer) == self.vocab_size, "Length of the dictionaries for ssl and supervised tasks must match"
@@ -127,7 +136,7 @@ class PantagruelMultimodalPretrainingTask(FairseqTask):
                 ModalityDatasetItem(
                     datasetname=Modality.AUDIO_TEXT,
                     dataset=ds,
-                    max_positions=self.audio_task.max_positions(),
+                    max_positions=(self.max_sample_size, self.tokens_per_sample),
                     max_tokens=self.cfg.max_tokens,
                     max_sentences=self.cfg.batch_size,
                 )
@@ -147,8 +156,8 @@ class PantagruelMultimodalPretrainingTask(FairseqTask):
             modalities.append(Modality.IMAGE)
         if self.cfg.text is not None:
             modalities.append(Modality.TEXT)
-        if self.cfg.aligned_st_cfg is not None:
-            modalities.append(Modality.AUDIO_TEXT)
+        # if self.cfg.aligned_st_cfg is not None:
+        #     modalities.append(Modality.AUDIO_TEXT)
 
         return modalities
 
