@@ -49,10 +49,6 @@ class AlignedSpeechTextDatasetItem(object):
 
 @dataclass
 class TextDataConfig(FairseqDataclass):
-    tokenizer_dir: str = field(
-        default=MISSING, 
-        metadata={"help": "type of the tokenizer"}
-    )
     prepend_bos: bool = field(
         default=True,
         metadata={"help": "prepend beginning-of-sentence token"},
@@ -66,7 +62,7 @@ class TextDataConfig(FairseqDataclass):
 @dataclass
 class AudioDataConfig(FairseqDataclass):
     normalize: bool = field(
-        default=False,
+        default=True,
         metadata={"help": "if set, normalizes audio waveform to have 0 mean and unit variance"},
     )
     sample_rate: int = field(
@@ -79,7 +75,6 @@ class AudioDataConfig(FairseqDataclass):
 
 @dataclass
 class AlignedSpeechTextConfig(FairseqDataclass):
-    data_root: str = field(default=MISSING, metadata={"help": "path to data root directory containing manifest tsv files"})
     audio: Optional[AudioDataConfig] = None
     text: Optional[TextDataConfig] = None
     shuffle: bool = field(
@@ -94,6 +89,7 @@ class AlignedSpeechTextDataset(FairseqDataset):
         self,
         split: str,
         cfg: AlignedSpeechTextConfig,
+        tokenizer: str,
         audios: List[str],
         texts: List[str],
         n_frames: List[int],
@@ -105,7 +101,7 @@ class AlignedSpeechTextDataset(FairseqDataset):
         self.cfg = cfg
         self.speaker_to_id = speaker_to_id
 
-        self.tokenizer = PreTrainedTokenizerFast.from_pretrained(cfg.text.tokenizer_dir)
+        self.tokenizer = PreTrainedTokenizerFast.from_pretrained(tokenizer)
         self.bos_idx = self.tokenizer.encode(BOS_TOKEN)[0]
         self.eos_idx = self.tokenizer.encode(EOS_TOKEN)[0]
         self.pad_idx = self.tokenizer.encode(PAD_TOKEN)[0]
@@ -149,10 +145,12 @@ class AlignedSpeechTextDataset(FairseqDataset):
 
     @classmethod
     def _load_data_from_csv(
-        cls, split:str, cfg: AlignedSpeechTextConfig, speaker_to_id=None
+        cls, data_root: str, split: str, tokenizer_root: str, 
+        cfg: AlignedSpeechTextConfig,
+        speaker_to_id=None
     ):
         # load samples from csv
-        tsv_path = Path(cfg.data_root) / f"{split}.tsv"
+        tsv_path = Path(data_root) / f"{split}.tsv"
         if not tsv_path.is_file():
             raise FileNotFoundError(f"Dataset not found: {tsv_path}")
         with open(tsv_path) as f:
@@ -175,13 +173,14 @@ class AlignedSpeechTextDataset(FairseqDataset):
         audios = [s["audio"] for s in samples]
         texts = [s["src_text"] for s in samples]
         return cls(
-            split=split, cfg=cfg, audios=audios, texts=texts, n_frames=n_frames, ids=ids, speakers=speakers, speaker_to_id=speaker_to_id
+            split=split, cfg=cfg, tokenizer=tokenizer_root, audios=audios, texts=texts, n_frames=n_frames, ids=ids, speakers=speakers, speaker_to_id=speaker_to_id
         )
     
     def get_text_tokens(self, index: int):
         text = self.texts[index]
         tokens = self.tokenizer.encode(text)
         tokens = torch.tensor(tokens).long()
+        assert torch.max(tokens) <= len(self.tokenizer) - 1
         if self.cfg.text.prepend_bos:
             tokens = torch.cat(
                 (torch.tensor([self.bos_idx], dtype=torch.int64), tokens),
