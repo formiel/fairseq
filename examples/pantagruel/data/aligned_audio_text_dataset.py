@@ -250,6 +250,7 @@ class AlignedSpeechTextDataset(FairseqDataset):
         assert feats.dim() == 1, feats.dim()
 
         if self.cfg.audio.normalize:
+            logger.info(f"normalizing audio...")
             with torch.no_grad():
                 feats = F.layer_norm(feats, feats.shape)
         return feats
@@ -267,8 +268,12 @@ class AlignedSpeechTextDataset(FairseqDataset):
             speaker_id=speaker_id,
         )
     
-    def collater(self, samples: List[AlignedSpeechTextDatasetItem], return_order: bool = False) -> Dict:
-        samples = [s for s in samples if torch.numel(s.audio) > 2 and torch.numel(s.text) > 2]
+    def collater(
+        self, samples: List[AlignedSpeechTextDatasetItem], return_order: bool = False
+    ) -> Dict:
+        samples = [
+            s for s in samples if torch.numel(s.audio) > 2 and torch.numel(s.text) > 2
+        ]
         if len(samples) == 0:
             return {}
         
@@ -304,8 +309,7 @@ class AlignedSpeechTextDataset(FairseqDataset):
             )
 
         net_input = {
-            "audio": frames,
-            "text": tokens,
+            "source": {"audio": frames,  "text": tokens},
         }
         out = {
             "id": indices,
