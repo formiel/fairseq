@@ -16,7 +16,7 @@ from fairseq.modules import (
     TransposeLast,
 )
 from fairseq.tasks import FairseqTask
-from .base_type import D2vModalityConfig, PantagruelModalitySpecificEncoder
+from .base_encoder import D2vModalityConfig, PantagruelModalitySpecificEncoder
 
 from examples.data2vec.models.modalities.text import (
     TextEncoder,

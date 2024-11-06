@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+from typing import List
 
 import torch
 import torch.nn as nn
@@ -60,4 +61,31 @@ class PantagruelModalitySpecificEncoder(ModalitySpecificEncoder):
             mask_seeds,
             precomputed_mask,
         )
+    
 
+class PantagruelDualModalitySpecificEncoder(nn.Module):
+    def __init__(
+        self,
+        dual_modality_names: str,
+        modality_encoders: nn.ModuleDict,
+    ):
+        super().__init__()
+        self.dual_modality_encoders = nn.ModuleDict()
+        for mod in dual_modality_names.split("_"):
+            if mod in modality_encoders:
+                self.dual_modality_encoders[mod] = modality_encoders[mod]
+            else:
+                raise ValueError(f"Modality '{mod}' not found in provided modality_encoders")
+            
+    def forward(
+        self,
+        features,
+        padding_mask,
+        mask: bool,
+        remove_masked: bool,
+        clone_batch: int = 1,
+        mask_seeds: Optional[torch.Tensor] = None,
+        precomputed_mask=None,
+        token_type_ids=None,
+    ):
+        pass

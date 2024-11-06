@@ -50,6 +50,7 @@ task:
   aligned_st_cfg:
     audio:
       normalize: true
+      precompute_mask_config: {}
     text:
       prepend_bos: true
       append_eos: true

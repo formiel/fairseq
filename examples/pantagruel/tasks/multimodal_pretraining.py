@@ -122,13 +122,13 @@ class PantagruelMultimodalPretrainingTask(FairseqTask):
 
             assert os.path.isdir(self.cfg.aligned_text_tokenzizer_root)
             
-            ds = AlignedSpeechTextDataset._load_data_from_csv(
+            ds = AlignedSpeechTextDataset(
                 data_root=self.cfg.aligned_st_data_root,
                 split=split,
+                cfg=self.aligned_st_cfg,
                 tokenizer=PreTrainedTokenizerFast.from_pretrained(
                     self.cfg.aligned_text_tokenzizer_root
                 ),
-                cfg=self.aligned_st_cfg,
             )
             assert len(ds.tokenizer) == self.vocab_size, "Length of the dictionaries for ssl and supervised tasks must match"
 
@@ -156,9 +156,9 @@ class PantagruelMultimodalPretrainingTask(FairseqTask):
             modalities.append(Modality.IMAGE)
         if self.cfg.text is not None:
             modalities.append(Modality.TEXT)
-        # if self.cfg.aligned_st_cfg is not None:
-        #     modalities.append(Modality.AUDIO_TEXT)
-
+        if self.cfg.aligned_st_cfg is not None:
+            modalities.append(Modality.AUDIO_TEXT)
+        logger.info(f"setup supported_modalities in task: {modalities}")
         return modalities
 
     def get_batch_iterator(

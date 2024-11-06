@@ -29,7 +29,7 @@ from examples.data2vec.models.modalities.base import (
     get_annealed_rate,
     D2vModalityConfig,
 )
-from examples.pantagruel.models.modalities.base_type import (
+from examples.pantagruel.models.modalities.base_encoder import (
     PantagruelModalitySpecificEncoder
 )
 from examples.data2vec.models.modalities.modules import (
@@ -309,25 +309,28 @@ class PantagruelMultiModel(BaseFairseqModel):
         self.alibi_biases = {}
         self.modality_encoders = nn.ModuleDict()
         for mod in self.modalities:
-            mod_cfg = getattr(cfg.modalities, mod.name.lower())
-            enc = self.make_modality_type_encoder(
-                mod_cfg,
-                cfg.embed_dim,
-                make_block,
-                make_layer_norm,
-                cfg.layer_norm_first,
-                self.alibi_biases,
-                task,
-                token_type_embeddings,
-            )
-            if self.freeze_project_features:
-                logging.info(f'Freezeing project features layer of {enc.__class__.__name__}: {enc.project_features.__class__.__name__}')
-                for _, m in enumerate(enc.project_features):
-                    # if isinstance(m, nn.Linear):
-                    #     nn.init.kaiming_normal_(m.weight)
-                    #     nn.init.zeros_(m.bias)
-                    m.requires_grad_(False)
-            self.modality_encoders[mod.name] = enc
+            if "_" not in mod.name:
+                mod_cfg = getattr(cfg.modalities, mod.name.lower())
+                enc = self.make_modality_type_encoder(
+                    mod_cfg,
+                    cfg.embed_dim,
+                    make_block,
+                    make_layer_norm,
+                    cfg.layer_norm_first,
+                    self.alibi_biases,
+                    task,
+                    token_type_embeddings,
+                )
+                if self.freeze_project_features:
+                    logging.info(f'Freezeing project features layer of {enc.__class__.__name__}: {enc.project_features.__class__.__name__}')
+                    for _, m in enumerate(enc.project_features):
+                        # if isinstance(m, nn.Linear):
+                        #     nn.init.kaiming_normal_(m.weight)
+                        #     nn.init.zeros_(m.bias)
+                        m.requires_grad_(False)
+                self.modality_encoders[mod.name] = enc
+            else:
+                pass
 
         # discriminator
         self.discriminator = None

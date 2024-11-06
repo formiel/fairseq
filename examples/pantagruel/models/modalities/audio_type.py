@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 
 from fairseq.tasks import FairseqTask
-from .base_type import PantagruelModalitySpecificEncoder
+from .base_encoder import PantagruelModalitySpecificEncoder
 
 from examples.data2vec.models.modalities.audio import (
     D2vAudioConfig,
