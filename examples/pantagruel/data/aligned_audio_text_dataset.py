@@ -3,6 +3,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
+from functools import partial
 
 from omegaconf import II
 
@@ -15,7 +16,6 @@ import torch.nn.functional as F
 
 from fairseq.data import FairseqDataset
 from fairseq.data import data_utils as fairseq_data_utils
-from fairseq.data.audio.speech_to_speech_dataset import _collate_frames
 from fairseq.data.audio.audio_utils import (
     parse_path,
     read_from_stored_zip,
@@ -33,6 +33,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
 UNK_TOKEN = "<unk>"
 BOS_TOKEN = "<s>"
 EOS_TOKEN = "</s>"
@@ -44,7 +45,7 @@ MASK_TOKEN = "<mask>"
 class AlignedSpeechTextDatasetItem(object):
     index: int
     audio: Dict[str, torch.Tensor]
-    text: torch.Tensor
+    text: Dict[str, torch.Tensor]
     speaker_id: Optional[int] = None
 
 
@@ -59,7 +60,7 @@ class TextDataConfig(FairseqDataclass):
         metadata={"help": "append end-of-sentence token (</s> to the end of sentence)"},
     )
     skip_masking: bool = field(
-        default=False,
+        default=True,
         metadata={"help": "skip masking for text sequences"}
     )
     mask_prob: float = field(
@@ -84,10 +85,6 @@ class TextDataConfig(FairseqDataclass):
         default=0.0,
         metadata={"help": "standard deviation of masks distribution in case of \
             multiple masking"}
-    )
-    skip_masking: bool = field(
-        default=False,
-        metadata={"help": "skip masking"}
     )
     mask_multiple_length: int = field(
         default=1,
@@ -158,12 +155,12 @@ class AlignedSpeechTextDataset(FairseqDataset):
 
         self.is_compute_mask = cfg.audio.precompute_mask_config is not None
         self.mask_args = {}
+        self.clone_batch = 1
         if self.is_compute_mask:
             self.mask_args = cfg.audio.precompute_mask_config
-            logger.info(f"self.mask_args: {self.mask_args}")
+            self.clone_batch = cfg.audio.precompute_mask_config.clone_batch
 
         self.feature_encoder_spec = eval(self.mask_args["feature_encoder_spec"])
-        logger.info(f"self.feature_encoder_spec: {self.feature_encoder_spec}")
         self._features_size_map = {}
 
         self.epoch = 0
@@ -178,7 +175,7 @@ class AlignedSpeechTextDataset(FairseqDataset):
         text_lens = []
         n_tokens, n_oov_tokens = 0, 0
         for i in range(self.n_samples):
-            tokenized = self.get_text_tokens(i)
+            tokenized = self.get_text_item(i)
             oov_tokens = [t for t in tokenized if t == self.unk_idx]
             n_tokens += len(tokenized)
             n_oov_tokens += len(oov_tokens)
@@ -238,91 +235,48 @@ class AlignedSpeechTextDataset(FairseqDataset):
         super().set_epoch(epoch)
         self.epoch = epoch
 
-    def get_text_tokens(self, index: int):
-        # logging.info(f"self.cfg.seed={self.cfg.seed}, self.epoch={self.epoch}, index={index}")
+    def get_text_item(self, index: int):
         seed = int(hash((self.cfg.seed, self.epoch, index)) % 1e6)
         rng = np.random.default_rng(seed)
 
         text = self.texts[index]
         tokens = self.tokenizer.encode(text)
-        sz = len(tokens)
-        assert self.mask_idx not in tokens
-        
-        if not self.cfg.text.skip_masking:
-            # decide elements to mask
-            mask = np.full(sz, False)
-            num_mask = int(
-                # add a random number for probabilistic rounding
-                self.mask_args.mask_prob * sz / float(self.cfg.text.mask_multiple_length) 
-                + rng.random()
-            )
-            mask_idc = rng.choice(sz, num_mask, replace=False)
-            if self.cfg.text.mask_stdev > 0.0:
-                lengths = rng.normal(
-                    self.cfg.text.mask_multiple_length, 
-                    self.cfg.text.mask_stdev, size=num_mask
-                )
-                lengths = [max(0, int(round(x))) for x in lengths]
-                mask_idc = np.asarray(
-                    [
-                        mask_idc[j] + offset
-                        for j in range(len(mask_idc))
-                        for offset in range(lengths[j])
-                    ],
-                    dtype=np.int64,
-                )
-            else:
-                mask_idc = np.concatenate(
-                    [mask_idc + i for i in range(self.cfg.text.mask_multiple_length)]
-                )
-            mask_idc = mask_idc[mask_idc < len(mask)]
-            try:
-                mask[mask_idc] = True
-            except:  # something wrong
-                raise ValueError("Assigning mask indexes {} to mask {} failed!".format(mask_idc, mask))
-            
-            # decide unmasking and random replacement
-            rand_or_unmask_prob = (
-                self.cfg.text.random_token_prob + self.cfg.text.leave_unmasked_prob
-            )
-            if rand_or_unmask_prob > 0.0:
-                rand_or_unmask = mask & (rng.random(sz) < rand_or_unmask_prob)
-                if self.cfg.text.random_token_prob == 0.0:
-                    unmask = rand_or_unmask
-                    rand_mask = None
-                elif self.cfg.text.leave_unmasked_prob == 0.0:
-                    unmask = None
-                    rand_mask = rand_or_unmask
-                else:
-                    unmask_prob = self.cfg.text.leave_unmasked_prob / rand_or_unmask_prob
-                    decision = rng.random(sz) < unmask_prob
-                    unmask = rand_or_unmask & decision
-                    rand_mask = rand_or_unmask & (~decision)
-            else:
-                unmask = rand_mask = None
-
-            if unmask is not None:
-                mask = mask ^ unmask
-
-            new_item = np.copy(tokens)
-            new_item[mask] = self.mask_idx
-            tokens = new_item
-
         tokens = torch.tensor(tokens).long()
-        assert torch.max(tokens) <= len(self.tokenizer) - 1
+        assert self.mask_idx not in tokens
         
         if self.cfg.text.prepend_bos:
             tokens = torch.cat(
-                (torch.tensor([self.bos_idx], dtype=torch.int64), tokens),
-                dim=0
-            )
+                (torch.tensor([self.bos_idx], dtype=torch.int64), tokens), dim=0)
         if self.cfg.text.append_eos:
             tokens = torch.cat(
-                (tokens, torch.tensor([self.eos_idx], dtype=torch.int64)),
-                dim=0
+                (tokens, torch.tensor([self.eos_idx], dtype=torch.int64)), dim=0)
+
+        sz = len(tokens)
+        text_item = {"id": index, "source": tokens}
+        
+        if self.cfg.text.skip_masking:
+            if self.is_compute_mask:
+                mask_generator = partial(
+                    create_single_mask, sz, self.cfg.text.mask_prob,
+                    self.cfg.text.mask_multiple_length, 
+                    self.cfg.text.mask_stdev, rng
+                )
+                masks = [mask_generator() for _ in range(self.clone_batch)]
+                max_length = max(mask.shape[0] for mask in masks)
+                padded_masks = torch.stack([F.pad(torch.tensor(mask), (0, max_length - mask.shape[0])) for mask in masks])
+                text_item["precomputed_mask"] = torch.tensor(padded_masks.clone()) # clone_batch x len
+        else:
+            mask = create_single_mask(
+                sz, self.cfg.text.mask_prob, self.cfg.text.mask_multiple_length,
+                self.cfg.text.mask_stdev, rng
             )
-        # logging.info(f"tokens after being masked: {tokens}")
-        return tokens
+            new_item = tokens.clone()
+            new_item[mask] = self.mask_idx
+
+            text_item["source"] = new_item
+            text_item["mask"] = mask
+
+        return text_item
 
     def get_audio_item(self, index: int):
         path_or_fp = self.audios[index]
@@ -354,7 +308,7 @@ class AlignedSpeechTextDataset(FairseqDataset):
         if self.is_compute_mask:
             T = self._get_mask_indices_dims(feats.size(-1))
             mask = fairseq_data_utils.compute_block_mask_1d(
-                shape=(1, T),
+                shape=(self.clone_batch, T),
                 mask_prob=self.mask_args.mask_prob,
                 mask_length=self.mask_args.mask_length,
                 mask_prob_adjust=self.mask_args.mask_prob_adjust,
@@ -364,8 +318,7 @@ class AlignedSpeechTextDataset(FairseqDataset):
                 mask_dropout=self.mask_args.mask_dropout,
                 non_overlapping=False,
             )
-
-            audio_item["precomputed_mask"] = mask
+            audio_item["precomputed_mask"] = mask # clone_batch x len
 
         return audio_item
     
@@ -395,7 +348,7 @@ class AlignedSpeechTextDataset(FairseqDataset):
     
     def __getitem__(self, index: int) -> AlignedSpeechTextDatasetItem:
         audio_item = self.get_audio_item(index)
-        text_item = self.get_text_tokens(index)
+        text_item = self.get_text_item(index)
         speaker_id = None
         if self.speaker_to_id is not None:
             speaker_id = self.speaker_to_id[self.speakers[index]]
@@ -411,7 +364,7 @@ class AlignedSpeechTextDataset(FairseqDataset):
         samples = [
             s for s in samples 
             if torch.numel(s.audio["source"]) > self.cfg.audio.min_sample_size 
-            and torch.numel(s.text) > 2
+            and torch.numel(s.text["source"]) > 2
         ]
         ids = torch.LongTensor([s.index for s in samples])
         if len(samples) == 0:
@@ -446,7 +399,7 @@ class AlignedSpeechTextDataset(FairseqDataset):
             else:
                 collated_sources[i] = self.crop_to_max_size(source, target_size)
 
-        audio_input = {"source": collated_sources}
+        audio_input = {"source": collated_sources} # B x max_len
         if self.cfg.audio.enable_padding:
             audio_input["padding_mask"] = padding_mask
 
@@ -470,26 +423,37 @@ class AlignedSpeechTextDataset(FairseqDataset):
             audio_input["precomputed_mask"] = collated_mask
         
         tokens = fairseq_data_utils.collate_tokens(
-                [x.text for x in samples],
+                [x.text["source"] for x in samples],
                 self.pad_idx,
                 eos_idx=None,
                 left_pad=False,
                 move_eos_to_beginning=False,
             )
         padding_mask = fairseq_data_utils.collate_tokens(
-                [torch.zeros_like(x.text).bool() for x in samples],
+                [torch.zeros_like(x.text["source"]).bool() for x in samples],
                 self.pad_idx,
                 eos_idx=None,
                 left_pad=False,
                 move_eos_to_beginning=False,
             )
-        # logger.info(f"text padding mask: {padding_mask}")
-        text_input = {"source": tokens, "padding_mask": padding_mask}
+        text_input = {
+            "source": tokens, "padding_mask": padding_mask,
+        }
+
+        if "precomputed_mask" in samples[0].text:
+            target_size = max([x.text["precomputed_mask"].size(1) for x in samples])
+            padded_tensors = [
+                s.text["precomputed_mask"] if s.text["precomputed_mask"].size(1) == target_size
+                else F.pad(s.text["precomputed_mask"], (0, target_size - s.text["precomputed_mask"].size(1)))
+                for s in samples
+            ]
+            collated_mask = torch.cat(padded_tensors, dim=0)
+            text_input["precomputed_mask"] = collated_mask
 
         target_lengths = torch.tensor(
-            [x.text.size(0) for x in samples], dtype=torch.long
+            [x.text["source"].size(0) for x in samples], dtype=torch.long
         )
-        ntokens = sum(x.text.size(0) for x in samples)
+        ntokens = sum(x.text["source"].size(0) for x in samples)
 
         speaker = None
         if self.speaker_to_id is not None:
@@ -553,3 +517,49 @@ class AlignedSpeechTextDataset(FairseqDataset):
 
     def prefetch(self, indices):
         raise False
+    
+
+def create_single_mask(sz, mask_prob, mask_multiple_length, mask_stdev=0.0, rng=None):
+    """
+    Creates a single random mask for a sequence of size (1, sz) with specified parameters.
+
+    Parameters:
+    - sz (int): Length of the sequence (1, sz).
+    - mask_prob (float): Probability of masking elements in the sequence.
+    - mask_multiple_length (int): Base length for consecutive masked elements.
+    - mask_stdev (float): Standard deviation for varying mask lengths (default 0).
+    - rng (np.random.Generator): Random number generator (default np.random.default_rng).
+
+    Returns:
+    - torch.Tensor: A binary mask tensor of shape (1, sz).
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    # Initialize mask array as False
+    mask = np.full(sz, False)
+
+    # Calculate the number of tokens to mask
+    num_mask = int(mask_prob * sz / float(mask_multiple_length) + rng.random())
+    mask_idc = rng.choice(sz, num_mask, replace=False)
+
+    # Adjust mask lengths based on standard deviation
+    if mask_stdev > 0.0:
+        lengths = rng.normal(mask_multiple_length, mask_stdev, size=num_mask)
+        lengths = [max(0, int(round(x))) for x in lengths]
+        mask_idc = np.asarray(
+            [mask_idc[j] + offset
+             for j in range(len(mask_idc))
+             for offset in range(lengths[j])],
+            dtype=np.int64,
+        )
+    else:
+        mask_idc = np.concatenate(
+            [mask_idc + i for i in range(mask_multiple_length)]
+        )
+    mask_idc = mask_idc[(mask_idc != 0) & (mask_idc != sz - 1)] # do not mask first and last tokens (<s> and </s>)
+    # Ensure indices are within bounds
+    mask_idc = mask_idc[mask_idc < len(mask)]
+    mask[mask_idc] = True
+
+    return mask

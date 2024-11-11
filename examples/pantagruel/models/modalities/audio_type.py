@@ -3,6 +3,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+from dataclasses import dataclass
 from typing import Callable, Dict, Optional
 
 import torch
@@ -15,6 +16,13 @@ from examples.data2vec.models.modalities.audio import (
     D2vAudioConfig,
     AudioEncoder,
 )
+
+from examples.pantagruel.data.modality import Modality
+
+
+@dataclass
+class PantagruelD2vAudioConfig(D2vAudioConfig):
+    type: Modality = Modality.AUDIO
 
 
 class AudioTypeEncoder(PantagruelModalitySpecificEncoder):

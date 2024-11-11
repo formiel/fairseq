@@ -21,7 +21,7 @@ from .base_encoder import D2vModalityConfig, PantagruelModalitySpecificEncoder
 from examples.data2vec.models.modalities.text import (
     TextEncoder,
 )
-from examples.data2vec.data.modality import Modality
+from examples.pantagruel.data.modality import Modality
 
 
 @dataclass

@@ -148,8 +148,7 @@ class TextLocalEncoder(nn.Module):
 
         self.layernorm_embedding = None
         if layernorm_embedding:
-            # self.layernorm_embedding = LayerNorm(embed_dim)
-            self.layernorm_embedding = nn.LayerNorm(embed_dim)
+            self.layernorm_embedding = LayerNorm(embed_dim)
 
     def forward(self, src_tokens):
         x = self.embed_scale * self.embed_tokens(src_tokens)

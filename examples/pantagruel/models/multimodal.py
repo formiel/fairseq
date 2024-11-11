@@ -22,7 +22,7 @@ from fairseq.modules import EMAModule, EMAModuleConfig
 from fairseq.dataclass import FairseqDataclass
 from fairseq.models import BaseFairseqModel, register_model
 
-from examples.data2vec.data.modality import Modality
+from examples.pantagruel.data.modality import Modality
 
 from examples.data2vec.models.modalities.base import (
     MaskSeed,
@@ -30,18 +30,18 @@ from examples.data2vec.models.modalities.base import (
     D2vModalityConfig,
 )
 from examples.pantagruel.models.modalities.base_encoder import (
-    PantagruelModalitySpecificEncoder
+    PantagruelModalitySpecificEncoder,
+    PantagruelFusionEncoder,
+    PantagruelDualModalityConfig,
 )
 from examples.data2vec.models.modalities.modules import (
     D2vDecoderConfig,
     Decoder1d,
 )
 
-from examples.data2vec.models.modalities.audio import (
-    D2vAudioConfig,
-)
 from examples.pantagruel.models.modalities.audio_type import (
     AudioTypeEncoder,
+    PantagruelD2vAudioConfig,
 )
 from examples.data2vec.models.modalities.images import (
     D2vImageConfig,
@@ -59,9 +59,10 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PantagruelD2vModalitiesConfig(FairseqDataclass):
-    audio: D2vAudioConfig = D2vAudioConfig()
+    audio: PantagruelD2vAudioConfig = PantagruelD2vAudioConfig()
     image: D2vImageConfig = D2vImageConfig()
     text: PantagruelD2vTextConfig = PantagruelD2vTextConfig()
+    audio_text: PantagruelDualModalityConfig = PantagruelDualModalityConfig()
 
 
 @dataclass
@@ -330,7 +331,16 @@ class PantagruelMultiModel(BaseFairseqModel):
                         m.requires_grad_(False)
                 self.modality_encoders[mod.name] = enc
             else:
-                pass
+                self.modality_encoders[mod.name] = PantagruelFusionEncoder.build_dual_encoders_from_unimodal(
+                    getattr(cfg.modalities, mod.name.lower()),
+                    cfg.embed_dim,
+                    self.modality_encoders,
+                    make_block,
+                    make_layer_norm,
+                    cfg.layer_norm_first,
+                    self.alibi_biases,
+                    token_type_embeddings,
+                )
 
         # discriminator
         self.discriminator = None
@@ -568,6 +578,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                     Modality.AUDIO,
                     Modality.IMAGE,
                     Modality.TEXT,
+                    Modality.AUDIO_TEXT,
                 ]
             )
         else:
@@ -576,7 +587,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                 else [cfg.supported_modality]
             )
         
-        # random training for the modalities provided in skip_mode for debugging
+        # random training for the modalities provided in skip_mode for sanity check
         if cfg.skip_mode is not None:
             if "AUDIO" in cfg.skip_mode:
                 modalities.append(Modality.AUDIO)
@@ -588,7 +599,18 @@ class PantagruelMultiModel(BaseFairseqModel):
         logger.info(f"modalities supported by model: {modalities}")
 
         return cls(cfg, modalities, task=task, skip_ema=cfg.skip_ema)
-        
+    
+    def _get_feature_extractor(self, mode):
+        extractor = self.modality_encoders[mode]
+        mode_single = [mode] if "_" not in mode else mode.split("_")
+        remaining_extractor_names = [
+            m.name for m in self.modalities 
+            if m.name != mode and m not in mode_single and 
+            "_" not in m.name and
+            m.name in self.modality_encoders.keys()
+        ]
+        return extractor, remaining_extractor_names
+
     def forward(
         self,
         source,
@@ -609,24 +631,23 @@ class PantagruelMultiModel(BaseFairseqModel):
         if isinstance(mode, Modality):
             mode = mode.name
 
-        feature_extractor = self.modality_encoders[mode]
-        remaining_extractor_names = [m.name for m in self.modalities if m.name != mode 
-                                     and m.name in self.modality_encoders.keys()]
+        feature_extractor, remaining_extractor_names = self._get_feature_extractor(mode)
+        device = source.device if isinstance(source, torch.Tensor) else source["audio"]["source"].device
         
         token_type_ids = None
         remaining_token_type_ids = {}
 
         for it, im in enumerate(self.modalities):
             if im.name == mode:
-                token_type_ids = torch.ones((1), dtype=torch.int64, device=source.device) * it
+                token_type_ids = torch.ones((1), dtype=torch.int64, device=device) * it
             else:
-                remaining_token_type_ids[im.name] = torch.ones((1), dtype=torch.int64, device=source.device) * it
+                remaining_token_type_ids[im.name] = torch.ones((1), dtype=torch.int64, device=device) * it
 
         mask_seeds = None
         if id is not None:
             mask_seeds = MaskSeed(seed=self.cfg.seed, update=self.num_updates, ids=id)
 
-        B, _ = source.size()
+        B, _ = source.size() if isinstance(source, torch.Tensor) else source["audio"]["source"].size()
         extractor_out = feature_extractor(
             source, # B x T
             padding_mask,
@@ -646,14 +667,14 @@ class PantagruelMultiModel(BaseFairseqModel):
             # modality: AUDIO, source dtype: torch.float16
             dummy_source_text = torch.randint(
                 self.task.vocab_size - 1, 
-                (B, self.task.tokens_per_sample), 
+                (1, self.task.tokens_per_sample), #(B, self.task.tokens_per_sample)
                 dtype=torch.int64, 
-                device=source.device
+                device=device
             )
             dummy_source_audio = torch.randn(
-                (B, self.task.max_sample_size), 
+                (1, self.task.max_sample_size), #(B, self.task.max_sample_size), 
                 dtype=torch.float16, 
-                device=source.device
+                device=device
             )
             # forward dummy inputs
             x_dummies, encoder_mask_dummies = [], []
@@ -662,7 +683,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                 dummy_outs = self.modality_encoders[name](
                     dummy, None, False, False, token_type_ids=remaining_token_type_ids[name]
                 )
-                _x_dummy = dummy_outs["x"].repeat_interleave(self.cfg.clone_batch,0) #BxTxC -> M x T x C
+                _x_dummy = dummy_outs["x"].repeat_interleave(B * self.cfg.clone_batch,0) #1xTxC -> M x T x C
                 x_dummies.append(_x_dummy)
                 encoder_mask_dummies.append(dummy_outs["encoder_mask"])
                 x += self.dummy_factor * _x_dummy.mean(dim=1).unsqueeze(1)
