@@ -78,7 +78,8 @@ class TextTypeEncoder(PantagruelModalitySpecificEncoder):
         )
         project_features = nn.Identity()
         if getattr(modality_cfg, "use_project_features", False):
-            mlp_spec = eval(getattr(modality_cfg, "mlp_spec", "{'num_layers': 1, 'mlp_dim': 128}"))
+            mlp_spec = eval(getattr(modality_cfg, "mlp_spec", None))
+            assert mlp_spec is not None
             project_features = self._build_mlp(
                 num_layers=mlp_spec['num_layers'],
                 input_dim=embed_dim,
