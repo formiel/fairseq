@@ -158,7 +158,7 @@ model:
       prenet_dropout: 0.1
       learned_alibi_scale: true
       learned_alibi_scale_per_head: true
-      local_grad_mult: 2.5
+      local_grad_mult: 1.5
       decoder:
         input_dropout: 0.1
         decoder_dim: 384
