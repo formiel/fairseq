@@ -47,7 +47,7 @@ task:
     skip_masking: true
     d2v2_multi: true
     mask_idx_in_vocab: true
-    aligned_st_cfg:
+  aligned_st_cfg:
     audio:
       normalize: true
       precompute_mask_config: {}
