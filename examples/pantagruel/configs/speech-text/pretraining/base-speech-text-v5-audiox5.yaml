@@ -24,7 +24,7 @@ checkpoint:
 
 task:
   _name: pantagruel_multimodal_pretraining
-  audio_ratio: 1
+  audio_ratio: 5
   text_ratio: 1
   # update_freq: [4]
   # vocab_path: /gpfswork/rech/ahm/umz16dj/pretrained/tokenizers/gpt2_bpe/dict.txt
@@ -44,12 +44,13 @@ task:
     include_index: true
     skip_masking: true
     d2v2_multi: true
+    mask_idx_in_vocab: true
 
 dataset:
-  num_workers: 2
-  max_tokens: 500000
+  num_workers: 8
+  max_tokens: 1000000
   # batch_size: 16
-  batch_size: 4
+  batch_size: 8
   # ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
   # validate_interval: 1
@@ -77,8 +78,9 @@ criterion:
 optimization:
   clip_norm: 1
   lr: [0.0005]
-  max_update: 650000
+  max_update: 1000000
   update_freq: [1]
+  max_epoch: 10
 
 optimizer:
   _name: composite
@@ -93,7 +95,7 @@ optimizer:
         weight_decay: 0.01
       lr_scheduler:
         _name: cosine
-        warmup_updates: 9000
+        warmup_updates: 8000
 
 lr_scheduler: pass_through
 
@@ -109,9 +111,9 @@ model:
   embed_dim: 768
   clone_batch: 8
 
-  ema_decay: 0.999
+  ema_decay: 0.9999
   ema_end_decay: 0.99999
-  ema_anneal_end_step: 75000
+  ema_anneal_end_step: 200000
   ema_encoder_only: false # speech: false, text: true
 
   average_top_k_layers: 8
