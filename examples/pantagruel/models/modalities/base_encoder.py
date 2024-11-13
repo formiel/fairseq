@@ -49,7 +49,13 @@ class PantagruelDualModalityConfig(D2vModalityConfig):
         metadata={"help": "depth of positional encoder network"},
     )
     conv_pos_pre_ln: bool = False
-
+    use_project_features: bool = False
+    mlp_spec: str = field(
+        default="{'num_layers': 1, 'mlp_dim': 128}",
+        metadata={
+            "help": "specs of project feature layers: {'num_layers': 0, 'mlp_dim': 128}"
+        },
+    )
 
 
 class PantagruelModalitySpecificEncoder(ModalitySpecificEncoder):
@@ -113,6 +119,27 @@ class PantagruelFusionEncoder(ModalitySpecificEncoder):
         super().__init__(modality_cfg, embed_dim, local_encoder, project_features, fixed_positional_encoder, relative_positional_encoder, context_encoder, decoder, get_alibi_bias)
 
         self.token_type_embeddings = token_type_embeddings
+        self.project_features_multi = nn.Identity()
+        if getattr(modality_cfg, "use_project_features", False):
+            mlp_spec = eval(getattr(modality_cfg, "mlp_spec", None))
+            assert mlp_spec is not None
+            project_features = self._build_mlp(
+                num_layers=mlp_spec['num_layers'],
+                input_dim=embed_dim,
+                mlp_dim=mlp_spec['mlp_dim'],
+                output_dim=embed_dim
+            )
+
+    def _build_mlp(self, num_layers, input_dim, mlp_dim, output_dim):
+        mlp = []
+        for l in range(num_layers):
+            dim1 = input_dim if l == 0 else mlp_dim
+            dim2 = output_dim if l == num_layers - 1 else mlp_dim
+            mlp.append(nn.LayerNorm(dim1))
+            mlp.append(nn.Linear(dim1, dim2, bias=False))
+            if l < num_layers - 1:
+                mlp.append(nn.ReLU(inplace=False))
+        return nn.Sequential(*mlp)
 
     @classmethod
     def build_dual_encoders_from_unimodal(
@@ -223,6 +250,7 @@ class PantagruelFusionEncoder(ModalitySpecificEncoder):
         if self.token_type_embeddings is not None:
             # self.token_type_embeddings(token_type_ids): 1 x D
             x = x + self.token_type_embeddings(token_type_ids)
+        x = self.project_features_multi(x)
         return self.contextualized_features(
             x,
             padding_mask,
