@@ -138,7 +138,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
             ncp_loss, ncp_acc = self.compute_ncp_loss(
                 net_output["local_features"], loss_fn=self.ncp_loss_fn
             )
-            logging_output["loss_ncp"] = ncp_loss * (1 / self.ncp_loss_scale) 
+            logging_output["loss_ncp"] = ncp_loss * self.ncp_weight 
             logging_output["acc_ncp"] = ncp_acc * 100
             loss = loss + self.ncp_weight * logging_output["loss_ncp"]
         if self.moco_weight > 0:
