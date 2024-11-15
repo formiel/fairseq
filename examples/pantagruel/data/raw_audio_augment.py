@@ -6,7 +6,6 @@ import glob
 from pathlib import Path
 import soundfile as sf
 from typing import Callable
-from scipy.signal import convolve
 
 import numpy as np
 import random
@@ -96,7 +95,9 @@ class WaveformAugmentation:
         return F.add_noise(speech, noise, snr)
     
     def apply_speed_perturb(self, speech: torch.Tensor, sample_rate=16000):
-        speed_perturb = torchaudio.transforms.SpeedPerturbation(sample_rate, [0.9, 1.1, 1.0])
+        speed_perturb = torchaudio.transforms.SpeedPerturbation(
+            sample_rate, [0.8, 0.9, 1.0, 1.1, 1.2]
+        )
         return speed_perturb(speech)[0]
     
     def get_aug_fn(self, aug_type) -> Callable:
