@@ -32,10 +32,6 @@ class PantagruelMultiConfig(FairseqDataclass):
         default="none",
         metadata={"help": "type of loss function"},
     )
-    ncp_loss_scale: float = field(
-        default=0.0,
-        metadata={"help": "scale the loss ncp by 1 / ncp_loss_scale"},
-    )
     moco_weight: float = field(
         default=0.0,
         metadata={"help": "weight of MoCo-v3 loss"},
@@ -58,7 +54,6 @@ class PantagruelMultiCriterion(FairseqCriterion):
         d2v_weight,
         ncp_weight=0.0,
         ncp_loss_fn=None,
-        ncp_loss_scale=0.0,
         moco_weight=0.0,
         moco_temperature=0.0,
         log_keys=None,
@@ -69,16 +64,14 @@ class PantagruelMultiCriterion(FairseqCriterion):
         self.d2v_weight = d2v_weight
         self.ncp_weight = ncp_weight
         self.ncp_loss_fn = ncp_loss_fn
-        self.ncp_loss_scale = float(ncp_loss_scale)
         if self.ncp_weight > 0:
             self.nc_projector = nn.Sequential(
                 nn.Linear(768*2, 384),
-                nn.LeakyReLU(),
+                nn.Tanh(),
                 nn.Linear(384, 1),
-                nn.Sigmoid(),
             )
-            assert self.ncp_loss_scale != 0
             assert ncp_loss_fn in ["bce", "custom"]
+            self.ncp_weight_learned = nn.Parameter(torch.tensor(ncp_weight), requires_grad=True)
         self.moco_weight = moco_weight
         self.moco_temperature = moco_temperature
 
@@ -135,12 +128,14 @@ class PantagruelMultiCriterion(FairseqCriterion):
                 logging_output[f"loss_{lk}"] = l.item()
 
         if self.ncp_weight > 0:
-            ncp_loss, ncp_acc = self.compute_ncp_loss(
+            _ncp_loss, ncp_acc = self.compute_ncp_loss(
                 net_output["local_features"], loss_fn=self.ncp_loss_fn
             )
-            logging_output["loss_ncp"] = ncp_loss * self.ncp_weight 
+            ncp_loss = F.softplus(self.ncp_weight_learned) * _ncp_loss
+            loss = loss + ncp_loss
+            logging_output["loss_ncp"] = ncp_loss
             logging_output["acc_ncp"] = ncp_acc * 100
-            loss = loss + self.ncp_weight * logging_output["loss_ncp"]
+            logging_output["weight_ncp"] = self.ncp_weight_learned.data
         if self.moco_weight > 0:
             moco_loss = self.compute_moco_loss(
                 net_output["q"], net_output["k"]
@@ -179,15 +174,13 @@ class PantagruelMultiCriterion(FairseqCriterion):
                 logits_pos = self.nc_projector(X_pos) # (M, 1)
                 logits_neg = self.nc_projector(X_neg) # M(M-nclone) x 1
                 logits = torch.cat([logits_pos, logits_neg], dim=0)  # Shape (M + M*(M-nclone), 1)
-                # logging.info(f'logits_pos: {logits_pos}')
-                # logging.info(f'logits_neg: {logits_neg}')
 
                 if loss_fn == "bce":
                     targets_pos = torch.ones_like(logits_pos)
                     targets_neg = torch.zeros_like(logits_neg)
                     targets = torch.cat([targets_pos, targets_neg], dim=0)
-                    logits = torch.clamp(logits, min=1e-7, max=1 - 1e-7)
-                    loss = F.binary_cross_entropy(logits, targets, reduction="none").sum()
+                    # logits = torch.clamp(logits, min=1e-7, max=1 - 1e-7)
+                    loss = F.binary_cross_entropy_with_logits(logits, targets).sum()
                 else:
                     loss = ((1 - logits_pos)**2).sum() + (logits_neg ** 2).sum()
 
