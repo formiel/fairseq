@@ -623,6 +623,7 @@ class PantagruelMultiModel(BaseFairseqModel):
         force_remove_masked=False,
         remove_extra_tokens=True,
         precomputed_mask=None, 
+        source_aug=None,
     ):
         if mode is None:
             assert self.cfg.supported_modality is not None

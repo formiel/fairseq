@@ -83,7 +83,7 @@ class WaveformAugmentation:
         noise = torch.from_numpy(noise).float()
         noise_len = noise.size()[0]
         if noise_len < target_len:
-            noise = torch.tile(noise, (1, target_len // noise_len + 1))
+            noise = torch.tile(noise, (1, target_len // noise_len + 1)).squeeze()
         noise = noise[: target_len]
 
         snr_min, snr_max = CATEGORIES_SNR_MIN_MAX[category]
@@ -261,14 +261,14 @@ class FileAudioAugmentDataset(RawAudioDataset):
                 padding_mask[i, diff:] = True
             else:
                 collated_sources[i] = self.crop_to_max_size(source, target_size)
-        return collated_sources, padding_mask
+        return collated_sources, padding_mask, target_size
 
     def collater(self, samples):
         samples = [s for s in samples if s["source"] is not None]
         if len(samples) == 0:
             return {}
 
-        collated_sources, padding_mask = self._collate(samples, key=0) # original audio
+        collated_sources, padding_mask, target_size = self._collate(samples, key=0) # original audio
         input = {"source": collated_sources}
         if self.corpus_key is not None:
             input["corpus_key"] = [self.corpus_key] * len(collated_sources)
@@ -297,7 +297,7 @@ class FileAudioAugmentDataset(RawAudioDataset):
 
         out["net_input"] = input
 
-        collated_sources_aug, padding_mask_aug = self._collate(samples, key=1) # original audio
+        collated_sources_aug, padding_mask_aug, _ = self._collate(samples, key=1) # original audio
         out["net_input"]["source_aug"] = {"source": collated_sources_aug, "padding_mask": padding_mask_aug}
 
         return out
