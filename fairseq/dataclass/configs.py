@@ -468,7 +468,10 @@ class DistributedTrainingConfig(FairseqDataclass):
         default=False,
         metadata={"help": "not flatten parameter param for fsdp"},
     )
-
+    ddp_sync_batchnorm: bool = field(
+        default=False,
+        metadata={"help": "models contain nn.SyncBatchNorm"}
+    )
 
 @dataclass
 class DatasetConfig(FairseqDataclass):

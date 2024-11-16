@@ -100,6 +100,9 @@ def main(cfg: FairseqConfig) -> None:
             model = fsdp_wrap(task.build_model(cfg.model))
     else:
         model = task.build_model(cfg.model)
+    if cfg.distributed_training.ddp_sync_batchnorm:
+        logger.info("use convert_sync_batchnorm")
+        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
     criterion = task.build_criterion(cfg.criterion)
     logger.info(model)
     logger.info("task: {}".format(task.__class__.__name__))
