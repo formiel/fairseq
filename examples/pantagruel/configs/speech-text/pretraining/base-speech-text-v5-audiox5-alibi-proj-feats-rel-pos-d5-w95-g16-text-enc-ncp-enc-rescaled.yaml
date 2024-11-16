@@ -23,7 +23,7 @@ checkpoint:
   save_dir: ???
 
 task:
-  _name: pantagruel_multimodal_pretraining
+  _name: pantagruel_multimodal_pretrain
   audio_ratio: 5
   text_ratio: 1
   # update_freq: [4]
@@ -66,7 +66,7 @@ distributed_training:
   distributed_port: ???
 
 criterion:
-  _name: pantagruel_multi_loss
+  _name: pantagruel_multimodal_loss
   log_keys:
   - ema_decay
   - target_var
@@ -75,8 +75,9 @@ criterion:
   - ema_norm
   - masked_pct
   d2v_weight: 1.0
-  moco_weight: 1.0
-  moco_temperature: 1.0
+  ncp_weight: 1.0
+  ncp_loss_fn: bce
+  rescale_d2v_loss: true
 
 optimization:
   clip_norm: 1
@@ -103,7 +104,7 @@ optimizer:
 lr_scheduler: pass_through
 
 model:
-  _name: pantagruel_multi
+  _name: pantagruel_multimodal
   # skip_mode: 'TEXT'
   dummy_factor: 0.0
 
@@ -128,7 +129,7 @@ model:
   norm_eps: 1e-5
 
   use_token_type_embeddings: false
-  contrastive_loss_after_encoder: true
+  ncp_loss_after_encoder: true
 
   # shared_decoder:
   #   input_dropout: 0.1
