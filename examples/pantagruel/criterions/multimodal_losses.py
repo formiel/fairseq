@@ -43,10 +43,6 @@ class PantagruelMultiConfig(FairseqDataclass):
         default_factory=list,
         metadata={"help": "additional output keys to log"},
     )
-    rescale_d2v_loss: bool = field(
-        default=False,
-        metadata={"help": "rescale d2v_loss by number of masked tokens"}
-    )
     clone_batch: int = field(
         default=8,
         metadata={"help": "number of clone batch"}
@@ -68,7 +64,6 @@ class PantagruelMultiCriterion(FairseqCriterion):
         moco_weight=0.0,
         moco_temperature=0.0,
         log_keys=None,
-        rescale_d2v_loss=False,
         clone_batch=8,
         use_all_clones=True,
     ):
@@ -88,7 +83,6 @@ class PantagruelMultiCriterion(FairseqCriterion):
             self.ncp_weight_learned = nn.Parameter(torch.tensor(ncp_weight), requires_grad=True)
         self.moco_weight = moco_weight
         self.moco_temperature = moco_temperature
-        self.rescale_d2v_loss = rescale_d2v_loss
         self.clone_batch = clone_batch
         self.use_all_clones = use_all_clones
 
@@ -118,9 +112,6 @@ class PantagruelMultiCriterion(FairseqCriterion):
         if reduce and loss.numel() > 1:
             loss = loss.sum()
 
-        if self.rescale_d2v_loss:
-            loss = loss / sample_size
-
         nsentences = sample["id"].numel()
         loss_d2v = loss
         logging_output = {
@@ -148,12 +139,11 @@ class PantagruelMultiCriterion(FairseqCriterion):
                 logging_output[f"loss_{lk}"] = l.item()
 
         if self.ncp_weight > 0:
-            _ncp_loss, ncp_acc = self.compute_ncp_loss(
+            ncp_loss, ncp_acc = self.compute_ncp_loss(
                 net_output["local_features"], 
                 loss_fn=self.ncp_loss_fn,
                 use_all_clones=self.use_all_clones,
                 )
-            ncp_loss = self.ncp_weight * _ncp_loss / nsentences
             loss = loss + ncp_loss
             logging_output["loss_ncp"] = ncp_loss
             logging_output["acc_ncp"] = ncp_acc * 100
@@ -161,7 +151,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
         if self.moco_weight > 0:
             moco_loss = self.compute_moco_loss(
                 net_output["proj_s"], net_output["proj_t"], use_all_clones=self.use_all_clones
-            ) / nsentences
+            )
             logging_output["loss_moco"] = moco_loss
             loss = loss + moco_loss
 
@@ -216,7 +206,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
                     (logits_pos >= 0.5).sum() + (logits_neg < 0.5).sum()
                 ) / (num_samples)
  
-                return loss, accuracy
+                return self.ncp_weight * loss, accuracy
             
     def compute_moco_loss(self, proj_s, proj_t, use_all_clones=True):
         nclone = self.clone_batch
@@ -273,7 +263,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
             sum(log.get("sample_size", 0) for log in logging_outputs)
         )
 
-        metrics.log_scalar("loss", loss_sum, sample_size, round=3)
+        metrics.log_scalar("loss", loss_sum / sample_size, sample_size, round=3)
         metrics.log_scalar("ntokens", ntokens)
         metrics.log_scalar("nsentences", nsentences)
         metrics.log_scalar("sample_size", sample_size)
@@ -293,8 +283,10 @@ class PantagruelMultiCriterion(FairseqCriterion):
         for k in logging_outputs[0]:
             if k not in builtin_keys and not k.startswith("_"):
                 val = sum(log.get(k, 0) for log in logging_outputs)
-                if k.startswith("loss_"):
-                    metrics.log_scalar(k, val, nsentences, round=3)
+                if k == "loss_d2v":
+                    metrics.log_scalar(k, val / world_size, world_size, round=3)
+                elif k.startswith("loss_"):
+                    metrics.log_scalar(k, val / nsentences, nsentences, round=3)
                 else:
                     metrics.log_scalar(k, val / world_size, round=3)
 
