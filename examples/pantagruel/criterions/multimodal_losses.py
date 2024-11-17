@@ -231,12 +231,8 @@ class PantagruelMultiCriterion(FairseqCriterion):
         proj_t = F.normalize(proj_t,dim=1,p=2) # B x D
         _n = 0
         if dist.is_initialized():
-            proj_t_gathered = distributed_utils.all_gather_list(
-                proj_t,
-                max_size=70000,
-                group=distributed_utils.get_data_parallel_group(),
-            )
-            proj_t = torch.cat(proj_t_gathered, dim=0) # num_gpu*B x D
+            proj_t_gathered = concat_all_gather(proj_t)
+            proj_t = proj_t_gathered.type(proj_s.dtype).to(device=proj_s.device) # num_gpu*B x D
             _n = dist.get_rank()
 
         score = torch.matmul(proj_s, proj_t.transpose(1, 0))
@@ -244,7 +240,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
         logits = logits / self.moco_temperature
         bs = logits.size(0) // nclone
         label = (torch.arange(bs, dtype=torch.long) +
-                 bs * _n).repeat_interleave(nclone, 0).cuda()
+                 bs * _n).repeat_interleave(nclone, 0).to(device=logits.device)
         return self.moco_weight * 2 * self.moco_temperature * nn.CrossEntropyLoss()(logits, label)
     
     def compute_lim_weight_gather(self, local_features, eps=1e-9):
@@ -327,24 +323,20 @@ class PantagruelMultiCriterion(FairseqCriterion):
         True
 
 
-@torch.no_grad()
 def concat_all_gather(z: torch.Tensor):
     """
     Performs all_gather operation on the provided tensors.
     *** Warning ***: torch.distributed.all_gather has no gradient.
     """
-    if not torch.distributed.is_initialized():
-        return z
-    
-    world_size = dist.get_world_size()
-    current_device = z.device
+    group = distributed_utils.get_global_group()
+    rank = distributed_utils.get_rank(group=group)
+    world_size = distributed_utils.get_world_size(group=group)
+    z = utils.move_to_cpu(z)
     gathered_zs = [
-        torch.empty_like(z, device=current_device) for _ in range(world_size)
+        torch.zeros_like(z, device="cpu") for _ in range(world_size)
     ]
-    logging.info(f"z:{z.size()} on device:{current_device}")
-    dist_process = dist.all_gather(gathered_zs, z.contiguous(), async_op=True)
-    logging.info(f"gathered_zs on rank {[_z.device for _z in gathered_zs]}")
-    dist_process.wait()
-    output = torch.cat(gathered_zs, dim=0).to(current_device)
-    logging.info(f"output:{output.size()} on device {output.device}")
-    return output
+    gathered_zs[rank] = z.clone()
+    gathered_zs = torch.cat(gathered_zs, dim=0)
+    # distributed_utils.all_reduce(gathered_zs, group=group)
+
+    return gathered_zs
