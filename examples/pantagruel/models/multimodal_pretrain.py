@@ -413,9 +413,11 @@ class PantagruelMultiModel(BaseFairseqModel):
         if self.mlp_after_local_encoder:
             # self.predictor = nn.Linear(cfg.embed_dim, cfg.embed_dim, bias=False)
             self.predictor = self._build_mlp(2, cfg.embed_dim, cfg.embed_dim*4, cfg.embed_dim, last_bn=True)
-        self.feature_decoder, self.feature_proj, self.feature_head = None, None, None
+        
+        self.feature_decoder_mlp, self.feature_decoder = None, None
+        self.feature_proj, self.feature_head = None, None
         if self.contrastive_loss_after_encoder:
-            self.feature_decoder = nn.Sequential(
+            self.feature_decoder_mlp = nn.Sequential(
                 nn.Linear(cfg.embed_dim, cfg.embed_dim*2, bias=True),
                 nn.LayerNorm(cfg.embed_dim*2),
                 nn.Tanh(),

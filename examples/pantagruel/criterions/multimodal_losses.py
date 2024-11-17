@@ -1,6 +1,4 @@
-import os
 import logging
-import math
 from dataclasses import dataclass, field
 from typing import List
 
@@ -52,6 +50,10 @@ class PantagruelMultiConfig(FairseqDataclass):
         default=8,
         metadata={"help": "number of clone batch"}
     )
+    use_all_clones: bool = field(
+        default=True,
+        metadata={"help": "use all clone to increase number of positive examples"}
+    )
 
 
 @register_criterion("pantagruel_multimodal_loss", dataclass=PantagruelMultiConfig)
@@ -67,6 +69,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
         log_keys=None,
         rescale_d2v_loss=False,
         clone_batch=8,
+        use_all_clones=True,
     ):
         super().__init__(task)
         
@@ -86,6 +89,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
         self.moco_temperature = moco_temperature
         self.rescale_d2v_loss = rescale_d2v_loss
         self.clone_batch = clone_batch
+        self.use_all_clones = use_all_clones
 
     def forward(self, model, sample, reduce=True):
         """Compute the loss for the given sample.
@@ -144,16 +148,18 @@ class PantagruelMultiCriterion(FairseqCriterion):
 
         if self.ncp_weight > 0:
             _ncp_loss, ncp_acc = self.compute_ncp_loss(
-                net_output["local_features"], loss_fn=self.ncp_loss_fn
-            ) / nsentences
-            ncp_loss = self.ncp_weight * _ncp_loss
+                net_output["local_features"], 
+                loss_fn=self.ncp_loss_fn,
+                use_all_clones=self.use_all_clones,
+                )
+            ncp_loss = self.ncp_weight * _ncp_loss / nsentences
             loss = loss + ncp_loss
             logging_output["loss_ncp"] = ncp_loss
             logging_output["acc_ncp"] = ncp_acc * 100
-            logging_output["weight_ncp"] = self.ncp_weight_learned.data
+
         if self.moco_weight > 0:
             moco_loss = self.compute_moco_loss(
-                net_output["proj_s"], net_output["proj_t"]
+                net_output["proj_s"], net_output["proj_t"], use_all_clones=self.use_all_clones
             ) / nsentences
             logging_output["loss_moco"] = moco_loss
             loss = loss + moco_loss
@@ -166,12 +172,16 @@ class PantagruelMultiCriterion(FairseqCriterion):
 
         return loss, sample_size, logging_output
     
-    def compute_ncp_loss(self, local_features, loss_fn="bce"):
+    def compute_ncp_loss(self, local_features, loss_fn="bce", use_all_clones=True):
         # local_features: B x T x C or B x clone_batch x T x C
         for _, feature in local_features.items():
             if feature is not None:
                 if feature.dim() == 4:
                     B, nclone, T, C = feature.size()
+                    if not use_all_clones:
+                        indices = torch.randint(0, nclone, (B,))
+                        feature = feature[torch.arange(B), indices, :, :]
+                        nclone = 1
                     feature = feature.reshape(B*nclone, T, C) # M = Bxnclone
                 else:
                     B, T, C = feature.size()
@@ -207,37 +217,26 @@ class PantagruelMultiCriterion(FairseqCriterion):
  
                 return loss, accuracy
             
-    def compute_moco_loss(self, proj_s, proj_t):
-        # logging.info(f'BEFORE proj_s: {proj_s.size()} norm {torch.norm(proj_s)}, proj_t: {proj_t.size()} norm {torch.norm(proj_t)}')
+    def compute_moco_loss(self, proj_s, proj_t, use_all_clones=True):
+        nclone = self.clone_batch
+        if not use_all_clones:
+            M, D = proj_s.size()
+            B = M // nclone
+            proj_s = proj_s.reshape(B, nclone, D)
+            indices = torch.randint(0, nclone, (B,))
+            proj_s = proj_s[torch.arange(B), indices, :] # B x D
+            nclone = 1
         proj_s = F.normalize(proj_s,dim=1,p=2) # M x D (M=Bxclone_batch)
         proj_t = F.normalize(proj_t,dim=1,p=2) # B x D
-        # logging.info(f'AFTER proj_s: {proj_s.size()} norm {torch.norm(proj_s)}, proj_t: {proj_t.size()} norm {torch.norm(proj_t)}')
-        # logging.info("-"*20)
         proj_t = concat_all_gather(proj_t) # num_gpu*B x D
-        # logging.info(f'proj_t gathered: {proj_t.size()}')
+
         score = torch.matmul(proj_s, proj_t.transpose(1, 0))
         logits = torch.clamp(score, min=1e-7, max=1 - 1e-7)
         logits = logits / self.moco_temperature
-        bs = logits.size(0) // self.clone_batch
+        bs = logits.size(0) // nclone
         label = (torch.arange(bs, dtype=torch.long) +
-                 bs * torch.distributed.get_rank()).repeat_interleave(self.clone_batch, 0).cuda()
-        # logging.info(f"label: {label.size()}, score:{score.size()}\n{label}")
+                 bs * torch.distributed.get_rank()).repeat_interleave(nclone, 0).cuda()
         return self.moco_weight * 2 * self.moco_temperature * nn.CrossEntropyLoss()(logits, label)
-
-    def compute_moco_loss_old(self, q, k):
-        if q is None or k is None:
-            return 0
-        # q: B x nclone x C, k: BxC
-        B, nclone, C = q.size()
-        q = q.reshape(-1, C) # MxC
-        q = F.normalize(q, dim=-1)
-        k = F.normalize(k, dim=-1)
-        logits = torch.matmul(q, k.T) / self.moco_temperature # MxB
-        logits = torch.clamp(logits, min=1e-7, max=1 - 1e-7)
-        labels = torch.arange(B, dtype=torch.long, device=q.device)
-        labels = labels.repeat_interleave(nclone, 0)
-
-        return nn.CrossEntropyLoss()(logits, labels) * (2 * self.moco_temperature)
     
     def compute_lim_weight_gather(self, local_features, eps=1e-9):
         # local_features: B x T x C
