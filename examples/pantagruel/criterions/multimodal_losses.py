@@ -11,6 +11,7 @@ from fairseq import utils
 from fairseq.logging import metrics
 from fairseq.criterions import FairseqCriterion, register_criterion
 from fairseq.dataclass import FairseqDataclass
+import fairseq.distributed.utils as distributed_utils
 
 from fairseq.logging.meters import safe_round
 from examples.pantagruel.data.utils import get_random_crops, create_negative_pairs
@@ -228,14 +229,22 @@ class PantagruelMultiCriterion(FairseqCriterion):
             nclone = 1
         proj_s = F.normalize(proj_s,dim=1,p=2) # M x D (M=Bxclone_batch)
         proj_t = F.normalize(proj_t,dim=1,p=2) # B x D
-        proj_t = concat_all_gather(proj_t) # num_gpu*B x D
+        _n = 0
+        if dist.is_initialized():
+            proj_t_gathered = distributed_utils.all_gather_list(
+                proj_t,
+                max_size=70000,
+                group=distributed_utils.get_data_parallel_group(),
+            )
+            proj_t = torch.cat(proj_t_gathered, dim=0) # num_gpu*B x D
+            _n = dist.get_rank()
 
         score = torch.matmul(proj_s, proj_t.transpose(1, 0))
         logits = torch.clamp(score, min=1e-7, max=1 - 1e-7)
         logits = logits / self.moco_temperature
         bs = logits.size(0) // nclone
         label = (torch.arange(bs, dtype=torch.long) +
-                 bs * torch.distributed.get_rank()).repeat_interleave(nclone, 0).cuda()
+                 bs * _n).repeat_interleave(nclone, 0).cuda()
         return self.moco_weight * 2 * self.moco_temperature * nn.CrossEntropyLoss()(logits, label)
     
     def compute_lim_weight_gather(self, local_features, eps=1e-9):
@@ -324,10 +333,18 @@ def concat_all_gather(z: torch.Tensor):
     Performs all_gather operation on the provided tensors.
     *** Warning ***: torch.distributed.all_gather has no gradient.
     """
-    gathered_zs = [torch.zeros_like(z)
-        for _ in range(dist.get_world_size())]
-    dist.all_gather(tensor_list=gathered_zs, tensor=z.contiguous())
-    gathered_zs[dist.get_rank()] = z
-
-    output = torch.cat(gathered_zs, dim=0)
+    if not torch.distributed.is_initialized():
+        return z
+    
+    world_size = dist.get_world_size()
+    current_device = z.device
+    gathered_zs = [
+        torch.empty_like(z, device=current_device) for _ in range(world_size)
+    ]
+    logging.info(f"z:{z.size()} on device:{current_device}")
+    dist_process = dist.all_gather(gathered_zs, z.contiguous(), async_op=True)
+    logging.info(f"gathered_zs on rank {[_z.device for _z in gathered_zs]}")
+    dist_process.wait()
+    output = torch.cat(gathered_zs, dim=0).to(current_device)
+    logging.info(f"output:{output.size()} on device {output.device}")
     return output
