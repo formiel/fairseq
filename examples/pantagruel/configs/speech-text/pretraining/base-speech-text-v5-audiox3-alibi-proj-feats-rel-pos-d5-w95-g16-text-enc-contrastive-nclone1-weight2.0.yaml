@@ -78,7 +78,7 @@ criterion:
   - masked_pct
   d2v_weight: 1.0
   rescale_d2v_loss: true
-  moco_weight: 2.5
+  moco_weight: 2.0
   moco_temperature: 1.0
   use_all_clones: false
 
