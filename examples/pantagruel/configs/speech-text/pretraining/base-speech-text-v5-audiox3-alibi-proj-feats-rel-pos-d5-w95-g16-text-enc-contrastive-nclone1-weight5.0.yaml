@@ -48,7 +48,7 @@ task:
     mask_idx_in_vocab: true
 
 dataset:
-  num_workers: 8
+  num_workers: 3
   max_tokens: 1000000
   # batch_size: 16
   batch_size: 8
