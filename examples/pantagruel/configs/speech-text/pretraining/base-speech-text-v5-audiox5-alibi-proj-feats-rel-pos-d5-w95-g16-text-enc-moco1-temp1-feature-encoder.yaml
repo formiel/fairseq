@@ -23,11 +23,12 @@ checkpoint:
   save_dir: ???
 
 task:
-  _name: pantagruel_multimodal_pretraining
+  _name: pantagruel_multimodal_pretrain
   audio_ratio: 5
   text_ratio: 1
   # update_freq: [4]
   # vocab_path: /gpfswork/rech/ahm/umz16dj/pretrained/tokenizers/gpt2_bpe/dict.txt
+  musan_dir: /lustre/fsn1/projects/rech/ahm/umz16dj/Data/sslsv
   audio:
     data: ???
     max_sample_size: 320000
@@ -47,7 +48,7 @@ task:
     mask_idx_in_vocab: true
 
 dataset:
-  num_workers: 8
+  num_workers: 1
   max_tokens: 1000000
   # batch_size: 16
   batch_size: 8
@@ -66,7 +67,7 @@ distributed_training:
   distributed_port: ???
 
 criterion:
-  _name: pantagruel_multi_loss
+  _name: pantagruel_multimodal_loss
   log_keys:
   - ema_decay
   - target_var
@@ -75,8 +76,9 @@ criterion:
   - ema_norm
   - masked_pct
   d2v_weight: 1.0
-  ncp_weight: 10000.0
-  ncp_loss_fn: bce
+  moco_weight: 1.0
+  moco_temperature: 1.0
+  use_all_clones: false
 
 optimization:
   clip_norm: 1
@@ -103,7 +105,7 @@ optimizer:
 lr_scheduler: pass_through
 
 model:
-  _name: pantagruel_multi
+  _name: pantagruel_multimodal
   # skip_mode: 'TEXT'
   dummy_factor: 0.0
 
@@ -128,7 +130,7 @@ model:
   norm_eps: 1e-5
 
   use_token_type_embeddings: false
-  ncp_loss_after_local_encoder: true
+  contrastive_loss_with_feature_decoder: true
 
   # shared_decoder:
   #   input_dropout: 0.1
@@ -181,9 +183,9 @@ model:
       use_project_features: true
       mlp_spec: '{"num_layers": 2, "mlp_dim": 512}'
       use_relative_positional_encoder: true
-      conv_pos_depth: 3
-      conv_pos_width: 15
-      conv_pos_groups: 4
+      conv_pos_depth: 5
+      conv_pos_width: 95
+      conv_pos_groups: 16
       decoder:
         input_dropout: 0.1
         decoder_dim: 768

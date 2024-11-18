@@ -23,8 +23,8 @@ checkpoint:
   save_dir: ???
 
 task:
-  _name: pantagruel_multimodal_pretrain
-  audio_ratio: 5
+  _name: pantagruel_multimodal_pretraining
+  audio_ratio: 1
   text_ratio: 1
   # update_freq: [4]
   # vocab_path: /gpfswork/rech/ahm/umz16dj/pretrained/tokenizers/gpt2_bpe/dict.txt
@@ -66,7 +66,7 @@ distributed_training:
   distributed_port: ???
 
 criterion:
-  _name: pantagruel_multimodal_loss
+  _name: model
   log_keys:
   - ema_decay
   - target_var
@@ -74,10 +74,6 @@ criterion:
   - model_norm
   - ema_norm
   - masked_pct
-  d2v_weight: 1.0
-  moco_weight: 1.0
-  moco_temperature: 1.0
-  rescale_d2v_loss: true
 
 optimization:
   clip_norm: 1
@@ -104,7 +100,7 @@ optimizer:
 lr_scheduler: pass_through
 
 model:
-  _name: pantagruel_multimodal
+  _name: pantagruel_multi
   # skip_mode: 'TEXT'
   dummy_factor: 0.0
 
@@ -128,8 +124,7 @@ model:
   layerdrop: 0.0
   norm_eps: 1e-5
 
-  use_token_type_embeddings: false
-  contrastive_loss_after_encoder: true
+  use_token_type_embeddings: true
 
   # shared_decoder:
   #   input_dropout: 0.1
@@ -182,9 +177,9 @@ model:
       use_project_features: true
       mlp_spec: '{"num_layers": 2, "mlp_dim": 512}'
       use_relative_positional_encoder: true
-      conv_pos_depth: 5
-      conv_pos_width: 95
-      conv_pos_groups: 16
+      conv_pos_depth: 3
+      conv_pos_width: 15
+      conv_pos_groups: 4
       decoder:
         input_dropout: 0.1
         decoder_dim: 768

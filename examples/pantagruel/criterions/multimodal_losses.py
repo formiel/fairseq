@@ -7,6 +7,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributed as dist
 
+from omegaconf import II
+
 from fairseq import utils
 from fairseq.logging import metrics
 from fairseq.criterions import FairseqCriterion, register_criterion
@@ -15,6 +17,8 @@ import fairseq.distributed.utils as distributed_utils
 
 from fairseq.logging.meters import safe_round
 from examples.pantagruel.data.utils import get_random_crops, create_negative_pairs
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -43,14 +47,13 @@ class PantagruelMultiConfig(FairseqDataclass):
         default_factory=list,
         metadata={"help": "additional output keys to log"},
     )
-    clone_batch: int = field(
-        default=8,
-        metadata={"help": "number of clone batch"}
-    )
+    clone_batch: int = II("model.clone_batch")
     use_all_clones: bool = field(
         default=True,
         metadata={"help": "use all clone to increase number of positive examples"}
     )
+    embed_dim: int = II("model.embed_dim")
+    start_step_train_aux_loss: int = II("model.start_step_train_aux_loss")
 
 
 @register_criterion("pantagruel_multimodal_loss", dataclass=PantagruelMultiConfig)
@@ -66,6 +69,8 @@ class PantagruelMultiCriterion(FairseqCriterion):
         log_keys=None,
         clone_batch=8,
         use_all_clones=True,
+        embed_dim=768,
+        start_step_train_aux_loss=0,
     ):
         super().__init__(task)
         
@@ -75,16 +80,24 @@ class PantagruelMultiCriterion(FairseqCriterion):
         self.ncp_loss_fn = ncp_loss_fn
         if self.ncp_weight > 0:
             self.nc_projector = nn.Sequential(
-                nn.Linear(768*2, 384),
-                nn.Tanh(),
-                nn.Linear(384, 1),
+                nn.Linear(embed_dim*2, embed_dim//2, bias=True),
+                nn.ReLU(inplace=True),
+                nn.Linear(embed_dim//2, embed_dim*2, bias=False),
+                nn.ReLU(inplace=True),
+                nn.Linear(embed_dim*2, 1, bias=False),
+                nn.Sigmoid(),
             )
             assert ncp_loss_fn in ["bce", "custom"]
-            self.ncp_weight_learned = nn.Parameter(torch.tensor(ncp_weight), requires_grad=True)
+            for param in self.nc_projector.parameters():
+                param.requires_grad = False
         self.moco_weight = moco_weight
         self.moco_temperature = moco_temperature
         self.clone_batch = clone_batch
         self.use_all_clones = use_all_clones
+        self.start_step_train_aux_loss = start_step_train_aux_loss
+        logger.info(f"self.embed_dim={embed_dim}, self.start_step_train_aux_loss={start_step_train_aux_loss}")
+        logger.info(f"self.clone_batch={self.clone_batch}, self.use_all_clones={self.use_all_clones}")
+        self.step_counter = 0
 
     def forward(self, model, sample, reduce=True):
         """Compute the loss for the given sample.
@@ -95,6 +108,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
         3) logging outputs to display while training
         """
         net_output = model(**sample["net_input"])
+        self.step_counter += 1
         
         scaled_losses = {}
 
@@ -139,14 +153,19 @@ class PantagruelMultiCriterion(FairseqCriterion):
                 logging_output[f"loss_{lk}"] = l.item()
 
         if self.ncp_weight > 0:
-            ncp_loss, ncp_acc = self.compute_ncp_loss(
-                net_output["local_features"], 
-                loss_fn=self.ncp_loss_fn,
-                use_all_clones=self.use_all_clones,
-                )
-            loss = loss + ncp_loss
-            logging_output["loss_ncp"] = ncp_loss
-            logging_output["acc_ncp"] = ncp_acc * 100
+            if self.step_counter >= self.start_step_train_aux_loss:
+                if all(not param.requires_grad for param in self.nc_projector.parameters()):
+                    for param in self.nc_projector.parameters():
+                        param.requires_grad = True
+                ncp_loss, ncp_acc_logs = self.compute_ncp_loss(
+                    net_output["local_features"], 
+                    loss_fn=self.ncp_loss_fn,
+                    use_all_clones=self.use_all_clones,
+                    )
+                loss += self.ncp_weight * ncp_loss
+                logging_output["loss_ncp"] = self.ncp_weight * ncp_loss
+                for k, v in ncp_acc_logs.items():
+                    logging_output[k] = v * 100
 
         if self.moco_weight > 0:
             moco_loss = self.compute_moco_loss(
@@ -190,23 +209,23 @@ class PantagruelMultiCriterion(FairseqCriterion):
                 logits_pos = self.nc_projector(X_pos) # (M, 1)
                 logits_neg = self.nc_projector(X_neg) # M(M-nclone) x 1
                 logits = torch.cat([logits_pos, logits_neg], dim=0)  # Shape (M + M*(M-nclone), 1)
+                num_pos, num_neg = logits_pos.numel(), logits_neg.numel()
+                pos_weight = torch.tensor([num_neg / num_pos], device=logits.device)
 
                 if loss_fn == "bce":
                     targets_pos = torch.ones_like(logits_pos)
                     targets_neg = torch.zeros_like(logits_neg)
                     targets = torch.cat([targets_pos, targets_neg], dim=0)
-                    # logits = torch.clamp(logits, min=1e-7, max=1 - 1e-7)
-                    loss = F.binary_cross_entropy_with_logits(logits, targets).sum()
+                    loss = nn.BCELoss(weight=pos_weight)(logits, targets)
+                    loss = loss.sum()
                 else:
                     loss = ((1 - logits_pos)**2).sum() + (logits_neg ** 2).sum()
 
                 # Calculate the total accuracy for both positive and negative logits
-                num_samples = logits_pos.numel() + logits_neg.numel()
-                accuracy = (
-                    (logits_pos >= 0.5).sum() + (logits_neg < 0.5).sum()
-                ) / (num_samples)
- 
-                return self.ncp_weight * loss, accuracy
+                correct_pos  = (logits[:logits_pos.numel()] >= 0.7).sum()
+                correct_neg = (logits[logits_pos.numel():] < 0.3).sum()
+
+                return loss, {"acc_ncp_pos": correct_pos/num_pos, "acc_ncp_neg": correct_neg/num_neg}
             
     def compute_moco_loss(self, proj_s, proj_t, use_all_clones=True):
         nclone = self.clone_batch
@@ -225,8 +244,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
             proj_t = proj_t_gathered.type(proj_s.dtype).to(device=proj_s.device) # num_gpu*B x D
             _n = dist.get_rank()
 
-        score = torch.matmul(proj_s, proj_t.transpose(1, 0))
-        logits = torch.clamp(score, min=1e-7, max=1 - 1e-7)
+        logits = torch.matmul(proj_s, proj_t.transpose(1, 0))
         logits = logits / self.moco_temperature
         bs = logits.size(0) // nclone
         label = (torch.arange(bs, dtype=torch.long) +
@@ -283,10 +301,8 @@ class PantagruelMultiCriterion(FairseqCriterion):
         for k in logging_outputs[0]:
             if k not in builtin_keys and not k.startswith("_"):
                 val = sum(log.get(k, 0) for log in logging_outputs)
-                if k == "loss_d2v":
-                    metrics.log_scalar(k, val / world_size, world_size, round=3)
-                elif k.startswith("loss_"):
-                    metrics.log_scalar(k, val / nsentences, nsentences, round=3)
+                if k.startswith("loss_"):
+                    metrics.log_scalar(k, val / sample_size, sample_size, round=3)
                 else:
                     metrics.log_scalar(k, val / world_size, round=3)
 

@@ -184,6 +184,10 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
     contrastive_loss_with_feature_decoder: bool = False
     feature_decoder_embed_dim: int = 384
     feature_decoder: Optional[D2vDecoderConfig] = D2vDecoderConfig()
+    start_step_train_aux_loss: int = field(
+        default=0,
+        metadata={"help": "number of training steps to start training auxiliary loss"}
+    )
 
 
 class FeatureProjector(nn.Module):
@@ -326,6 +330,8 @@ class PantagruelMultiModel(BaseFairseqModel):
         self.ncp_loss_after_encoder = getattr(cfg, "ncp_loss_after_encoder", False)
         self.contrastive_loss_after_encoder = getattr(cfg, "contrastive_loss_after_encoder", False)
         self.contrastive_loss_with_feature_decoder = getattr(cfg, "contrastive_loss_with_feature_decoder", False)
+        self.start_step_train_aux_loss = getattr(cfg, "start_step_train_aux_loss", 0)
+        self.num_updates = 0
 
         make_layer_norm = partial(
             nn.LayerNorm, eps=cfg.norm_eps, elementwise_affine=cfg.norm_affine
@@ -411,7 +417,6 @@ class PantagruelMultiModel(BaseFairseqModel):
         self.predictor = None
         self.project_mlp, self.predictor_mlp = None, None
         if self.mlp_after_local_encoder:
-            # self.predictor = nn.Linear(cfg.embed_dim, cfg.embed_dim, bias=False)
             self.predictor = self._build_mlp(2, cfg.embed_dim, cfg.embed_dim*4, cfg.embed_dim, last_bn=True)
         
         self.feature_decoder_mlp, self.feature_decoder = None, None
@@ -436,6 +441,10 @@ class PantagruelMultiModel(BaseFairseqModel):
             self.feature_decoder = FeatureDecoder(cfg)
             self.feature_proj = FeatureProjector(cfg.embed_dim)
             self.feature_head = FeatureHead(cfg.embed_dim//3)
+            # if self.num_updates < self.start_step_train_aux_loss:
+            #     self._freeze_modules(self.feature_decoder)
+            #     self._freeze_modules(self.feature_proj)
+            #     self._freeze_modules(self.feature_head)
             
         self.ema = None
 
@@ -505,6 +514,15 @@ class PantagruelMultiModel(BaseFairseqModel):
                 mlp.append(nn.BatchNorm1d(dim2, affine=False))
 
         return nn.Sequential(*mlp)
+    
+    def _freeze_modules(self, modules):
+        for param in modules.parameters():
+            param.requires_grad = False
+
+    def _unfreeze_modules(self, modules):
+        if all(not param.requires_grad for param in modules.parameters()):
+            for param in modules.parameters():
+                param.requires_grad = True
 
     def _init_weights(self, m):
 
