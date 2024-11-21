@@ -115,7 +115,7 @@ model:
   _name: pantagruel_model
   # skip_mode: 'TEXT'
   dummy_factor: 0.0
-  # layer_norm_first: true
+  layer_norm_first: true
   layer_norm_before_encoder: true
   ema_modality_combiner: false
 

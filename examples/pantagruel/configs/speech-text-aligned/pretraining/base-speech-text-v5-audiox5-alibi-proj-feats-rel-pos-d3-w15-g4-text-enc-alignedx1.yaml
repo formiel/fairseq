@@ -117,6 +117,7 @@ model:
   dummy_factor: 0.0
   # layer_norm_first: true
   layer_norm_before_encoder: true
+  ema_modality_combiner: false
 
   loss_beta: 0
   loss_scale: null

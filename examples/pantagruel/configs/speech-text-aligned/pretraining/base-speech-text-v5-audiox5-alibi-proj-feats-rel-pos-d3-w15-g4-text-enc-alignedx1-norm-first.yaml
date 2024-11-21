@@ -26,7 +26,7 @@ task:
   _name: pantagruel_multimodal_pretrain
   audio_ratio: 5
   text_ratio: 1
-  aligned_st_ratio: 2
+  aligned_st_ratio: 1
   aligned_st_data_root: ???
   aligned_text_tokenzizer_root: ???
   vocab_path: /lustre/fswork/projects/rech/ahm/umz16dj/Data/croissantLLM/data-bin/tokenizer_fast/dict.txt
@@ -115,7 +115,7 @@ model:
   _name: pantagruel_model
   # skip_mode: 'TEXT'
   dummy_factor: 0.0
-  # layer_norm_first: true
+  layer_norm_first: true
   layer_norm_before_encoder: true
   ema_modality_combiner: false
 

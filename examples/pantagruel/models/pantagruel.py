@@ -174,6 +174,7 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
         metadata={"help": "number of training steps to start training auxiliary loss"}
     )
     layer_norm_before_encoder: bool = False
+    ema_modality_combiner: bool = False
 
 
 class FeatureProjector(nn.Module):
@@ -493,7 +494,7 @@ class PantagruelMultiModel(BaseFairseqModel):
         if self.contrastive_loss_after_encoder:
             model_copy.predictor_mlp = None
 
-        if model_copy.modality_combiner:
+        if not self.cfg.ema_modality_combiner and model_copy.modality_combiner:
             model_copy.modality_combiner = None
 
         model_copy.requires_grad_(False)
@@ -823,6 +824,7 @@ class PantagruelMultiModel(BaseFairseqModel):
         #     proj_s = self.feature_proj(torch.mean(x_s, dim=1))
         #     proj_s = self.feature_head(proj_s)
 
+        # forward to teacher
         p = next(self.ema.model.parameters())
         device = x[mode.split("_")[0].lower()].device
         dtype = x[mode.split("_")[0].lower()].dtype
@@ -865,6 +867,8 @@ class PantagruelMultiModel(BaseFairseqModel):
                     mask=False,
                     remove_masked=False,
                 )
+                if self.norm_before_enc:
+                    ema_input[_m]["x"] = tm.norm_before_enc[_m.upper()](ema_input[_m]["x"])
 
                 ema_padding_mask[_m] = ema_input[_m]["padding_mask"]
                 ema_alibi_bias[_m] = ema_input[_m].get("alibi_bias", None)
@@ -894,6 +898,32 @@ class PantagruelMultiModel(BaseFairseqModel):
                     )
                     y[_m].append(lr[:, :])
                     ema_x[_m].append(_ema_input_m[:, :])
+                ema_input[_m] = _ema_input_m
+            # add concatenation
+            _ema_x_combined, lr_combined = None, None
+            if tm.modality_combiner and "_" in mode:
+                _ema_input_combined = torch.cat(
+                        [ema_input[_m.lower()] for _m in mode.split("_")], dim=1
+                        )
+                _ema_padding_mask_combined, lr_combined = None, None
+                if all(ema_padding_mask[_m.lower()] is not None for _m in mode.split("_")):
+                    _ema_padding_mask_combined = torch.cat(
+                        [ema_padding_mask[_m.lower()] for _m in mode.split("_")],
+                        dim=1
+                    )
+                _ema_x_combined, lr_combined = tm.modality_combiner["fusion"](
+                    _ema_input_combined, padding_mask=_ema_padding_mask_combined)
+                _ema_x_combined = tm.modality_combiner["norm"](_ema_x_combined)
+                _ema_x_combined = {mode.lower(): tm.modality_combiner["decoder_embed"](_ema_x_combined)}
+                i = 0
+                for _m, _e in ema_input.items():
+                    # logger.info(f'[[{_m}]]: {_e.size()}, lr_combined: {lr_combined.size()}')
+                    _len_m = _e.size()[1]
+                    y[_m].append(
+                        lr_combined[:, :_len_m, :] if i==0 else lr_combined[:, _len_prev:]
+                    )
+                    _len_prev = _len_m
+                    i += 1
 
         # if proj_t is not None:
         #     proj_t = tm.feature_proj(torch.mean(proj_t, dim=1))
