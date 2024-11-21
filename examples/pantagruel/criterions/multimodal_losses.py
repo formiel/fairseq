@@ -23,23 +23,12 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PantagruelMultiConfig(FairseqDataclass):
-    d2v_weight: float = field(
-        default=1.0,
-        metadata={"help": "weight of data2vec loss"},
-    )
-    ncp_weight: float = field(
-        default=0.0,
-        metadata={"help": "weight of next chunk prediction loss"},
-    )
-    ncp_loss_fn: str = field(
-        default="none",
-        metadata={"help": "type of loss function"},
-    )
-    moco_weight: float = field(
+    d2v_weight: float = II("model.d2v_loss")
+    ctr_weight: float = field(
         default=0.0,
         metadata={"help": "weight of MoCo-v3 loss"},
     )
-    moco_temperature: float = field(
+    ctr_temperature: float = field(
         default=0.0,
         metadata={"help": "temperature for MoCo-v3 loss"},
     )
@@ -62,10 +51,8 @@ class PantagruelMultiCriterion(FairseqCriterion):
         self,
         task,
         d2v_weight,
-        ncp_weight=0.0,
-        ncp_loss_fn=None,
-        moco_weight=0.0,
-        moco_temperature=0.0,
+        ctr_weight=0.0,
+        ctr_temperature=0.0,
         log_keys=None,
         clone_batch=8,
         use_all_clones=True,
@@ -76,22 +63,8 @@ class PantagruelMultiCriterion(FairseqCriterion):
         
         self.log_keys = log_keys
         self.d2v_weight = d2v_weight
-        self.ncp_weight = ncp_weight
-        self.ncp_loss_fn = ncp_loss_fn
-        if self.ncp_weight > 0:
-            self.nc_projector = nn.Sequential(
-                nn.Linear(embed_dim*2, embed_dim//2, bias=True),
-                nn.ReLU(inplace=True),
-                nn.Linear(embed_dim//2, embed_dim*2, bias=False),
-                nn.ReLU(inplace=True),
-                nn.Linear(embed_dim*2, 1, bias=False),
-                nn.Sigmoid(),
-            )
-            assert ncp_loss_fn in ["bce", "custom"]
-            for param in self.nc_projector.parameters():
-                param.requires_grad = False
-        self.moco_weight = moco_weight
-        self.moco_temperature = moco_temperature
+        self.ctr_weight = ctr_weight
+        self.ctr_temperature = ctr_temperature
         self.clone_batch = clone_batch
         self.use_all_clones = use_all_clones
         self.start_step_train_aux_loss = start_step_train_aux_loss
@@ -114,6 +87,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
 
         d2v_loss = net_output["losses"]
         for lk, p in d2v_loss.items():
+            # logger.info(f"lk={lk}, loss={p.float().sum()}")
             scaled_losses[lk] = self.d2v_weight * p.float().sum()
 
         loss = sum(scaled_losses.values())
@@ -137,14 +111,13 @@ class PantagruelMultiCriterion(FairseqCriterion):
         }
 
         for lk in self.log_keys:
-            if lk in net_output and net_output[lk] is not None:
-                if not torch.is_tensor(net_output[lk]) or net_output[lk].numel() == 1:
-                    logging_output[lk] = float(net_output[lk])
-                elif lk.startswith("_"):
-                    logging_output[lk] = net_output[lk]
-                else:
-                    for i, v in enumerate(net_output[lk]):
-                        logging_output[f"{lk}_{i}"] = float(v)
+            for _out_k in net_output.keys():
+                if _out_k.startswith(lk) and net_output[_out_k] is not None:
+                    if not torch.is_tensor(net_output[_out_k]) or net_output[_out_k].numel() == 1:
+                        logging_output[_out_k] = float(net_output[_out_k])
+                    else:
+                        for i, v in enumerate(net_output[_out_k]):
+                            logging_output[f"{_out_k}_{i}"] = float(v)
 
         if len(scaled_losses) > 1:
             for lk, l in scaled_losses.items():
@@ -152,27 +125,12 @@ class PantagruelMultiCriterion(FairseqCriterion):
                     l = l.sum()
                 logging_output[f"loss_{lk}"] = l.item()
 
-        if self.ncp_weight > 0:
-            if self.step_counter >= self.start_step_train_aux_loss:
-                if all(not param.requires_grad for param in self.nc_projector.parameters()):
-                    for param in self.nc_projector.parameters():
-                        param.requires_grad = True
-                ncp_loss, ncp_acc_logs = self.compute_ncp_loss(
-                    net_output["local_features"], 
-                    loss_fn=self.ncp_loss_fn,
-                    use_all_clones=self.use_all_clones,
-                    )
-                loss += self.ncp_weight * ncp_loss
-                logging_output["loss_ncp"] = self.ncp_weight * ncp_loss
-                for k, v in ncp_acc_logs.items():
-                    logging_output[k] = v * 100
-
-        if self.moco_weight > 0:
-            moco_loss = self.compute_moco_loss(
+        if self.ctr_weight > 0:
+            ctr_loss = self.compute_ctr_loss(
                 net_output["proj_s"], net_output["proj_t"], use_all_clones=self.use_all_clones
             )
-            logging_output["loss_moco"] = moco_loss
-            loss = loss + moco_loss
+            logging_output["loss_ctr"] = ctr_loss
+            loss = loss + ctr_loss
 
         if "logs" in net_output:
             for lgw in net_output["logs"]:
@@ -181,53 +139,8 @@ class PantagruelMultiCriterion(FairseqCriterion):
         logging_output["loss"] = loss.data
 
         return loss, sample_size, logging_output
-    
-    def compute_ncp_loss(self, local_features, loss_fn="bce", use_all_clones=True):
-        # local_features: B x T x C or B x clone_batch x T x C
-        for _, feature in local_features.items():
-            if feature is not None:
-                if feature.dim() == 4:
-                    B, nclone, T, C = feature.size()
-                    if not use_all_clones:
-                        indices = torch.randint(0, nclone, (B,))
-                        feature = feature[torch.arange(B), indices, :, :]
-                        nclone = 1
-                    feature = feature.reshape(B*nclone, T, C) # M = Bxnclone
-                else:
-                    B, T, C = feature.size()
-                    nclone = 1
 
-                crops1, crops2 = get_random_crops(feature) # M x crop_size x D
-                Y1 = crops1.mean(dim=1) # M x D
-                Y2 = crops2.mean(dim=1) # M x D
-
-                X_pos = torch.cat(
-                    (Y1, Y2), dim=-1
-                ) # M x 2D
-                X_neg = create_negative_pairs(Y1, Y2, nclone=nclone) # M(M-nclone) x 2D
-
-                logits_pos = self.nc_projector(X_pos) # (M, 1)
-                logits_neg = self.nc_projector(X_neg) # M(M-nclone) x 1
-                logits = torch.cat([logits_pos, logits_neg], dim=0)  # Shape (M + M*(M-nclone), 1)
-                num_pos, num_neg = logits_pos.numel(), logits_neg.numel()
-                pos_weight = torch.tensor([num_neg / num_pos], device=logits.device)
-
-                if loss_fn == "bce":
-                    targets_pos = torch.ones_like(logits_pos)
-                    targets_neg = torch.zeros_like(logits_neg)
-                    targets = torch.cat([targets_pos, targets_neg], dim=0)
-                    loss = nn.BCELoss(weight=pos_weight)(logits, targets)
-                    loss = loss.sum()
-                else:
-                    loss = ((1 - logits_pos)**2).sum() + (logits_neg ** 2).sum()
-
-                # Calculate the total accuracy for both positive and negative logits
-                correct_pos  = (logits[:logits_pos.numel()] >= 0.7).sum()
-                correct_neg = (logits[logits_pos.numel():] < 0.3).sum()
-
-                return loss, {"acc_ncp_pos": correct_pos/num_pos, "acc_ncp_neg": correct_neg/num_neg}
-            
-    def compute_moco_loss(self, proj_s, proj_t, use_all_clones=True):
+    def compute_ctr_loss(self, proj_s, proj_t, use_all_clones=True):
         nclone = self.clone_batch
         if not use_all_clones:
             M, D = proj_s.size()
@@ -245,30 +158,12 @@ class PantagruelMultiCriterion(FairseqCriterion):
             _n = dist.get_rank()
 
         logits = torch.matmul(proj_s, proj_t.transpose(1, 0))
-        logits = logits / self.moco_temperature
+        logits = logits / self.ctr_temperature
         bs = logits.size(0) // nclone
         label = (torch.arange(bs, dtype=torch.long) +
                  bs * _n).repeat_interleave(nclone, 0).to(device=logits.device)
-        return self.moco_weight * 2 * self.moco_temperature * nn.CrossEntropyLoss()(logits, label)
+        return self.ctr_weight * 2 * self.ctr_temperature * nn.CrossEntropyLoss()(logits, label)
     
-    def compute_lim_weight_gather(self, local_features, eps=1e-9):
-        # local_features: B x T x C
-        for _, feature in local_features.items():
-            if feature is not None:
-                crops1, crops2 = get_random_crops(feature) # B x crop_size x C
-                Y1 = self.nc_projector(crops1).mean(dim=1) # B x D
-                Y2 = self.nc_projector(crops2).mean(dim=1) # B x D
-                B, _ = Y1.size()
-                Y2_all = concat_all_gather(Y2) if dist.is_available() and dist.is_initialized() else Y2
-                neg_idx = torch.randint(0, Y2_all.size(0), size=(B,))
-                Y_R = Y2_all[neg_idx]
-                pos = F.cosine_similarity(Y1, Y2, dim=-1)
-                neg = F.cosine_similarity(Y1, Y_R, dim=-1)
-                pos = torch.clamp(torch.sigmoid(pos), eps, 1.0 - eps)
-                neg = torch.clamp(torch.sigmoid(neg), eps, 1.0 - eps)
-                loss = -torch.mean(torch.log(pos)) - torch.mean(torch.log(1 - neg))
-                return loss
-
     @staticmethod
     def reduce_metrics(logging_outputs) -> None:
         """Aggregate logging outputs from data parallel training."""
@@ -345,6 +240,5 @@ def concat_all_gather(z: torch.Tensor):
     ]
     gathered_zs[rank] = z.clone()
     gathered_zs = torch.cat(gathered_zs, dim=0)
-    # distributed_utils.all_reduce(gathered_zs, group=group)
 
     return gathered_zs
