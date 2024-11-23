@@ -35,6 +35,7 @@ class PantagruelD2vTextConfig(D2vModalityConfig):
     no_token_positional_embeddings: bool = False
     use_project_features: bool = False
     use_relative_positional_encoder: bool = False
+    disable_embed_positions: bool = True # while use relative positional encoder only
     conv_pos_width: int = field(
         default=95,
         metadata={"help": "number of filters for convolutional positional embeddings"},
@@ -88,7 +89,7 @@ class TextTypeEncoder(PantagruelModalitySpecificEncoder):
             )
         positional_encoder = None
         if getattr(modality_cfg, "use_relative_positional_encoder", False):
-            k = max(3, modality_cfg.conv_pos_width // modality_cfg.conv_pos_depth)
+            k = max(1, modality_cfg.conv_pos_width // modality_cfg.conv_pos_depth)
             positional_encoder = nn.Sequential(
             TransposeLast(),
             *[
@@ -110,7 +111,8 @@ class TextTypeEncoder(PantagruelModalitySpecificEncoder):
             ],
             TransposeLast(),
         )
-            text_encoder.local_encoder.embed_positions = None
+            if getattr(modality_cfg, "disable_embed_positions", True):
+                text_encoder.local_encoder.embed_positions = None
 
         super().__init__(
             modality_cfg=modality_cfg,

@@ -23,6 +23,7 @@ from fairseq.dataclass import FairseqDataclass
 from fairseq.models import BaseFairseqModel, register_model
 
 from examples.pantagruel.data.modality import Modality
+from examples.data2vec.data.modality import Modality as Data2vecModality
 
 from examples.data2vec.models.modalities.base import (
     MaskSeed,
@@ -629,7 +630,7 @@ class PantagruelMultiModel(BaseFairseqModel):
             assert self.cfg.supported_modality is not None
             mode = self.cfg.supported_modality
 
-        if isinstance(mode, Modality):
+        if isinstance(mode, Modality) or isinstance(mode, Data2vecModality):
             mode = mode.name
 
         feature_extractor, remaining_extractor_names = self._get_feature_extractor(mode)
@@ -1127,6 +1128,7 @@ class PantagruelMultiModel(BaseFairseqModel):
         modality = modality.lower() if modality is not None else None
         for k in list(self.modality_encoders.keys()):
             if modality is not None and k.lower() != modality:
+                logger.info(f"Removing pre-trained models self.modality_encoders[{k}]")
                 del self.modality_encoders[k]
             else:
                 self.modality_encoders[k].remove_pretraining_modules(

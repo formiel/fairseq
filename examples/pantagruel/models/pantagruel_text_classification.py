@@ -66,7 +66,7 @@ class PantagruelTextClassificationModel(BaseFairseqModel):
         task = tasks.setup_task(pretrained_args.task)
         model = task.build_model(pretrained_args.model, from_checkpoint=True)
 
-        model.remove_pretraining_modules()
+        model.remove_pretraining_modules(modality="TEXT")
 
         self.model = model
 
@@ -76,12 +76,13 @@ class PantagruelTextClassificationModel(BaseFairseqModel):
         self.classification_heads = nn.ModuleDict()
 
 
-    def load_model_weights(self, state, model, cfg):
+    def load_model_weights(self, state, model, cfg, kept_modality="TEXT"):
         for k in list(state["model"].keys()):
             if (
                 k.startswith("shared_decoder") or
                 k.startswith("_ema") or
-                "decoder" in k
+                "decoder" in k or
+                (kept_modality not in k and "blocks" not in k)
             ):
                 logger.info(f"Deleting {k} from checkpoint")
                 del state["model"][k]
