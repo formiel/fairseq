@@ -58,7 +58,7 @@ optimization:
   lr: [0.0002]
   max_update: 1000000
   update_freq: [1]
-  max_epoch: 30
+  max_epoch: 20
 
 optimizer:
   _name: composite

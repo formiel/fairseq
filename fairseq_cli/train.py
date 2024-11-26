@@ -362,27 +362,25 @@ def train(
     should_stop = False
     num_updates = trainer.get_num_updates()
     logger.info("Start iterating over samples")
-    epoch_time_queue = deque(maxlen=3)
-    reach_time_limit = False
+    
+    # args for time limit
     time_limit = getattr(cfg.common, "time_limit", -1)
+    reach_time_limit = False
     save_interval_steps = cfg.checkpoint.save_interval_updates
-    check_time_limit_intervals = (
+    check_time_limit = (
         True if save_interval_steps != 0 and time_limit > 0 else False
     ) # compute time limit for save_interval updates
-    start_timing_epoch = True if check_time_limit_intervals else False # for first iterations
-    if check_time_limit_intervals > 0:
-        intrplt_finised_step_ratio = (
-            1 if num_updates % save_interval_steps == 0 else (
-                save_interval_steps / (num_updates % save_interval_steps)
-            )
-        )
-    start_epoch_time = time() if start_timing_epoch else None
+    epoch_time_queue = deque(maxlen=3)
+    start_timing = True if check_time_limit else False # for first iterations
+    start_epoch_time = time() if start_timing else None
+    intrplt_finised_step_ratio = 1.0
+    prev_num_updates = num_updates
 
     for i, samples in enumerate(progress):
         # Reset the start time
-        if start_timing_epoch:
+        if start_timing:
             start_epoch_time = time()
-            start_timing_epoch = False
+            start_timing = False
 
         with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
             "train_step-%d" % i
@@ -404,7 +402,8 @@ def train(
         valid_losses, should_stop = validate_and_save(
             cfg, trainer, task, epoch_itr, valid_subsets, end_of_epoch
         )
-        if valid_losses[0] is not None and check_time_limit_intervals:
+        # check for time limit after validation
+        if valid_losses[0] is not None and check_time_limit:
             if num_updates % save_interval_steps == 0:
                 # next number of steps to check for time
                 next_save_number_steps = min(
@@ -418,7 +417,14 @@ def train(
                 )
             else:
                 raise ValueError
-            logger.info(f"next_save_number_steps={next_save_number_steps}")
+            logger.info(f"next_save_number_steps = {next_save_number_steps}")
+
+            # ratio of the finished updates 
+            intrplt_finised_step_ratio = (
+                save_interval_steps / (num_updates - prev_num_updates)
+            )
+            prev_num_updates = num_updates
+
             reach_time_limit, _epoch_time_queue = get_time_queue_and_check_time_limit(
                     cfg, start_epoch_time=start_epoch_time,
                     epoch_time_queue=epoch_time_queue,
@@ -426,7 +432,7 @@ def train(
                     intrplt_ratio_next_steps=next_save_number_steps/save_interval_steps,
                 )
             epoch_time_queue = _epoch_time_queue
-            start_timing_epoch = True
+            start_timing = True
         if reach_time_limit:
             should_stop = True
             break
@@ -540,16 +546,20 @@ def get_training_stats(stats: Dict[str, Any]) -> Dict[str, Any]:
 
 def get_time_queue_and_check_time_limit(
     cfg, start_epoch_time, epoch_time_queue,
-    intrplt_ratio_finished_steps=1,
-    intrplt_ratio_next_steps=1,
+    intrplt_ratio_finished_steps=1.0,
+    intrplt_ratio_next_steps=1.0,
 ):
     reach_time_limit = False
     time_limit = getattr(cfg.common, "time_limit", -1)
+    logger.info(f"intrplt_ratio_finished_steps={intrplt_ratio_finished_steps}")
+    logger.info(f"intrplt_ratio_next_steps={intrplt_ratio_next_steps}")
+    logger.info(f"epoch_time_queue before={epoch_time_queue}")
 
     # epoch time in minutes
     epoch_time = ((time() - start_epoch_time)/60) * intrplt_ratio_finished_steps
     # average duration of the last 3 epochs
     epoch_time_queue.append(epoch_time)
+    logger.info(f"epoch_time_queue after={epoch_time_queue}")
     avg_time = sum(epoch_time_queue)/len(epoch_time_queue)
     # if the next epoch likely surpasses the time limit, then stop here
     estimated_next_total_time = (time() - START_JOB_TIME)/60 + avg_time * intrplt_ratio_next_steps
