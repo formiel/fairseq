@@ -32,6 +32,7 @@ task:
   min_sample_size: 32000
   normalize: true
   precompute_mask_config: {}
+  data: ???
 
 dataset:
   num_workers: 6
