@@ -50,7 +50,7 @@ lr_scheduler:
 
 optimization:
   clip_norm: 0.0
-  lr: [2e-04]
+  lr: [2e-06]
   max_update: 50000
   # max_epoch: 10
 
