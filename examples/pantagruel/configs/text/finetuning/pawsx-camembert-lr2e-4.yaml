@@ -46,13 +46,13 @@ optimizer:
 
 lr_scheduler:
   _name: polynomial_decay
-  warmup_updates: 122
+  warmup_updates: 500
 
 optimization:
   clip_norm: 0.0
   lr: [2e-04]
-  # max_update: 20360
-  max_epoch: 10
+  max_update: 50000
+  # max_epoch: 10
 
 model:
   _name: roberta
