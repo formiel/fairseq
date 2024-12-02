@@ -368,7 +368,7 @@ def train(
     reach_time_limit = False
     save_interval_steps = cfg.checkpoint.save_interval_updates
     check_time_limit = (
-        True if save_interval_steps != 0 and time_limit > 0 else False
+        True if save_interval_steps != 0 and time_limit > 0 and itr.total > save_interval_steps else False
     ) # compute time limit for save_interval updates
     epoch_time_queue = deque(maxlen=3)
     start_timing = True if check_time_limit else False # for first iterations
