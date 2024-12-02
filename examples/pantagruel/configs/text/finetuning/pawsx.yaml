@@ -9,7 +9,6 @@ common:
   log_interval: 200
   # user_dir: ${env:PWD}/examples/data2vec
   tensorboard_logdir: ???
-  time_limit: ???
   seed: ???
 
 task:
@@ -25,13 +24,10 @@ checkpoint:
   best_checkpoint_metric: accuracy
   maximize_best_checkpoint_metric: true
   no_epoch_checkpoints: true
-  save_dir: ???
 
 distributed_training:
   find_unused_parameters: true
   distributed_world_size: 1
-  nprocs_per_node: 1
-  distributed_port: -1
 
 criterion:
   _name: sentence_prediction
@@ -40,7 +36,6 @@ dataset:
   batch_size: 16
   required_batch_size_multiple: 1
   max_tokens: 4400
-  num_workers: 1
 
 optimizer:
   _name: adam
