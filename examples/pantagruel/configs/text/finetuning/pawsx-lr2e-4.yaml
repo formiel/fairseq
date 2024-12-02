@@ -7,6 +7,8 @@ common:
   fp16_scale_window: 128
   log_format: json
   log_interval: 200
+  # user_dir: ${env:PWD}/examples/data2vec
+  tensorboard_logdir: ???
   seed: ???
 
 task:
@@ -16,12 +18,9 @@ task:
   separator_token: 2
   num_classes: 2
   max_positions: 512
+  d2v2_multi: true
 
 checkpoint:
-  restore_file: ???
-  reset_optimizer: true
-  reset_dataloader: true
-  reset_meters: true
   best_checkpoint_metric: accuracy
   maximize_best_checkpoint_metric: true
   no_epoch_checkpoints: true
@@ -50,11 +49,11 @@ lr_scheduler:
 
 optimization:
   clip_norm: 0.0
-  lr: [2e-05]
-  max_update: 20360
-  # max_epoch: 10
+  lr: [2e-04]
+  # max_update: 20360
+  max_epoch: 10
 
 model:
-  _name: roberta
-  dropout: 0.1
-  attention_dropout: 0.1
+  _name: data2vec_text_classification
+  model_path: ???
+  pooler_dropout: 0.1
