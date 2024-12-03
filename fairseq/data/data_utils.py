@@ -125,7 +125,7 @@ def load_indexed_dataset(
         return datasets[0]
     else:
         logger.info(f"Total number of examples: {num_examples:,}")
-        if num_examples <= 1e9:
+        if num_examples <= 3e9:
             return ConcatDataset(datasets)
         else:
             from fairseq.data.concat_dataset_large import ConcatDatasetLarge
