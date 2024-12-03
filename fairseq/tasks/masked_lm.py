@@ -167,6 +167,7 @@ class MaskedLMTask(FairseqTask):
         assert len(paths) > 0
         data_path = paths[(epoch - 1) % len(paths)]
         split_path = os.path.join(data_path, split)
+        logger.info(f"split_path: {split_path}")
 
         dataset = data_utils.load_indexed_dataset(
             split_path,
