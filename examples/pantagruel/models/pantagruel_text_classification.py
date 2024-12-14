@@ -51,6 +51,7 @@ class PantagruelTextClassificationModel(BaseFairseqModel):
         super().__init__()
         self.cfg = cfg
 
+        self.modalities = None
         if cfg.pretrained_model_args is None:
             state = checkpoint_utils.load_checkpoint_to_cpu(cfg.model_path, {})
             pretrained_args = state.get("cfg", None)
@@ -59,6 +60,9 @@ class PantagruelTextClassificationModel(BaseFairseqModel):
             cfg.pretrained_model_args = pretrained_args
 
             logger.info(pretrained_args)
+            self.modalities = list(pretrained_args.model.modalities.keys())
+            logger.info(f"self.modalities: {self.modalities}")
+            self.modalities = [n.upper() for n in self.modalities]
         else:
             state = None
             pretrained_args = cfg.pretrained_model_args
@@ -86,6 +90,12 @@ class PantagruelTextClassificationModel(BaseFairseqModel):
             ):
                 logger.info(f"Deleting {k} from checkpoint")
                 del state["model"][k]
+            else:
+                if self.modalities:
+                    for m in self.modalities:
+                        if m in k and m != kept_modality:
+                            del state["model"][k]
+
         model.load_state_dict(state["model"], strict=True)
 
     @classmethod
