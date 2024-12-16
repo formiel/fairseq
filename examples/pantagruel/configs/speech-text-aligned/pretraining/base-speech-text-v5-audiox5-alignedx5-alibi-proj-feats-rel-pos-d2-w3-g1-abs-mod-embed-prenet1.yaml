@@ -32,7 +32,7 @@ task:
   _name: pantagruel_multimodal_pretraining
   audio_ratio: 5
   text_ratio: 1
-  aligned_st_ratio: 1
+  aligned_st_ratio: 5
   aligned_st_data_root: ???
   aligned_text_tokenzizer_root: ???
   vocab_path: ???
@@ -87,18 +87,23 @@ criterion:
   _name: model
   log_keys:
   - ema_decay
-  - target_var
-  - pred_var
+  - target_var_audio
+  - target_var_text
+  - pred_var_audio
+  - pred_var_text
   - model_norm
   - ema_norm
-  - masked_pct
+  - masked_pct_audio
+  - masked_pct_text
+  - sample_size_audio
+  - sample_size_text
 
 optimization:
   clip_norm: 1
   lr: [0.0005]
   max_update: 1000000
   update_freq: [1]
-  max_epoch: 10
+  max_epoch: 20
 
 optimizer:
   _name: composite

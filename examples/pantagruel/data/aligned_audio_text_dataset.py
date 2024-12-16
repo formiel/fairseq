@@ -254,27 +254,28 @@ class AlignedSpeechTextDataset(FairseqDataset):
         sz = len(tokens)
         text_item = {"id": index, "source": tokens}
         
-        # if self.cfg.text.skip_masking:
-        #     if self.is_compute_mask:
-        #         mask_generator = partial(
-        #             create_single_mask, sz, self.cfg.text.mask_prob,
-        #             self.cfg.text.mask_multiple_length, 
-        #             self.cfg.text.mask_stdev, rng
-        #         )
-        #         masks = [mask_generator() for _ in range(self.clone_batch)]
-        #         max_length = max(mask.shape[0] for mask in masks)
-        #         padded_masks = torch.stack([F.pad(torch.tensor(mask), (0, max_length - mask.shape[0])) for mask in masks])
-        #         text_item["precomputed_mask"] = torch.tensor(padded_masks.clone()) # clone_batch x len
-        # else:
-        #     mask = create_single_mask(
-        #         sz, self.cfg.text.mask_prob, self.cfg.text.mask_multiple_length,
-        #         self.cfg.text.mask_stdev, rng
-        #     )
-        #     new_item = tokens.clone()
-        #     new_item[mask] = self.mask_idx
+        if self.cfg.text.skip_masking:
+            if self.is_compute_mask:
+                # logger.info(f'text mask prob: {self.cfg.text.mask_prob}')
+                mask_generator = partial(
+                    create_single_mask, sz, self.cfg.text.mask_prob,
+                    self.cfg.text.mask_multiple_length, 
+                    self.cfg.text.mask_stdev, rng
+                )
+                masks = [mask_generator() for _ in range(self.clone_batch)]
+                max_length = max(mask.shape[0] for mask in masks)
+                padded_masks = torch.stack([F.pad(torch.tensor(mask), (0, max_length - mask.shape[0])) for mask in masks])
+                text_item["precomputed_mask"] = torch.tensor(padded_masks.clone()) # clone_batch x len
+        else:
+            mask = create_single_mask(
+                sz, self.cfg.text.mask_prob, self.cfg.text.mask_multiple_length,
+                self.cfg.text.mask_stdev, rng
+            )
+            new_item = tokens.clone()
+            new_item[mask] = self.mask_idx
 
-        #     text_item["source"] = new_item
-        #     text_item["mask"] = mask
+            text_item["source"] = new_item
+            text_item["mask"] = mask
 
         return text_item
 
@@ -307,6 +308,7 @@ class AlignedSpeechTextDataset(FairseqDataset):
 
         if self.is_compute_mask:
             T = self._get_mask_indices_dims(feats.size(-1))
+            # logger.info(f'AUDIO mask prob: {self.mask_args.mask_prob}')
             mask = fairseq_data_utils.compute_block_mask_1d(
                 shape=(self.clone_batch, T),
                 mask_prob=self.mask_args.mask_prob,
@@ -440,15 +442,15 @@ class AlignedSpeechTextDataset(FairseqDataset):
             "source": tokens, "padding_mask": padding_mask,
         }
 
-        # if "precomputed_mask" in samples[0].text:
-        #     target_size = max([x.text["precomputed_mask"].size(1) for x in samples])
-        #     padded_tensors = [
-        #         s.text["precomputed_mask"] if s.text["precomputed_mask"].size(1) == target_size
-        #         else F.pad(s.text["precomputed_mask"], (0, target_size - s.text["precomputed_mask"].size(1)))
-        #         for s in samples
-        #     ]
-        #     collated_mask = torch.cat(padded_tensors, dim=0)
-        #     text_input["precomputed_mask"] = collated_mask
+        if "precomputed_mask" in samples[0].text:
+            target_size = max([x.text["precomputed_mask"].size(1) for x in samples])
+            padded_tensors = [
+                s.text["precomputed_mask"] if s.text["precomputed_mask"].size(1) == target_size
+                else F.pad(s.text["precomputed_mask"], (0, target_size - s.text["precomputed_mask"].size(1)))
+                for s in samples
+            ]
+            collated_mask = torch.cat(padded_tensors, dim=0)
+            text_input["precomputed_mask"] = collated_mask
 
         target_lengths = torch.tensor(
             [x.text["source"].size(0) for x in samples], dtype=torch.long
@@ -462,17 +464,23 @@ class AlignedSpeechTextDataset(FairseqDataset):
                 .view(-1, 1)
             )
 
+        # net_input = {
+        #     "source": {
+        #         "audio": audio_input["source"],  
+        #         "text": text_input["source"],
+        #     },
+        #     "padding_mask": {
+        #         "audio": audio_input["padding_mask"],  
+        #         "text": text_input["padding_mask"],
+        #     },
+        #     "precomputed_mask": {
+        #         "audio": audio_input["precomputed_mask"],
+        #     },
+        # }
         net_input = {
             "source": {
-                "audio": audio_input["source"],  
-                "text": text_input["source"],
-            },
-            "padding_mask": {
-                "audio": audio_input["padding_mask"],  
-                "text": text_input["padding_mask"],
-            },
-            "precomputed_mask": {
-                "audio": audio_input["precomputed_mask"],
+                "audio": audio_input,  
+                "text": text_input,
             },
         }
         out = {
