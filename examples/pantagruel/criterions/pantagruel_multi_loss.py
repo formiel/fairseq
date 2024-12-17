@@ -4,18 +4,23 @@ import math
 from dataclasses import dataclass, field
 from typing import List
 
+import editdistance
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributed as dist
 
 from fairseq import utils
+from fairseq.data.data_utils import post_process
 from fairseq.logging import metrics
 from fairseq.criterions import FairseqCriterion, register_criterion
 from fairseq.dataclass import FairseqDataclass
 
 from fairseq.logging.meters import safe_round
 from examples.pantagruel.data.utils import get_random_crops, create_negative_pairs
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -44,6 +49,10 @@ class PantagruelMultiConfig(FairseqDataclass):
         default_factory=list,
         metadata={"help": "additional output keys to log"},
     )
+    ctc_weight: float = field(
+        default=0.0,
+        metadata={"help": "weight of ctc loss"},
+    )
 
 
 @register_criterion("pantagruel_multi_loss", dataclass=PantagruelMultiConfig)
@@ -56,6 +65,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
         ncp_loss_fn=None,
         moco_weight=0.0,
         moco_temperature=0.0,
+        ctc_weight=0.0,
         log_keys=None,
     ):
         super().__init__(task)
@@ -74,6 +84,12 @@ class PantagruelMultiCriterion(FairseqCriterion):
             self.ncp_weight_learned = nn.Parameter(torch.tensor(ncp_weight), requires_grad=True)
         self.moco_weight = moco_weight
         self.moco_temperature = moco_temperature
+        self.task = task
+        self.ctc_weight = ctc_weight
+        self.pad_idx = task.source_dictionary.pad()
+        self.eos_idx = task.source_dictionary.eos()
+        self.blank_idx = task.source_dictionary.bos()
+        logger.info(f"blank_idx={self.blank_idx}, pad_idx={self.pad_idx}, eos_idx={self.eos_idx}")
 
     def forward(self, model, sample, reduce=True):
         """Compute the loss for the given sample.
@@ -83,12 +99,14 @@ class PantagruelMultiCriterion(FairseqCriterion):
         2) the sample size, which is used as the denominator for the gradient
         3) logging outputs to display while training
         """
-        net_output = model(**sample["net_input"])
+        net_input = sample["net_input"]
+        net_output = model(**net_input)
         
         scaled_losses = {}
 
-        d2v_loss = net_output["losses"]
+        d2v_loss = net_output["losses"] # data2vec loss is computed in model
         for lk, p in d2v_loss.items():
+            # logger.info(f"{lk}: {self.d2v_weight * p.float().sum()}")
             scaled_losses[lk] = self.d2v_weight * p.float().sum()
 
         loss = sum(scaled_losses.values())
@@ -102,17 +120,22 @@ class PantagruelMultiCriterion(FairseqCriterion):
             loss = loss.sum()
 
         nsentences = sample["id"].numel()
-        loss_d2v = loss
         logging_output = {
-            "loss_d2v": loss_d2v.data,
+            "loss": loss.data,
             "ntokens": sample_size,
             "nsentences": nsentences,
             "sample_size": sample_size,
             "_world_size": 1,
         }
 
+        suffix = list(scaled_losses.keys())
+        if len(suffix) > 1:
+            for sfx in suffix:
+                logging_output[f"loss_d2v_{sfx}"] = scaled_losses[sfx]
+
+        self.log_keys = [l for l in net_output if any([l.startswith(lk) for lk in self.log_keys])]
         for lk in self.log_keys:
-            if lk in net_output and net_output[lk] is not None:
+            if net_output[lk] is not None:
                 if not torch.is_tensor(net_output[lk]) or net_output[lk].numel() == 1:
                     logging_output[lk] = float(net_output[lk])
                 elif lk.startswith("_"):
@@ -143,13 +166,125 @@ class PantagruelMultiCriterion(FairseqCriterion):
             logging_output["loss_moco"] = moco_loss
             loss = loss + self.moco_weight * moco_loss
 
+        ctc_loss, lprobs = None, None
+        if self.ctc_weight > 0 and net_output["ctc_out"]:
+            ctc_loss, lprobs, sample_size_ctc = self.compute_ctc_loss(net_output["ctc_out"], net_input)
+            logging_output["loss_ctc"] = ctc_loss
+            logging_output["sample_size_ctc"] = sample_size_ctc
+            loss = loss + ctc_loss
+
+            if not model.training:
+                _ctc_logging = self.compute_wer(lprobs, net_output["ctc_out"], net_input)
+                for k, v in _ctc_logging.items():
+                    logging_output[k] = v
+
         if "logs" in net_output:
             for lgw in net_output["logs"]:
                 logging_output[lgw] = net_output["logs"][lgw]
 
-        logging_output["loss"] = loss.data
+        logging_output["loss"] = loss.data # update loss
 
         return loss, sample_size, logging_output
+
+    def compute_ctc_loss(self, ctc_out, net_input):
+        lprobs = utils.log_softmax(ctc_out["x"], dim=-1).contiguous()  # (T, B, C) from the encoder
+
+        src_text = net_input["source"]["text"]["source"]
+        if isinstance(ctc_out["padding_mask"], torch.Tensor):
+            non_padding_mask = ~ctc_out["padding_mask"]
+            input_lengths = non_padding_mask.long().sum(-1) + 1
+        else:
+            input_lengths = lprobs.new_full(
+                (lprobs.size(1),), lprobs.size(0), dtype=torch.long
+            )
+
+        pad_mask = (src_text != self.pad_idx) & (src_text != self.eos_idx)
+        targets_flat = src_text.masked_select(pad_mask)
+        target_lengths = net_input["source"]["text"]["src_txt_lengths"]
+
+        with torch.backends.cudnn.flags(enabled=False):
+            ctc_loss = F.ctc_loss(
+                lprobs,
+                targets_flat,
+                input_lengths,
+                target_lengths,
+                blank=self.blank_idx,
+                reduction="sum",
+                zero_infinity=True,
+            )
+
+        # ntokens = target_lengths.sum().item()
+        # sample_size_ctc = src_text.size(0)
+        sample_size_ctc = target_lengths.sum().item()
+
+        return ctc_loss, lprobs, sample_size_ctc
+
+    def compute_wer(self, lprobs, ctc_out, net_input):
+
+        src_text = net_input["source"]["text"]["source"]
+        if isinstance(ctc_out["padding_mask"], torch.Tensor):
+            non_padding_mask = ~ctc_out["padding_mask"]
+            input_lengths = non_padding_mask.long().sum(-1) + 1
+        else:
+            input_lengths = lprobs.new_full(
+                (lprobs.size(1),), lprobs.size(0), dtype=torch.long
+            )
+
+        target_lengths = net_input["source"]["text"]["src_txt_lengths"]
+
+        _logging_output = {}
+        with torch.no_grad():
+            lprobs_t = lprobs.transpose(0, 1).float().contiguous().cpu() # BxTxC
+            c_err = 0
+            c_len = 0
+            w_errs = 0
+            w_len = 0
+            wv_errs = 0
+            for lp, t, inp_l in zip(lprobs_t, src_text, input_lengths):
+                lp = lp[:inp_l].unsqueeze(0)
+                decoded = None
+                p = (t != self.task.source_dictionary.pad()) & (
+                        t != self.task.source_dictionary.eos()
+                    )
+                targ = t[p]
+                targ_units = self.task.source_dictionary.string(targ)
+                targ_units_arr = targ.tolist()
+
+                toks = lp.argmax(dim=-1).unique_consecutive()
+                pred_units_arr = toks[toks != self.blank_idx].tolist()
+
+                c_err += editdistance.eval(pred_units_arr, targ_units_arr)
+                c_len += len(targ_units_arr)
+
+                # targ_words = post_process(targ_units, self.post_process).split()
+                targ_words = self.task.source_tokenizer.decode(targ_units_arr).split()
+
+                pred_units = self.task.source_dictionary.string(pred_units_arr)
+                # pred_words_raw = post_process(pred_units, self.post_process).split()
+                pred_words_raw = self.task.source_tokenizer.decode(pred_units_arr).split()
+                
+
+                if decoded is not None and "words" in decoded:
+                    pred_words = decoded["words"]
+                    w_errs += editdistance.eval(pred_words, targ_words)
+                    wv_errs += editdistance.eval(pred_words_raw, targ_words)
+                else:
+                    dist = editdistance.eval(pred_words_raw, targ_words)
+                    w_errs += dist
+                    wv_errs += dist
+
+                w_len += len(targ_words)
+
+            # printing out results for checking
+            logger.info(f"[TGT]: {' '.join(targ_words)}")
+            logger.info(f"[HYP]: {' '.join(pred_words_raw)}")
+
+            _logging_output["wv_errors"] = wv_errs
+            _logging_output["w_errors"] = w_errs
+            _logging_output["w_total"] = w_len
+            _logging_output["c_errors"] = c_err
+            _logging_output["c_total"] = c_len
+        return _logging_output
     
     def compute_ncp_loss(self, local_features, loss_fn="bce"):
         # local_features: B x T x C or B x clone_batch x T x C
@@ -229,6 +364,18 @@ class PantagruelMultiCriterion(FairseqCriterion):
     def reduce_metrics(logging_outputs) -> None:
         """Aggregate logging outputs from data parallel training."""
         loss_sum = utils.item(sum(log.get("loss", 0) for log in logging_outputs))
+        subloss_types = list(set([k for log in logging_outputs for k in log if k.startswith("loss_d2v_") or k=="loss_ctc"]))
+
+        if len(subloss_types) >= 1:
+            for key_full in subloss_types:
+                mod = key_full.split("_")[-1]
+                _loss = utils.item(sum(log.get(key_full, 0) for log in logging_outputs))
+                _sample_size = utils.item(
+                        sum(log.get(f"sample_size_{mod}", 0) for log in logging_outputs)
+                    )
+                metrics.log_scalar(key_full, _loss / _sample_size, _sample_size, round=3)
+                metrics.log_scalar(f"sample_size_{mod}", _sample_size)
+
         ntokens = utils.item(sum(log.get("ntokens", 0) for log in logging_outputs))
         nsentences = utils.item(
             sum(log.get("nsentences", 0) for log in logging_outputs)
@@ -254,27 +401,66 @@ class PantagruelMultiCriterion(FairseqCriterion):
             sum(log.get("_world_size", 0) for log in logging_outputs)
         )
 
-        for k in logging_outputs[0]:
-            if k not in builtin_keys and not k.startswith("_"):
-                val = sum(log.get(k, 0) for log in logging_outputs)
-                if k.startswith("loss_"):
-                    metrics.log_scalar(k, val / sample_size, sample_size, round=3)
-                else:
-                    metrics.log_scalar(k, val / world_size, round=3)
+        # for k in logging_outputs[0]:
+        #     if k not in builtin_keys and not k.startswith("_"):
+        #         val = sum(log.get(k, 0) for log in logging_outputs)
+        #         if k.startswith("loss_"):
+        #             metrics.log_scalar(k, val / sample_size, sample_size, round=3)
+        #         else:
+        #             metrics.log_scalar(k, val / world_size, round=3)
 
-        correct = sum(log.get("correct", 0) for log in logging_outputs)
-        total = sum(log.get("count", 0) for log in logging_outputs)
+        # correct = sum(log.get("correct", 0) for log in logging_outputs)
+        # total = sum(log.get("count", 0) for log in logging_outputs)
 
-        if total > 0:
-            metrics.log_scalar("_correct", correct)
-            metrics.log_scalar("_total", total)
+        # if total > 0:
+        #     metrics.log_scalar("_correct", correct)
+        #     metrics.log_scalar("_total", total)
 
+        #     metrics.log_derived(
+        #         "accuracy",
+        #         lambda meters: safe_round(
+        #             meters["_correct"].sum / meters["_total"].sum, 5
+        #         )
+        #         if meters["_total"].sum > 0
+        #         else float("nan"),
+        #     )
+
+        # WER
+        c_errors = sum(log.get("c_errors", 0) for log in logging_outputs)
+        metrics.log_scalar("_c_errors", c_errors)
+        c_total = sum(log.get("c_total", 0) for log in logging_outputs)
+        metrics.log_scalar("_c_total", c_total)
+        w_errors = sum(log.get("w_errors", 0) for log in logging_outputs)
+        metrics.log_scalar("_w_errors", w_errors)
+        wv_errors = sum(log.get("wv_errors", 0) for log in logging_outputs)
+        metrics.log_scalar("_wv_errors", wv_errors)
+        w_total = sum(log.get("w_total", 0) for log in logging_outputs)
+        metrics.log_scalar("_w_total", w_total)
+
+        if c_total > 0:
             metrics.log_derived(
-                "accuracy",
+                "uer",
                 lambda meters: safe_round(
-                    meters["_correct"].sum / meters["_total"].sum, 5
+                    meters["_c_errors"].sum * 100.0 / meters["_c_total"].sum, 3
                 )
-                if meters["_total"].sum > 0
+                if meters["_c_total"].sum > 0
+                else float("nan"),
+            )
+        if w_total > 0:
+            metrics.log_derived(
+                "wer",
+                lambda meters: safe_round(
+                    meters["_w_errors"].sum * 100.0 / meters["_w_total"].sum, 3
+                )
+                if meters["_w_total"].sum > 0
+                else float("nan"),
+            )
+            metrics.log_derived(
+                "raw_wer",
+                lambda meters: safe_round(
+                    meters["_wv_errors"].sum * 100.0 / meters["_w_total"].sum, 3
+                )
+                if meters["_w_total"].sum > 0
                 else float("nan"),
             )
 

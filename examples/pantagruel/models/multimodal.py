@@ -20,7 +20,7 @@ import torch.distributed as dist
 from fairseq.modules import EMAModule, EMAModuleConfig
 
 from fairseq.dataclass import FairseqDataclass
-from fairseq.models import BaseFairseqModel, register_model
+from fairseq.models import BaseFairseqModel, register_model, FairseqDecoder
 
 from examples.pantagruel.data.modality import Modality
 from examples.data2vec.data.modality import Modality as Data2vecModality
@@ -184,6 +184,23 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
     contrastive_loss_after_encoder: bool = False
     do_shallow_fusion: bool = True
     text_scale_in_fusion: float = 1.0
+    use_ctc_module: bool = True
+
+
+class CTCDecoder(nn.Module):
+    def __init__(self, dictionary, embed_dim, dropout_rate=0.0, bias=True):
+        super().__init__()
+        self.blank_idx = 0 # default to be <s>
+        self.pad_idx = dictionary.pad()
+        self.eos_idx = dictionary.eos()
+        self.dropout_module = nn.Dropout(dropout_rate)
+        self.ctc_proj = nn.Linear(embed_dim, len(dictionary), bias=bias)
+        logging.info(f"| dictionary for CTC module: {len(dictionary)} types")
+
+    def forward(self, x):
+        x = self.ctc_proj(self.dropout_module(x)) # BxLxD -> BxLxV
+        return x.transpose(0, 1)
+
 
 class LinearDiscriminator(nn.Module):
     """Adapted from https://github.com/facebookresearch/UnsupervisedMT/blob/main/NMT/src/model/discriminator.py
@@ -277,6 +294,7 @@ class PantagruelMultiModel(BaseFairseqModel):
         self.contrastive_loss_after_encoder = getattr(cfg, "contrastive_loss_after_encoder", False)
         self.do_shallow_fusion = getattr(cfg, "do_shallow_fusion", False)
         self.text_scale_in_fusion = getattr(cfg, "text_scale_in_fusion", 1.0)
+        self.use_ctc_module = getattr(cfg, "use_ctc_module", False)
 
         make_layer_norm = partial(
             nn.LayerNorm, eps=cfg.norm_eps, elementwise_affine=cfg.norm_affine
@@ -410,6 +428,7 @@ class PantagruelMultiModel(BaseFairseqModel):
         for mod_enc in self.modality_encoders.values():
             mod_enc.reset_parameters()
 
+        self.ctc_module = None
         if not skip_ema:
             self.ema = self.make_ema_teacher(cfg.ema_decay)
             self.shared_decoder = (
@@ -423,6 +442,12 @@ class PantagruelMultiModel(BaseFairseqModel):
             self.recon_proj = None
             if cfg.recon_loss > 0:
                 self.recon_proj = nn.Linear(cfg.embed_dim, cfg.embed_dim)
+
+            # add ctc module
+            self.ctc_module = CTCDecoder(
+                self.task.source_dictionary,
+                self.cfg.embed_dim,
+            )
 
         for pn, p in self.named_parameters():
             if len(p.shape) == 1 or pn.endswith(".bias") or "alibi_scale" in pn:
@@ -787,6 +812,17 @@ class PantagruelMultiModel(BaseFairseqModel):
         if self.norm is not None:
             x = self.norm(x)
 
+        ctc_out = {}
+        if self.ctc_module is not None and mode == "AUDIO_TEXT":
+            _speech_enc_out = feature_extractor["AUDIO"].contextualized_features(
+                    extractor_out["audio"]["local_features"],
+                    source[_mod]["padding_mask"],
+                    mask=False,
+                    remove_masked=False,
+                ) # BxLxD
+            ctc_out["x"] = self.ctc_module(_speech_enc_out["x"])
+            ctc_out["padding_mask"] = _speech_enc_out["padding_mask"]
+
         if features_only:
             if remove_extra_tokens:
                 x = x[:, feature_extractor.modality_cfg.num_extra_tokens :]
@@ -997,11 +1033,11 @@ class PantagruelMultiModel(BaseFairseqModel):
             _y = []
             masked_b = []
             sample_size = torch.tensor(0, dtype=torch.long).to(device=device)
-            sample_size_mods = {f"sample_size_{_mod}": 0 for _mod in dual_modes}
+            sample_size_mods = {_mod: 0 for _mod in dual_modes}
             for i, _mod in enumerate(dual_modes):
                 _n = encoder_mask[_mod].mask.unsqueeze(-1).sum().long()
                 sample_size += _n
-                sample_size_mods[f"sample_size_{_mod}"] = _n
+                sample_size_mods[_mod] = _n
                 _masked_b = encoder_mask[_mod].mask.bool()
                 start, end = ema_input_loc[_mod]
                 _y.append(y[:, start : end, :][_masked_b])
@@ -1024,13 +1060,14 @@ class PantagruelMultiModel(BaseFairseqModel):
         result = {
             "losses": {},
             "sample_size": sample_size,
-            "q": q,
-            "k": k,
-            "local_features": local_features,
+            "ctc_out": ctc_out,
+            # "q": q,
+            # "k": k,
+            # "local_features": local_features,
         }
         if sample_size_mods is not None:
             for k, v in sample_size_mods.items():
-                result[k] = v
+                result[f"sample_size_{k}"] = v
 
         sample_size = result["sample_size"]
 
@@ -1083,7 +1120,7 @@ class PantagruelMultiModel(BaseFairseqModel):
         if self.cfg.d2v_loss > 0:
             for i, x in enumerate(xs):
                 reg_loss = self.d2v_loss(x, ys[i]) # x: TxD, y: TxD, reg_loss: TxD
-                n = f"{mode}_regression_{dual_modes[i]}" if len(dual_modes) > 1 else f"{mode}_regression"
+                n = dual_modes[i] if len(dual_modes) > 1 else f"{mode}_regression"
                 scale = self.text_scale_in_fusion if len(dual_modes) > 1 and dual_modes[i] == "text" else 1.0
                 result["losses"][n] = reg_loss * self.cfg.d2v_loss * scale
 
@@ -1091,11 +1128,11 @@ class PantagruelMultiModel(BaseFairseqModel):
         with torch.no_grad():
             if encoder_mask is not None:
                 if not isinstance(encoder_mask, dict):
-                    result["masked_pct"] = 1 - (
-                        encoder_mask.ids_keep.size(1) / encoder_mask.ids_restore.size(1)
-                    )
+                    if encoder_mask.ids_restore.size(1) != 0:
+                        result["masked_pct"] = 1 - (
+                            encoder_mask.ids_keep.size(1) / encoder_mask.ids_restore.size(1)
+                        )
                 else:
-                    num_keeps, num_restore = 0, 0
                     for _mod, _encoder_mask in encoder_mask.items():
                         result[f"masked_pct_{_mod}"] = 1 - (
                             _encoder_mask.ids_keep.size(1) / _encoder_mask.ids_restore.size(1)

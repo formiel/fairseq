@@ -167,6 +167,8 @@ class AlignedSpeechTextDataset(FairseqDataset):
 
         self.text_lens = self.get_text_lens_and_check_oov()
 
+        assert self.cfg.audio.enable_padding, "Not supported cropping for aligned dataset yet"
+
         logger.info(self.__repr__())
 
     def get_text_lens_and_check_oov(self):
@@ -393,15 +395,17 @@ class AlignedSpeechTextDataset(FairseqDataset):
                 collated_sources[i] = source
             elif diff < 0:
                 assert self.cfg.audio.enable_padding
-                # collated_sources[i] = torch.cat(
-                #     [source, source.new_full((-diff,), 0.0)]
-                # )
-                collated_sources[i, :size] = source
+                collated_sources[i] = torch.cat(
+                    [source, source.new_full((-diff,), 0.0)]
+                )
+                # collated_sources[i, :size] = source
                 padding_mask[i, diff:] = True
             else:
                 collated_sources[i] = self.crop_to_max_size(source, target_size)
 
-        audio_input = {"source": collated_sources} # B x max_len
+        audio_input = {"source": collated_sources, 
+                        "src_lengths": torch.tensor(sizes, dtype=torch.long)
+                    } # B x max_len
         if self.cfg.audio.enable_padding:
             audio_input["padding_mask"] = padding_mask
 
@@ -431,6 +435,10 @@ class AlignedSpeechTextDataset(FairseqDataset):
                 left_pad=False,
                 move_eos_to_beginning=False,
             )
+        src_txt_lengths = torch.tensor(
+                [x.text["source"].size()[0] for x in samples], dtype=torch.long
+            )
+
         padding_mask = fairseq_data_utils.collate_tokens(
                 [torch.zeros_like(x.text["source"]).bool() for x in samples],
                 self.pad_idx,
@@ -440,6 +448,7 @@ class AlignedSpeechTextDataset(FairseqDataset):
             )
         text_input = {
             "source": tokens, "padding_mask": padding_mask,
+            "src_txt_lengths": src_txt_lengths,
         }
 
         if "precomputed_mask" in samples[0].text:

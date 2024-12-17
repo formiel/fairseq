@@ -32,6 +32,11 @@ from examples.pantagruel.data.aligned_audio_text_dataset import (
     AlignedSpeechTextDataset,
 )
 
+try:
+    from transformers import PreTrainedTokenizerFast
+except ImportError:
+    raise ImportError("The 'transformers' library is not installed. Please install it by running 'pip install transformers'.")
+
 logger = logging.getLogger(__name__)
 
 MASK_SYMBOL = "<mask>"
@@ -114,14 +119,7 @@ class PantagruelMultimodalPretrainingTask(FairseqTask):
 
         if self.aligned_st_cfg is not None:
             assert isinstance(self.aligned_st_cfg, AlignedSpeechTextConfig)
-
-            try:
-                from transformers import PreTrainedTokenizerFast
-            except ImportError:
-                raise ImportError("The 'transformers' library is not installed. Please install it by running 'pip install transformers'.")
-
             assert os.path.isdir(self.cfg.aligned_text_tokenzizer_root)
-            
             ds = AlignedSpeechTextDataset(
                 data_root=self.cfg.aligned_st_data_root,
                 split=split,
@@ -209,9 +207,17 @@ class PantagruelMultimodalPretrainingTask(FairseqTask):
     def source_dictionary(self):
         if self.cfg.vocab_path is not None:
             dictionary =  Dictionary.load(self.cfg.vocab_path)
-            logger.info("dictionary: {} types".format(len(dictionary)))
             return dictionary
         return None
+
+    @property
+    def source_tokenizer(self):
+        tokenizer = None
+        if self.aligned_st_cfg is not None:
+            tokenizer = PreTrainedTokenizerFast.from_pretrained(
+                        self.cfg.aligned_text_tokenzizer_root
+                    )
+        return tokenizer
 
     @property
     def target_dictionary(self):
