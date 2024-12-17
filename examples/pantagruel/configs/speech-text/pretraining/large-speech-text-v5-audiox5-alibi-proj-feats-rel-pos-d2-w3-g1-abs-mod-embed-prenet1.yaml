@@ -127,7 +127,6 @@ model:
   average_top_k_layers: 16
   layer_norm_target_layer: true
   instance_norm_target_layer: true
-  layer_norm_target_layer: false
   layer_norm_targets: false
 
   layerdrop: 0.0

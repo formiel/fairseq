@@ -1,9 +1,9 @@
 # @package _group_
 hydra:
   run:
-    dir: /lustre/fsn1/projects/rech/zbk/umz16dj/tmp/hydra/outputs/${hydra.job.name}/${hydra.job.num}
+    dir: /linkhome/rech/genlig01/umz16dj/outputs/${hydra.job.name}/${hydra.job.num}
   sweep:
-    dir: /lustre/fsn1/projects/rech/zbk/umz16dj/tmp/hydra/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: /linkhome/rech/genlig01/umz16dj/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
     subdir: ${hydra.job.num}
 
 common:
@@ -86,7 +86,7 @@ distributed_training:
 criterion:
   _name: pantagruel_multi_loss
   d2v_weight: 1.0
-  ctc_weight: 5.0
+  ctc_weight: 1.0
   log_keys:
   - ema_decay
   - target_var
@@ -147,7 +147,7 @@ model:
 
   use_token_type_embeddings: false
   do_shallow_fusion: true
-  text_scale_in_fusion: 5.0
+  text_scale_in_fusion: 1.0
   use_ctc_module: true
 
   # shared_decoder:

@@ -184,7 +184,7 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
     contrastive_loss_after_encoder: bool = False
     do_shallow_fusion: bool = True
     text_scale_in_fusion: float = 1.0
-    use_ctc_module: bool = True
+    use_ctc_module: bool = False
 
 
 class CTCDecoder(nn.Module):
@@ -443,11 +443,12 @@ class PantagruelMultiModel(BaseFairseqModel):
             if cfg.recon_loss > 0:
                 self.recon_proj = nn.Linear(cfg.embed_dim, cfg.embed_dim)
 
-            # add ctc module
-            self.ctc_module = CTCDecoder(
-                self.task.source_dictionary,
-                self.cfg.embed_dim,
-            )
+            if self.use_ctc_module:
+                # add ctc module
+                self.ctc_module = CTCDecoder(
+                    self.task.source_dictionary,
+                    self.cfg.embed_dim,
+                )
 
         for pn, p in self.named_parameters():
             if len(p.shape) == 1 or pn.endswith(".bias") or "alibi_scale" in pn:
