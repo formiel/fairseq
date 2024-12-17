@@ -1,9 +1,15 @@
 # @package _group_
+hydra:
+  run:
+    dir: /linkhome/rech/genlig01/umz16dj/outputs/${hydra.job.name}/${hydra.job.num}
+  sweep:
+    dir: /linkhome/rech/genlig01/umz16dj/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
 
 common:
   fp16: true
   log_format: json
-  log_interval: 200
+  log_interval: 5000
   tensorboard_logdir: ???
   min_loss_scale: 1e-6
   fp16_no_flatten_grads: true

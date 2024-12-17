@@ -9,7 +9,7 @@ hydra:
 common:
   fp16: true
   log_format: json
-  log_interval: 200
+  log_interval: 5000
   tensorboard_logdir: ???
   min_loss_scale: 1e-6
   fp16_no_flatten_grads: true
@@ -20,7 +20,7 @@ common:
 
 checkpoint:
   # save_interval: 1
-  save_interval_updates: 200
+  save_interval_updates: 5000
   keep_interval_updates: 1
   # no_epoch_checkpoints: true
   # keep_best_checkpoints: 10
