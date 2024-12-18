@@ -187,6 +187,8 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
     text_scale_in_fusion: float = 1.0
     use_ctc_module: bool = False
     num_freeze_ctc_updates: int = 0
+    extract_modality_encoder_outs: bool = False
+    num_freeze_ot_updates: int = 0
 
 
 class CTCDecoder(nn.Module):
@@ -298,6 +300,8 @@ class PantagruelMultiModel(BaseFairseqModel):
         self.text_scale_in_fusion = getattr(cfg, "text_scale_in_fusion", 1.0)
         self.use_ctc_module = getattr(cfg, "use_ctc_module", False)
         self.num_freeze_ctc_updates = getattr(cfg, "num_freeze_ctc_updates", 0)
+        self.extract_modality_encoder_outs = getattr(cfg, "extract_modality_encoder_outs", False)
+        self.num_freeze_ot_updates = getattr(cfg, "num_freeze_ot_updates", 0)
 
         make_layer_norm = partial(
             nn.LayerNorm, eps=cfg.norm_eps, elementwise_affine=cfg.norm_affine
@@ -818,6 +822,7 @@ class PantagruelMultiModel(BaseFairseqModel):
             x = self.norm(x)
 
         ctc_out = {}
+        _speech_enc_out = None
         if self.ctc_module is not None and mode == "AUDIO_TEXT":
             ft = self.num_freeze_ctc_updates <= self.num_updates
             with torch.no_grad() if not ft else contextlib.ExitStack():
@@ -833,6 +838,26 @@ class PantagruelMultiModel(BaseFairseqModel):
                     ctc_out["is_frozen"] = False
                 else:
                     ctc_out["is_frozen"] = True
+        
+        dual_encoders_out = {}
+        if self.extract_modality_encoder_outs and mode == "AUDIO_TEXT":
+            ft = self.num_freeze_ot_updates <= self.num_updates
+            _modes = mode.split("_")
+            if _speech_enc_out is not None:
+                _modes = ["TEXT"]
+                dual_encoders_out["audio"] = _speech_enc_out["x"]
+            with torch.no_grad() if not ft else contextlib.ExitStack():
+                for _mod in _modes:
+                    dual_encoders_out[_mod.lower()] = feature_extractor[_mod].contextualized_features(
+                        extractor_out[_mod.lower()]["local_features"],
+                        source[_mod.lower()]["padding_mask"],
+                        mask=False,
+                        remove_masked=False,
+                    )["x"]
+            if ft:
+                dual_encoders_out["is_frozen"] = False
+            else:
+                dual_encoders_out["is_frozen"] = True
 
         if features_only:
             if remove_extra_tokens:
@@ -1072,6 +1097,7 @@ class PantagruelMultiModel(BaseFairseqModel):
             "losses": {},
             "sample_size": sample_size,
             "ctc_out": ctc_out,
+            "dual_encoders_out": dual_encoders_out,
             # "q": q,
             # "k": k,
             # "local_features": local_features,

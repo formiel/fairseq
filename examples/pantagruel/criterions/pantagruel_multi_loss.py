@@ -20,6 +20,11 @@ from fairseq.dataclass import FairseqDataclass
 from fairseq.logging.meters import safe_round
 from examples.pantagruel.data.utils import get_random_crops, create_negative_pairs
 
+try:
+    from geomloss import SamplesLoss
+except ImportError:
+    raise ImportError("The 'geomloss' library is not installed. Please install it by running 'pip install geomloss'.")
+
 logger = logging.getLogger(__name__)
 
 
@@ -53,6 +58,10 @@ class PantagruelMultiConfig(FairseqDataclass):
         default=0.0,
         metadata={"help": "weight of ctc loss"},
     )
+    ot_weight: float = field(
+        default=0.0,
+        metadata={"help": "weight of OT loss"},
+    )
 
 
 @register_criterion("pantagruel_multi_loss", dataclass=PantagruelMultiConfig)
@@ -66,6 +75,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
         moco_weight=0.0,
         moco_temperature=0.0,
         ctc_weight=0.0,
+        ot_weight=0.0,
         log_keys=None,
     ):
         super().__init__(task)
@@ -90,6 +100,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
         self.eos_idx = task.source_dictionary.eos()
         self.blank_idx = task.source_dictionary.bos()
         logger.info(f"blank_idx={self.blank_idx}, pad_idx={self.pad_idx}, eos_idx={self.eos_idx}")
+        self.ot_weight = ot_weight
 
     def forward(self, model, sample, reduce=True):
         """Compute the loss for the given sample.
@@ -171,10 +182,10 @@ class PantagruelMultiCriterion(FairseqCriterion):
             ctc_loss, lprobs, sample_size_ctc, input_lengths = self.compute_ctc_loss(
                 net_output["ctc_out"], net_input
             )
-            logging_output["loss_ctc"] = ctc_loss
+            logging_output["loss_ctc"] = self.ctc_weight * ctc_loss
             logging_output["sample_size_ctc"] = sample_size_ctc
             if not net_output["ctc_out"]["is_frozen"]:
-                loss = loss + ctc_loss
+                loss = loss + self.ctc_weight * ctc_loss
 
             if not model.training:
                 _ctc_logging = self.compute_wer(
@@ -187,9 +198,30 @@ class PantagruelMultiCriterion(FairseqCriterion):
             for lgw in net_output["logs"]:
                 logging_output[lgw] = net_output["logs"][lgw]
 
+        if self.ot_weight > 0 and net_output["dual_encoders_out"]:
+            if not net_output["dual_encoders_out"]["is_frozen"]:
+                ot_loss, sample_size_ot = self.compute_ot_loss(
+                    net_output["dual_encoders_out"]
+                )
+                loss = loss + self.ot_weight * ot_loss
+                logging_output["loss_ot"] = self.ot_weight * ot_loss
+                logging_output["sample_size_ot"] = sample_size_ot
+
         logging_output["loss"] = loss.data # update loss
 
         return loss, sample_size, logging_output
+
+    def compute_ot_loss(self, dual_encoders_out):
+        #TODO: OT with positional encoding!
+        ot_loss = SamplesLoss(loss="sinkhorn", p=2, blur=0.05, scaling=0.5)
+
+        audio_enc = dual_encoders_out["audio"] # BxTxD
+        text_enc = dual_encoders_out["text"]
+        loss = ot_loss(
+                audio_enc.float().contiguous(),
+                text_enc.float().contiguous()
+            ).sum()
+        return loss, audio_enc.size(0)
 
     def compute_ctc_loss(self, ctc_out, net_input):
         lprobs = utils.log_softmax(ctc_out["x"], dim=-1).contiguous()  # (T, B, C) from the encoder
@@ -369,7 +401,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
     def reduce_metrics(logging_outputs) -> None:
         """Aggregate logging outputs from data parallel training."""
         loss_sum = utils.item(sum(log.get("loss", 0) for log in logging_outputs))
-        subloss_types = list(set([k for log in logging_outputs for k in log if k.startswith("loss_d2v_") or k=="loss_ctc"]))
+        subloss_types = list(set([k for log in logging_outputs for k in log if k.startswith("loss_")]))
 
         if len(subloss_types) >= 1:
             for key_full in subloss_types:
