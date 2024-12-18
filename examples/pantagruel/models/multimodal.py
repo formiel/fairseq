@@ -3,6 +3,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+import contextlib
 import logging
 import math
 from dataclasses import dataclass, field
@@ -10,7 +11,7 @@ from typing import Optional, Callable
 from functools import partial
 import numpy as np
 
-from omegaconf import II
+from omegaconf import II, MISSING
 
 import torch
 import torch.nn as nn
@@ -185,6 +186,7 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
     do_shallow_fusion: bool = True
     text_scale_in_fusion: float = 1.0
     use_ctc_module: bool = False
+    num_freeze_ctc_updates: int = 0
 
 
 class CTCDecoder(nn.Module):
@@ -295,6 +297,7 @@ class PantagruelMultiModel(BaseFairseqModel):
         self.do_shallow_fusion = getattr(cfg, "do_shallow_fusion", False)
         self.text_scale_in_fusion = getattr(cfg, "text_scale_in_fusion", 1.0)
         self.use_ctc_module = getattr(cfg, "use_ctc_module", False)
+        self.num_freeze_ctc_updates = getattr(cfg, "num_freeze_ctc_updates", 0)
 
         make_layer_norm = partial(
             nn.LayerNorm, eps=cfg.norm_eps, elementwise_affine=cfg.norm_affine
@@ -325,8 +328,9 @@ class PantagruelMultiModel(BaseFairseqModel):
             )
 
         token_type_embeddings = None
+        self.single_modalities = [m for m in self.modalities if "_" not in m.name]
         if cfg.use_token_type_embeddings:
-            token_type_embeddings = nn.Embedding(len(self.modalities), cfg.embed_dim)
+            token_type_embeddings = nn.Embedding(len(self.single_modalities), cfg.embed_dim)
             # nn.init.kaiming_normal_(token_type_embeddings.weight)
 
         self.alibi_biases = {}
@@ -672,7 +676,7 @@ class PantagruelMultiModel(BaseFairseqModel):
         token_type_ids = None
         remaining_token_type_ids = {}
 
-        for it, im in enumerate(self.modalities):
+        for it, im in enumerate(self.single_modalities):
             if im.name == mode:
                 token_type_ids = torch.ones((1), dtype=torch.int64, device=device) * it
             else:
@@ -815,14 +819,20 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         ctc_out = {}
         if self.ctc_module is not None and mode == "AUDIO_TEXT":
-            _speech_enc_out = feature_extractor["AUDIO"].contextualized_features(
-                    extractor_out["audio"]["local_features"],
-                    source[_mod]["padding_mask"],
-                    mask=False,
-                    remove_masked=False,
-                ) # BxLxD
-            ctc_out["x"] = self.ctc_module(_speech_enc_out["x"])
-            ctc_out["padding_mask"] = _speech_enc_out["padding_mask"]
+            ft = self.num_freeze_ctc_updates <= self.num_updates
+            with torch.no_grad() if not ft else contextlib.ExitStack():
+                _speech_enc_out = feature_extractor["AUDIO"].contextualized_features(
+                        extractor_out["audio"]["local_features"],
+                        source[_mod]["padding_mask"],
+                        mask=False,
+                        remove_masked=False,
+                    ) # BxLxD
+                ctc_out["x"] = self.ctc_module(_speech_enc_out["x"])
+                ctc_out["padding_mask"] = _speech_enc_out["padding_mask"]
+                if ft:
+                    ctc_out["is_frozen"] = False
+                else:
+                    ctc_out["is_frozen"] = True
 
         if features_only:
             if remove_extra_tokens:

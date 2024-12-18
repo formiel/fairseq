@@ -247,7 +247,7 @@ class PantagruelFusionEncoder(ModalitySpecificEncoder):
         token_type_ids=None,
     ):
         x = self.local_features(features) # B x L x D
-        if self.token_type_embeddings is not None:
+        if self.token_type_embeddings is not None and token_type_ids is not None:
             # self.token_type_embeddings(token_type_ids): 1 x D
             x = x + self.token_type_embeddings(token_type_ids)
         x = self.project_features_multi(x)

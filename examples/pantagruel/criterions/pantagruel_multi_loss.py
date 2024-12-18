@@ -168,13 +168,18 @@ class PantagruelMultiCriterion(FairseqCriterion):
 
         ctc_loss, lprobs = None, None
         if self.ctc_weight > 0 and net_output["ctc_out"]:
-            ctc_loss, lprobs, sample_size_ctc = self.compute_ctc_loss(net_output["ctc_out"], net_input)
+            ctc_loss, lprobs, sample_size_ctc, input_lengths = self.compute_ctc_loss(
+                net_output["ctc_out"], net_input
+            )
             logging_output["loss_ctc"] = ctc_loss
             logging_output["sample_size_ctc"] = sample_size_ctc
-            loss = loss + ctc_loss
+            if not net_output["ctc_out"]["is_frozen"]:
+                loss = loss + ctc_loss
 
             if not model.training:
-                _ctc_logging = self.compute_wer(lprobs, net_output["ctc_out"], net_input)
+                _ctc_logging = self.compute_wer(
+                    lprobs, net_output["ctc_out"], net_input, input_lengths
+                )
                 for k, v in _ctc_logging.items():
                     logging_output[k] = v
 
@@ -189,10 +194,19 @@ class PantagruelMultiCriterion(FairseqCriterion):
     def compute_ctc_loss(self, ctc_out, net_input):
         lprobs = utils.log_softmax(ctc_out["x"], dim=-1).contiguous()  # (T, B, C) from the encoder
 
-        src_text = net_input["source"]["text"]["source"]
-        if isinstance(ctc_out["padding_mask"], torch.Tensor):
-            non_padding_mask = ~ctc_out["padding_mask"]
-            input_lengths = non_padding_mask.long().sum(-1) + 1
+        src_text = net_input["source"]["text"]["source"] # no special bos and eos tokens here
+        encoder_padding_mask = ctc_out["padding_mask"]
+        if isinstance(encoder_padding_mask, torch.Tensor) and encoder_padding_mask.any():
+            if lprobs.size(0) > encoder_padding_mask.size(1):
+                encoder_padding_mask = F.pad(
+                    encoder_padding_mask, (1, 0), value=False
+                )
+            non_padding_mask = ~encoder_padding_mask
+            offset = 0
+            input_lengths = non_padding_mask.long().sum(-1)
+            if torch.max(input_lengths) < lprobs.size(0):
+                offset = 1
+            input_lengths = input_lengths + offset
         else:
             input_lengths = lprobs.new_full(
                 (lprobs.size(1),), lprobs.size(0), dtype=torch.long
@@ -214,22 +228,13 @@ class PantagruelMultiCriterion(FairseqCriterion):
             )
 
         # ntokens = target_lengths.sum().item()
-        # sample_size_ctc = src_text.size(0)
-        sample_size_ctc = target_lengths.sum().item()
+        sample_size_ctc = src_text.size(0)
 
-        return ctc_loss, lprobs, sample_size_ctc
+        return ctc_loss, lprobs, sample_size_ctc, input_lengths
 
-    def compute_wer(self, lprobs, ctc_out, net_input):
+    def compute_wer(self, lprobs, ctc_out, net_input, input_lengths):
 
         src_text = net_input["source"]["text"]["source"]
-        if isinstance(ctc_out["padding_mask"], torch.Tensor):
-            non_padding_mask = ~ctc_out["padding_mask"]
-            input_lengths = non_padding_mask.long().sum(-1) + 1
-        else:
-            input_lengths = lprobs.new_full(
-                (lprobs.size(1),), lprobs.size(0), dtype=torch.long
-            )
-
         target_lengths = net_input["source"]["text"]["src_txt_lengths"]
 
         _logging_output = {}
@@ -275,7 +280,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
 
                 w_len += len(targ_words)
 
-            # printing out results for checking
+            # printing out decoding results
             logger.info(f"[TGT]: {' '.join(targ_words)}")
             logger.info(f"[HYP]: {' '.join(pred_words_raw)}")
 

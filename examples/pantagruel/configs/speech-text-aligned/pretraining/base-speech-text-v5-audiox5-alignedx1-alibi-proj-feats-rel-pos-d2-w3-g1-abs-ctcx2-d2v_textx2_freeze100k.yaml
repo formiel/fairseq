@@ -86,7 +86,7 @@ distributed_training:
 criterion:
   _name: pantagruel_multi_loss
   d2v_weight: 1.0
-  ctc_weight: 1.0
+  ctc_weight: 2.0
   log_keys:
   - ema_decay
   - target_var
@@ -145,10 +145,11 @@ model:
   layerdrop: 0.0
   norm_eps: 1e-5
 
-  use_token_type_embeddings: true
+  use_token_type_embeddings: false
   do_shallow_fusion: true
-  text_scale_in_fusion: 1.0
+  text_scale_in_fusion: 2.0
   use_ctc_module: true
+  num_freeze_ctc_updates: 100000
 
   # shared_decoder:
   #   input_dropout: 0.1
@@ -168,7 +169,7 @@ model:
       conv_pos_depth: 5
       conv_pos_width: 95
       conv_pos_groups: 16
-      prenet_depth: 1
+      prenet_depth: 0
       mask_prob: 0.5
       mask_prob_adjust: 0.05
       inverse_mask: false
@@ -193,7 +194,7 @@ model:
       mask_prob: 0.48
       mask_length: 1
       mask_noise_std: 0.01
-      prenet_depth: 1
+      prenet_depth: 0
       # local_grad_mult: 1.0
       use_alibi_encoder: true
       learned_alibi_scale: true

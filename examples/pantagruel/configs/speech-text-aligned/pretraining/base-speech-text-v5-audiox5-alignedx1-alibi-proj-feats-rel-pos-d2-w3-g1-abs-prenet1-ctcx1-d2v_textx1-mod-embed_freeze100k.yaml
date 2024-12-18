@@ -145,10 +145,11 @@ model:
   layerdrop: 0.0
   norm_eps: 1e-5
 
-  use_token_type_embeddings: false
+  use_token_type_embeddings: true
   do_shallow_fusion: true
   text_scale_in_fusion: 1.0
   use_ctc_module: true
+  num_freeze_ctc_updates: 100000
 
   # shared_decoder:
   #   input_dropout: 0.1
