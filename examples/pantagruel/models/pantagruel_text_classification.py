@@ -94,6 +94,7 @@ class PantagruelTextClassificationModel(BaseFairseqModel):
                 if self.modalities:
                     for m in self.modalities:
                         if m in k and m != kept_modality:
+                            logger.info(f"Deleting {k} from checkpoint")
                             del state["model"][k]
 
         model.load_state_dict(state["model"], strict=True)

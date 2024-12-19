@@ -1327,6 +1327,8 @@ class PantagruelMultiModel(BaseFairseqModel):
                 )
                 if not keep_decoder:
                     self.modality_encoders[k].decoder = None
+        if self.ctc_module is not None:
+            self.ctc_module = None
 
     def merge_modality_experts(self, modality=None):
         if self.use_modality_experts_at_mha:
