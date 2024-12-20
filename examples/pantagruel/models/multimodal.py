@@ -1159,7 +1159,7 @@ class PantagruelMultiModel(BaseFairseqModel):
             for i, x in enumerate(xs):
                 reg_loss = self.d2v_loss(x, ys[i]) # x: TxD, y: TxD, reg_loss: TxD
                 n = dual_modes[i] if len(dual_modes) > 1 else f"{mode}_regression"
-                scale = self.text_scale_in_fusion if len(dual_modes) > 1 and dual_modes[i] == "text" else 1.0
+                scale = self.text_scale_in_fusion if dual_modes[i] == "text" else 1.0
                 result["losses"][n] = reg_loss * self.cfg.d2v_loss * scale
 
         suffix = [f"_{_mod}" for _mod in dual_modes]
