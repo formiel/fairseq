@@ -341,6 +341,7 @@ class PantagruelMultiModel(BaseFairseqModel):
         self.modality_encoders = nn.ModuleDict()
         for mod in self.modalities:
             if "_" not in mod.name:
+                self.alibi_biases[mod.name] = {}
                 mod_cfg = getattr(cfg.modalities, mod.name.lower())
                 enc = self.make_modality_type_encoder(
                     mod_cfg,
@@ -348,7 +349,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                     make_block,
                     make_layer_norm,
                     cfg.layer_norm_first,
-                    self.alibi_biases,
+                    self.alibi_biases[mod.name],
                     task,
                     token_type_embeddings,
                 )
