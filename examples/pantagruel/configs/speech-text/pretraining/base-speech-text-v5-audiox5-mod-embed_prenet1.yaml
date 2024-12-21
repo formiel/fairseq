@@ -24,7 +24,7 @@ checkpoint:
   keep_interval_updates: 1
   # no_epoch_checkpoints: true
   # keep_best_checkpoints: 10
-  keep_last_epochs: 10
+  keep_last_epochs: 20
   # patience: 10
   save_dir: ???
 
@@ -86,7 +86,7 @@ optimization:
   lr: [0.0005]
   max_update: 1000000
   update_freq: [1]
-  max_epoch: 10
+  max_epoch: 18
 
 optimizer:
   _name: composite
