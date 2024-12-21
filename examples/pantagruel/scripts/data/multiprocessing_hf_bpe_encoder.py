@@ -12,7 +12,7 @@ import sys
 from collections import Counter
 from multiprocessing import Pool
 
-from transformers import PreTrainedTokenizerFast
+from transformers import AutoTokenizer
 
 
 def main():
@@ -90,11 +90,14 @@ class MultiprocessingEncoder(object):
 
     def initializer(self):
         global bpe
-        bpe = PreTrainedTokenizerFast.from_pretrained(self.args.tok_dir)
+        bpe = AutoTokenizer.from_pretrained(self.args.tok_dir)
 
     def encode(self, line):
         global bpe
         ids = bpe.encode(line)
+        if "camembert" in self.args.tok_dir:
+            ids = ids[1:] # removing the bos token
+            ids = ids[:-1] # removing the eos token
         return list(map(str, ids))
 
     def decode(self, tokens):

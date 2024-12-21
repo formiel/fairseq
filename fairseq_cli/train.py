@@ -418,11 +418,12 @@ def train(
             else:
                 raise ValueError
             logger.info(f"next_save_number_steps = {next_save_number_steps}")
+            logger.info(f"prev_num_updates={prev_num_updates}, num_updates={num_updates}")
 
             # ratio of the finished updates 
             intrplt_finised_step_ratio = (
                 save_interval_steps / (num_updates - prev_num_updates)
-            )
+            ) if num_updates > prev_num_updates else 1.0
             prev_num_updates = num_updates
 
             reach_time_limit, _epoch_time_queue = get_time_queue_and_check_time_limit(
