@@ -149,6 +149,7 @@ _tools*/*
 */*/_*
 fairseq_cli/train_profile.py
 examples/pantagruel/configs/speech-text-old*
+examples/pantagruel/configs/speech-text-aligned-old*
 examples/pantagruel/models/multimodal_tuning.py
 examples/pantagruel/*/*_moco_old.py
 examples/pantagruel/tasks/multimodal_pretrain_old.py
