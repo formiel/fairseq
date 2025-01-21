@@ -7,9 +7,7 @@ common:
   fp16_scale_window: 128
   log_format: json
   log_interval: 200
-  # user_dir: ${env:PWD}/examples/data2vec
-  tensorboard_logdir: ???
-  time_limit: ??? 
+  user_dir: ${env:PWD}/examples/data2vec
 
 task:
   _name: sentence_prediction
@@ -18,13 +16,12 @@ task:
   separator_token: 2
   num_classes: 3
   max_positions: 512
-  d2v2_multi: true
+  d2v2_multi: True
 
 checkpoint:
   best_checkpoint_metric: accuracy
   maximize_best_checkpoint_metric: true
-  # no_epoch_checkpoints: true
-  save_dir: ???
+  no_epoch_checkpoints: true
 
 distributed_training:
   find_unused_parameters: true
@@ -39,7 +36,7 @@ dataset:
   batch_size: 32
   required_batch_size_multiple: 1
   max_tokens: 4400
-  valid_subset: valid,valid1
+  valid_subset: valid
   num_workers: 1
 
 optimizer:
