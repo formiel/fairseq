@@ -44,6 +44,11 @@ def main():
         action="store_true",
         help="keep empty lines",
     )
+    parser.add_argument(
+        "--remove-bos-eos",
+        action="store_true",
+        help="removing BOS and EOS tokens"
+    )
     parser.add_argument("--workers", type=int, default=20)
     args = parser.parse_args()
 
@@ -95,7 +100,7 @@ class MultiprocessingEncoder(object):
     def encode(self, line):
         global bpe
         ids = bpe.encode(line)
-        if "camembert" in self.args.tok_dir:
+        if self.args.remove_bos_eos:
             ids = ids[1:] # removing the bos token
             ids = ids[:-1] # removing the eos token
         return list(map(str, ids))
