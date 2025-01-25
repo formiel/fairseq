@@ -17,7 +17,7 @@ common:
 
 checkpoint:
   # save_interval: 1
-  save_interval_updates: 10000
+  save_interval_updates: 40000
   keep_interval_updates: 1
   # no_epoch_checkpoints: true
   # keep_best_checkpoints: 10
@@ -54,6 +54,7 @@ criterion:
     - masked_pct
 
 dataset:
+  num_workers: 6
   batch_size: 8
   # ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
