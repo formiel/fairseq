@@ -72,7 +72,7 @@ optimizer:
   dynamic_groups: true
   groups:
     default:
-      lr_float: 0.0003
+      lr_float: 0.0015
       optimizer:
         _name: adam
         adam_betas: [0.9,0.98]
