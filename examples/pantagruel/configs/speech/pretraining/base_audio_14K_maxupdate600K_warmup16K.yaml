@@ -61,7 +61,7 @@ criterion:
     - masked_pct
 
 optimization:
-  max_update: 400000
+  max_update: 800000
   lr: [0.00075]
   debug_param_names: true
   # update_freq: [1]
@@ -74,7 +74,7 @@ optimizer:
 
 lr_scheduler:
   _name: cosine
-  warmup_updates: 8000
+  warmup_updates: 16000
 
 model:
   _name: data2vec_multi
@@ -88,7 +88,7 @@ model:
 
   ema_decay: 0.999
   ema_end_decay: 0.99999
-  ema_anneal_end_step: 75000
+  ema_anneal_end_step: 150000
   ema_encoder_only: false
 
   average_top_k_layers: 8
@@ -96,7 +96,7 @@ model:
   layer_norm_target_layer: false
   layer_norm_targets: false
 
-  layerdrop: 0.05
+  layerdrop: 0
   norm_eps: 1e-5
 
   supported_modality: AUDIO
