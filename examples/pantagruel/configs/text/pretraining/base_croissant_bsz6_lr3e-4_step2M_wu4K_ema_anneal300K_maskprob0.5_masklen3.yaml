@@ -11,6 +11,7 @@ common:
   log_format: json
   log_interval: 500
   tensorboard_logdir: ???
+  min_loss_scale: 1e-6
   fp16_no_flatten_grads: true
   # user_dir: ${env:PWD}/examples/data2vec
   time_limit: ???

@@ -11,8 +11,8 @@ common:
   log_format: json
   log_interval: 500
   tensorboard_logdir: ???
-  min_loss_scale: 1e-6
   fp16_no_flatten_grads: true
+  min_loss_scale: 1e-6
   # user_dir: ${env:PWD}/examples/data2vec
   time_limit: ???
 
@@ -115,8 +115,8 @@ model:
 
   modalities:
     text:
-      mask_prob: 0.58
-      mask_length: 1
+      mask_prob: 0.48
+      mask_length: 5
       mask_noise_std: 0.01
       prenet_depth: 0
       decoder:

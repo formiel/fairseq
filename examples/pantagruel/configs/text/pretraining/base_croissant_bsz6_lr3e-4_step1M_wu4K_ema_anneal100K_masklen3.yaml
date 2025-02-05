@@ -11,7 +11,6 @@ common:
   log_format: json
   log_interval: 500
   tensorboard_logdir: ???
-  min_loss_scale: 1e-6
   fp16_no_flatten_grads: true
   # user_dir: ${env:PWD}/examples/data2vec
   time_limit: ???
@@ -65,7 +64,7 @@ dataset:
 optimization:
   clip_norm: 1
   lr: [0.0003]
-  max_update: 2000000
+  max_update: 1000000
   update_freq: [1]
   # max_epoch: 5
 
@@ -98,7 +97,7 @@ model:
 
   ema_decay: 0.9999
   ema_end_decay: 0.99999
-  ema_anneal_end_step: 300000
+  ema_anneal_end_step: 100000
   ema_encoder_only: true
 
   average_top_k_layers: 12
@@ -115,8 +114,8 @@ model:
 
   modalities:
     text:
-      mask_prob: 0.58
-      mask_length: 1
+      mask_prob: 0.48
+      mask_length: 3
       mask_noise_std: 0.01
       prenet_depth: 0
       decoder:
