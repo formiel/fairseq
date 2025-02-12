@@ -144,6 +144,9 @@ class Data2VecMultiConfig(FairseqDataclass):
     recon_loss: float = 0
     d2v_loss: float = 1
 
+    std_coeff: float = 0.0
+    cov_coeff: float = 0.0
+
     decoder_group: bool = False
 
 
@@ -649,6 +652,10 @@ class Data2VecMultiModel(BaseFairseqModel):
                 reg_loss = self.d2v_loss(x, y)
                 n = f"{mode}_regression_{i}" if len(xs) > 1 else f"{mode}_regression"
                 result["losses"][n] = reg_loss * self.cfg.d2v_loss
+                if getattr(self.cfg, "std_coeff", 0.0) > 0.0 or getattr(self.cfg, "cov_coeff", 0.0) > 0.0:
+                    var_cov_loss = self.var_cov_loss(x, y)
+                    result["losses"][n] += var_cov_loss
+                    # logging.info(f"var_cov_loss: {var_cov_loss}")
 
         suffix = "" if len(self.modalities) == 1 else f"_{mode}"
         with torch.no_grad():
@@ -717,6 +724,41 @@ class Data2VecMultiModel(BaseFairseqModel):
         reg_loss = loss * scale
 
         return reg_loss
+
+    def var_cov_loss(self, x, y):
+        """
+        compute the variance and covariance loss in VICReg
+        x: BxTxD, y: BxTxD
+        """
+        def off_diagonal(x):
+            n, m = x.shape
+            assert n == m
+            return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
+
+        # logging.info(f"x: {x.size()}, y: {y.size()}")
+        M, D = x.size()
+        x = x.view(-1, x.size(-1)).float()
+        y = y.view(-1, x.size(-1))
+
+        x = x - x.mean(dim=0)
+        y = y - y.mean(dim=0)
+
+        std_x = torch.sqrt(x.var(dim=0) + 1e-4)
+        std_y = torch.sqrt(y.var(dim=0) + 1e-4)
+        std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
+
+        cov_x = (x.T @ x) / (M - 1)
+        cov_y = (y.T @ y) / (M - 1)
+        cov_loss = off_diagonal(cov_x).pow_(2).sum().div(D) + off_diagonal(cov_y).pow_(2).sum().div(D)
+        
+        var_cov_loss = self.cfg.std_coeff * std_loss + self.cfg.cov_coeff * cov_loss
+        if self.loss_scale is not None:
+            scale = self.loss_scale
+        else:
+            scale = 1 / math.sqrt(M)
+
+        var_cov_loss = var_cov_loss * scale
+        return var_cov_loss
 
     def make_targets(self, y, num_layers):
 
