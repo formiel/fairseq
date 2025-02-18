@@ -177,18 +177,27 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
     use_modality_experts_at_ffn: bool = False
     use_modality_experts_at_mha: bool = False
     modality_expert_rank: int = 0
+    
     mlp_after_local_encoder: bool = False
     freeze_project_features: bool = False
+    
     init_v2: bool = False
+    
     ncp_loss_after_local_encoder: bool = False
     ncp_loss_after_encoder: bool = False
+    
     contrastive_loss_after_encoder: bool = False
+    
     do_shallow_fusion: bool = True
     text_scale_in_fusion: float = 1.0
+    
     use_ctc_module: bool = False
     num_freeze_ctc_updates: int = 0
     extract_modality_encoder_outs: bool = False
     num_freeze_ot_updates: int = 0
+
+    std_coeff: float = 0.0
+    cov_coeff: float = 0.0
 
 
 class CTCDecoder(nn.Module):
@@ -1161,6 +1170,10 @@ class PantagruelMultiModel(BaseFairseqModel):
                 n = dual_modes[i] if len(dual_modes) > 1 else f"{mode}_regression"
                 scale = self.text_scale_in_fusion if dual_modes[i] == "text" else 1.0
                 result["losses"][n] = reg_loss * self.cfg.d2v_loss * scale
+                if getattr(self.cfg, "std_coeff", 0.0) > 0.0 or getattr(self.cfg, "cov_coeff", 0.0) > 0.0:
+                    var_cov_loss = self.var_cov_loss(x, y)
+                    result["losses"][n] += var_cov_loss
+                    # logging.info(f"var_cov_loss: {var_cov_loss}")
 
         suffix = [f"_{_mod}" for _mod in dual_modes]
         with torch.no_grad():
@@ -1233,6 +1246,41 @@ class PantagruelMultiModel(BaseFairseqModel):
         reg_loss = loss * scale
 
         return reg_loss
+
+    def var_cov_loss(self, x, y):
+        """
+        compute the variance and covariance loss in VICReg
+        x: BxTxD, y: BxTxD
+        """
+        def off_diagonal(x):
+            n, m = x.shape
+            assert n == m
+            return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
+
+        # logging.info(f"x: {x.size()}, y: {y.size()}")
+        M, D = x.size()
+        x = x.view(-1, x.size(-1)).float()
+        y = y.view(-1, x.size(-1))
+
+        x = x - x.mean(dim=0)
+        y = y - y.mean(dim=0)
+
+        std_x = torch.sqrt(x.var(dim=0) + 1e-4)
+        std_y = torch.sqrt(y.var(dim=0) + 1e-4)
+        std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
+
+        cov_x = (x.T @ x) / (M - 1)
+        cov_y = (y.T @ y) / (M - 1)
+        cov_loss = off_diagonal(cov_x).pow_(2).sum().div(D) + off_diagonal(cov_y).pow_(2).sum().div(D)
+        
+        var_cov_loss = self.cfg.std_coeff * std_loss + self.cfg.cov_coeff * cov_loss
+        if self.loss_scale is not None:
+            scale = self.loss_scale
+        else:
+            scale = 1 / math.sqrt(M)
+
+        var_cov_loss = var_cov_loss * scale
+        return var_cov_loss
 
     def make_targets(self, y, num_layers):
 
