@@ -85,7 +85,7 @@ criterion:
 optimization:
   clip_norm: 1
   lr: [0.0003]
-  max_update: 1000000
+  max_update: 2000000
   update_freq: [1]
   # max_epoch: 10
 
@@ -175,7 +175,7 @@ model:
         decoder_kernel: 7
         decoder_layers: 4
     text:
-      mask_prob: 0.48
+      mask_prob: 0.6
       mask_length: 3
       mask_noise_std: 0.01
       prenet_depth: 0

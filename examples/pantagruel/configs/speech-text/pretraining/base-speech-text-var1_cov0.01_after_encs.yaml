@@ -113,8 +113,10 @@ model:
 
   loss_beta: 0
   loss_scale: null
+
   std_coeff: 1.0
   cov_coeff: 0.01
+  reg_after_enc: true
 
   depth: 12
   embed_dim: 768

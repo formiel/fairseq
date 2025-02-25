@@ -85,7 +85,7 @@ criterion:
 optimization:
   clip_norm: 1
   lr: [0.0003]
-  max_update: 1000000
+  max_update: 2000000
   update_freq: [1]
   # max_epoch: 10
 
@@ -113,8 +113,6 @@ model:
 
   loss_beta: 0
   loss_scale: null
-  std_coeff: 1.0
-  cov_coeff: 0.01
 
   depth: 12
   embed_dim: 768

@@ -85,7 +85,7 @@ criterion:
 optimization:
   clip_norm: 1
   lr: [0.0003]
-  max_update: 1000000
+  max_update: 2000000
   update_freq: [1]
   # max_epoch: 10
 
