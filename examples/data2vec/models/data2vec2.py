@@ -725,6 +725,7 @@ class Data2VecMultiModel(BaseFairseqModel):
 
         return reg_loss
 
+    # see https://github.com/facebookresearch/vicreg/blob/main/main_vicreg.py
     def var_cov_loss(self, x, y):
         """
         compute the variance and covariance loss in VICReg
