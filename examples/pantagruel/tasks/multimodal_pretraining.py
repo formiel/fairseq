@@ -33,7 +33,7 @@ from examples.pantagruel.data.aligned_audio_text_dataset import (
 )
 
 try:
-    from transformers import PreTrainedTokenizerFast
+    from transformers import AutoTokenizer
 except ImportError:
     raise ImportError("The 'transformers' library is not installed. Please install it by running 'pip install transformers'.")
 
@@ -124,7 +124,7 @@ class PantagruelMultimodalPretrainingTask(FairseqTask):
                 data_root=self.cfg.aligned_st_data_root,
                 split=split,
                 cfg=self.aligned_st_cfg,
-                tokenizer=PreTrainedTokenizerFast.from_pretrained(
+                tokenizer=AutoTokenizer.from_pretrained(
                     self.cfg.aligned_text_tokenzizer_root
                 ),
             )
@@ -214,7 +214,7 @@ class PantagruelMultimodalPretrainingTask(FairseqTask):
     def source_tokenizer(self):
         tokenizer = None
         if self.aligned_st_cfg is not None:
-            tokenizer = PreTrainedTokenizerFast.from_pretrained(
+            tokenizer = AutoTokenizer.from_pretrained(
                         self.cfg.aligned_text_tokenzizer_root
                     )
         return tokenizer
