@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import List
 
 import editdistance
+import random
 
 import torch
 import torch.nn as nn
@@ -25,6 +26,9 @@ try:
 except ImportError:
     raise ImportError("The 'geomloss' library is not installed. Please install it by running 'pip install geomloss'.")
 
+import transformers
+transformers.logging.set_verbosity_error()
+
 logger = logging.getLogger(__name__)
 
 
@@ -34,26 +38,6 @@ class PantagruelMultiConfig(FairseqDataclass):
         default=1.0,
         metadata={"help": "weight of data2vec loss"},
     )
-    ncp_weight: float = field(
-        default=0.0,
-        metadata={"help": "weight of next chunk prediction loss"},
-    )
-    ncp_loss_fn: str = field(
-        default="none",
-        metadata={"help": "type of loss function"},
-    )
-    moco_weight: float = field(
-        default=0.0,
-        metadata={"help": "weight of MoCo-v3 loss"},
-    )
-    moco_temperature: float = field(
-        default=0.0,
-        metadata={"help": "temperature for MoCo-v3 loss"},
-    )
-    log_keys: List[str] = field(
-        default_factory=list,
-        metadata={"help": "additional output keys to log"},
-    )
     ctc_weight: float = field(
         default=0.0,
         metadata={"help": "weight of ctc loss"},
@@ -62,6 +46,10 @@ class PantagruelMultiConfig(FairseqDataclass):
         default=0.0,
         metadata={"help": "weight of OT loss"},
     )
+    log_keys: List[str] = field(
+        default_factory=list,
+        metadata={"help": "additional output keys to log"},
+    )
 
 
 @register_criterion("pantagruel_multi_loss", dataclass=PantagruelMultiConfig)
@@ -69,11 +57,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
     def __init__(
         self,
         task,
-        d2v_weight,
-        ncp_weight=0.0,
-        ncp_loss_fn=None,
-        moco_weight=0.0,
-        moco_temperature=0.0,
+        d2v_weight=1.0,
         ctc_weight=0.0,
         ot_weight=0.0,
         log_keys=None,
@@ -81,25 +65,17 @@ class PantagruelMultiCriterion(FairseqCriterion):
         super().__init__(task)
         
         self.log_keys = log_keys
-        self.d2v_weight = d2v_weight
-        self.ncp_weight = ncp_weight
-        self.ncp_loss_fn = ncp_loss_fn
-        if self.ncp_weight > 0:
-            self.nc_projector = nn.Sequential(
-                nn.Linear(768*2, 384),
-                nn.Tanh(),
-                nn.Linear(384, 1),
-            )
-            assert ncp_loss_fn in ["bce", "custom"]
-            self.ncp_weight_learned = nn.Parameter(torch.tensor(ncp_weight), requires_grad=True)
-        self.moco_weight = moco_weight
-        self.moco_temperature = moco_temperature
         self.task = task
+
         self.ctc_weight = ctc_weight
-        self.pad_idx = task.source_dictionary.pad()
-        self.eos_idx = task.source_dictionary.eos()
-        self.blank_idx = task.source_dictionary.bos()
-        logger.info(f"blank_idx={self.blank_idx}, pad_idx={self.pad_idx}, eos_idx={self.eos_idx}")
+        self.pad_idx = task.source_dictionary.index(task.source_dictionary.pad_word)
+        self.eos_idx = task.source_dictionary.index(task.source_dictionary.eos_word)
+        self.blank_idx = task.source_dictionary.index(task.source_dictionary.bos_word)
+        logger.info(
+            f"blank_idx={self.blank_idx}, pad_idx={self.pad_idx}, eos_idx={self.eos_idx}"
+        )
+
+        self.d2v_weight = d2v_weight
         self.ot_weight = ot_weight
 
     def forward(self, model, sample, reduce=True):
@@ -114,37 +90,33 @@ class PantagruelMultiCriterion(FairseqCriterion):
         net_output = model(**net_input)
         
         scaled_losses = {}
-
-        d2v_loss = net_output["losses"] # data2vec loss is computed in model
-        for lk, p in d2v_loss.items():
-            # logger.info(f"{lk}: {self.d2v_weight * p.float().sum()}")
+        for lk, p in net_output["losses"].items():
             scaled_losses[lk] = self.d2v_weight * p.float().sum()
 
         loss = sum(scaled_losses.values())
-
-        if "sample_size" in net_output:
-            sample_size = net_output["sample_size"]
-        else:
-            sample_size = loss.numel()
-
         if reduce and loss.numel() > 1:
             loss = loss.sum()
 
-        nsentences = sample["id"].numel()
+        sample_size = sum(net_output["sample_size"].values())
         logging_output = {
             "loss": loss.data,
             "ntokens": sample_size,
-            "nsentences": nsentences,
+            "nsentences": sample["id"].numel(),
             "sample_size": sample_size,
             "_world_size": 1,
         }
 
-        suffix = list(scaled_losses.keys())
-        if len(suffix) > 1:
-            for sfx in suffix:
-                logging_output[f"loss_d2v_{sfx}"] = scaled_losses[sfx]
+        if len(scaled_losses) > 1:
+            for lk, l in scaled_losses.items():
+                if l.numel() > 1:
+                    l = l.sum()
+                logging_output[f"loss_d2v_{lk}"] = l.item()
+        for k, v in net_output["sample_size"].items():
+            logging_output[f"sample_size_{k}"] = v
 
-        self.log_keys = [l for l in net_output if any([l.startswith(lk) for lk in self.log_keys])]
+        self.log_keys = [
+            l for l in net_output if any([l.startswith(lk) for lk in self.log_keys])
+        ]
         for lk in self.log_keys:
             if net_output[lk] is not None:
                 if not torch.is_tensor(net_output[lk]) or net_output[lk].numel() == 1:
@@ -155,35 +127,12 @@ class PantagruelMultiCriterion(FairseqCriterion):
                     for i, v in enumerate(net_output[lk]):
                         logging_output[f"{lk}_{i}"] = float(v)
 
-        if len(scaled_losses) > 1:
-            for lk, l in scaled_losses.items():
-                if l.numel() > 1:
-                    l = l.sum()
-                logging_output[f"loss_{lk}"] = l.item()
-
-        if self.ncp_weight > 0:
-            _ncp_loss, ncp_acc = self.compute_ncp_loss(
-                net_output["local_features"], loss_fn=self.ncp_loss_fn
-            )
-            ncp_loss = F.softplus(self.ncp_weight_learned) * _ncp_loss
-            loss = loss + ncp_loss
-            logging_output["loss_ncp"] = ncp_loss
-            logging_output["acc_ncp"] = ncp_acc * 100
-            logging_output["weight_ncp"] = self.ncp_weight_learned.data
-        if self.moco_weight > 0:
-            moco_loss = self.compute_moco_loss(
-                net_output["q"], net_output["k"]
-            )
-            logging_output["loss_moco"] = moco_loss
-            loss = loss + self.moco_weight * moco_loss
-
         ctc_loss, lprobs = None, None
         if self.ctc_weight > 0 and net_output["ctc_out"]:
-            ctc_loss, lprobs, sample_size_ctc, input_lengths = self.compute_ctc_loss(
+            ctc_loss, lprobs, input_lengths = self.compute_ctc_loss(
                 net_output["ctc_out"], net_input
             )
             logging_output["loss_ctc"] = self.ctc_weight * ctc_loss
-            logging_output["sample_size_ctc"] = sample_size_ctc
             if not net_output["ctc_out"]["is_frozen"]:
                 loss = loss + self.ctc_weight * ctc_loss
 
@@ -200,12 +149,9 @@ class PantagruelMultiCriterion(FairseqCriterion):
 
         if self.ot_weight > 0 and net_output["dual_encoders_out"]:
             if not net_output["dual_encoders_out"]["is_frozen"]:
-                ot_loss, sample_size_ot = self.compute_ot_loss(
-                    net_output["dual_encoders_out"]
-                )
+                ot_loss = self.compute_ot_loss(net_output["dual_encoders_out"])
                 loss = loss + self.ot_weight * ot_loss
                 logging_output["loss_ot"] = self.ot_weight * ot_loss
-                logging_output["sample_size_ot"] = sample_size_ot
 
         logging_output["loss"] = loss.data # update loss
 
@@ -213,20 +159,22 @@ class PantagruelMultiCriterion(FairseqCriterion):
 
     def compute_ot_loss(self, dual_encoders_out):
         #TODO: OT with positional encoding!
-        ot_loss = SamplesLoss(loss="sinkhorn", p=2, blur=0.05, scaling=0.5)
+        ot_loss = SamplesLoss(loss="sinkhorn", p=2, blur=0.05, scaling=1.0)
 
         audio_enc = dual_encoders_out["audio"] # BxTxD
         text_enc = dual_encoders_out["text"]
+        logger.info(f"text_enc before: {text_enc.size()}")
+        text_enc = text_enc[:, 1-1] # remove bos and eos token
+        logger.info(f"text_enc after: {text_enc.size()}")
         loss = ot_loss(
                 audio_enc.float().contiguous(),
                 text_enc.float().contiguous()
             ).sum()
-        return loss, audio_enc.size(0)
+        return loss
 
     def compute_ctc_loss(self, ctc_out, net_input):
         lprobs = utils.log_softmax(ctc_out["x"], dim=-1).contiguous()  # (T, B, C) from the encoder
-
-        src_text = net_input["source"]["text"]["source"] # no special bos and eos tokens here
+        src_text = net_input["source"]["text"]["source"]
         encoder_padding_mask = ctc_out["padding_mask"]
         if isinstance(encoder_padding_mask, torch.Tensor) and encoder_padding_mask.any():
             if lprobs.size(0) > encoder_padding_mask.size(1):
@@ -244,7 +192,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
                 (lprobs.size(1),), lprobs.size(0), dtype=torch.long
             )
 
-        pad_mask = (src_text != self.pad_idx) & (src_text != self.eos_idx)
+        pad_mask = (src_text != self.pad_idx) & (src_text != self.eos_idx) & (src_text != self.blank_idx)
         targets_flat = src_text.masked_select(pad_mask)
         target_lengths = net_input["source"]["text"]["src_txt_lengths"]
 
@@ -260,12 +208,11 @@ class PantagruelMultiCriterion(FairseqCriterion):
             )
 
         # ntokens = target_lengths.sum().item()
-        sample_size_ctc = src_text.size(0)
+        # sample_size_ctc = src_text.size(0)
 
-        return ctc_loss, lprobs, sample_size_ctc, input_lengths
+        return ctc_loss, lprobs, input_lengths
 
     def compute_wer(self, lprobs, ctc_out, net_input, input_lengths):
-
         src_text = net_input["source"]["text"]["source"]
         target_lengths = net_input["source"]["text"]["src_txt_lengths"]
 
@@ -313,8 +260,9 @@ class PantagruelMultiCriterion(FairseqCriterion):
                 w_len += len(targ_words)
 
             # printing out decoding results
-            logger.info(f"[TGT]: {' '.join(targ_words)}")
-            logger.info(f"[HYP]: {' '.join(pred_words_raw)}")
+            if random.random() < 0.1:
+                logger.info(f"[TGT]: {' '.join(targ_words)}")
+                logger.info(f"[HYP]: {' '.join(pred_words_raw)}")
 
             _logging_output["wv_errors"] = wv_errs
             _logging_output["w_errors"] = w_errs
@@ -322,95 +270,32 @@ class PantagruelMultiCriterion(FairseqCriterion):
             _logging_output["c_errors"] = c_err
             _logging_output["c_total"] = c_len
         return _logging_output
-    
-    def compute_ncp_loss(self, local_features, loss_fn="bce"):
-        # local_features: B x T x C or B x clone_batch x T x C
-        for _, feature in local_features.items():
-            if feature is not None:
-                if feature.dim() == 4:
-                    B, nclone, T, C = feature.size()
-                    feature = feature.reshape(B*nclone, T, C) # M = Bxnclone
-                else:
-                    B, T, C = feature.size()
-                    nclone = 1
-
-                crops1, crops2 = get_random_crops(feature) # M x crop_size x D
-                Y1 = crops1.mean(dim=1) # M x D
-                Y2 = crops2.mean(dim=1) # M x D
-
-                X_pos = torch.cat(
-                    (Y1, Y2), dim=-1
-                ) # M x 2D
-                X_neg = create_negative_pairs(Y1, Y2, nclone=nclone) # M(M-nclone) x 2D
-
-                logits_pos = self.nc_projector(X_pos) # (M, 1)
-                logits_neg = self.nc_projector(X_neg) # M(M-nclone) x 1
-                logits = torch.cat([logits_pos, logits_neg], dim=0)  # Shape (M + M*(M-nclone), 1)
-
-                if loss_fn == "bce":
-                    targets_pos = torch.ones_like(logits_pos)
-                    targets_neg = torch.zeros_like(logits_neg)
-                    targets = torch.cat([targets_pos, targets_neg], dim=0)
-                    # logits = torch.clamp(logits, min=1e-7, max=1 - 1e-7)
-                    loss = F.binary_cross_entropy_with_logits(logits, targets).sum()
-                else:
-                    loss = ((1 - logits_pos)**2).sum() + (logits_neg ** 2).sum()
-
-                # Calculate the total accuracy for both positive and negative logits
-                num_samples = logits_pos.numel() + logits_neg.numel()
-                accuracy = (
-                    (logits_pos >= 0.5).sum() + (logits_neg < 0.5).sum()
-                ) / (num_samples)
- 
-                return loss, accuracy
-            
-    def compute_moco_loss(self, q, k):
-        if q is None or k is None:
-            return 0
-        # q: B x nclone x C, k: BxC
-        B, nclone, C = q.size()
-        q = q.reshape(-1, C) # MxC
-        q = F.normalize(q, dim=-1)
-        k = F.normalize(k, dim=-1)
-        logits = torch.matmul(q, k.T) / self.moco_temperature # MxB
-        logits = torch.clamp(logits, min=1e-7, max=1 - 1e-7)
-        labels = torch.arange(B, dtype=torch.long, device=q.device)
-        labels = labels.repeat_interleave(nclone, 0)
-
-        return nn.CrossEntropyLoss()(logits, labels) * (2 * self.moco_temperature)
-    
-    def compute_lim_weight_gather(self, local_features, eps=1e-9):
-        # local_features: B x T x C
-        for _, feature in local_features.items():
-            if feature is not None:
-                crops1, crops2 = get_random_crops(feature) # B x crop_size x C
-                Y1 = self.nc_projector(crops1).mean(dim=1) # B x D
-                Y2 = self.nc_projector(crops2).mean(dim=1) # B x D
-                B, _ = Y1.size()
-                Y2_all = concat_all_gather(Y2) if dist.is_available() and dist.is_initialized() else Y2
-                neg_idx = torch.randint(0, Y2_all.size(0), size=(B,))
-                Y_R = Y2_all[neg_idx]
-                pos = F.cosine_similarity(Y1, Y2, dim=-1)
-                neg = F.cosine_similarity(Y1, Y_R, dim=-1)
-                pos = torch.clamp(torch.sigmoid(pos), eps, 1.0 - eps)
-                neg = torch.clamp(torch.sigmoid(neg), eps, 1.0 - eps)
-                loss = -torch.mean(torch.log(pos)) - torch.mean(torch.log(1 - neg))
-                return loss
 
     @staticmethod
     def reduce_metrics(logging_outputs) -> None:
         """Aggregate logging outputs from data parallel training."""
         loss_sum = utils.item(sum(log.get("loss", 0) for log in logging_outputs))
-        subloss_types = list(set([k for log in logging_outputs for k in log if k.startswith("loss_")]))
+        loss_keys = list(set([k for log in logging_outputs for k in log if k.startswith("loss_")]))
 
-        if len(subloss_types) >= 1:
-            for key_full in subloss_types:
-                mod = key_full.split("_")[-1]
-                _loss = utils.item(sum(log.get(key_full, 0) for log in logging_outputs))
-                _sample_size = utils.item(
-                        sum(log.get(f"sample_size_{mod}", 0) for log in logging_outputs)
+        if len(loss_keys) >= 1:
+            for lk in loss_keys:
+                mod = (
+                    "AUDIO" if "ctc" in lk or "audio" in lk 
+                    else "AUDIO_TEXT" if "ot" in lk 
+                    else "TEXT"
+                )
+                _loss = utils.item(sum(log.get(lk, 0) for log in logging_outputs))
+                _sample_size = (
+                    utils.item(
+                        sum(
+                            log.get(f"sample_size_{mod.lower()}", 0) 
+                            for log in logging_outputs
+                        )
+                    ) if "_" not in mod else utils.item(
+                        sum(log.get("nsentences", 0) for log in logging_outputs)
                     )
-                metrics.log_scalar(key_full, _loss / _sample_size, _sample_size, round=3)
+                )
+                metrics.log_scalar(lk, _loss / _sample_size, _sample_size, round=3)
                 metrics.log_scalar(f"sample_size_{mod}", _sample_size)
 
         ntokens = utils.item(sum(log.get("ntokens", 0) for log in logging_outputs))
@@ -437,30 +322,6 @@ class PantagruelMultiCriterion(FairseqCriterion):
         world_size = utils.item(
             sum(log.get("_world_size", 0) for log in logging_outputs)
         )
-
-        # for k in logging_outputs[0]:
-        #     if k not in builtin_keys and not k.startswith("_"):
-        #         val = sum(log.get(k, 0) for log in logging_outputs)
-        #         if k.startswith("loss_"):
-        #             metrics.log_scalar(k, val / sample_size, sample_size, round=3)
-        #         else:
-        #             metrics.log_scalar(k, val / world_size, round=3)
-
-        # correct = sum(log.get("correct", 0) for log in logging_outputs)
-        # total = sum(log.get("count", 0) for log in logging_outputs)
-
-        # if total > 0:
-        #     metrics.log_scalar("_correct", correct)
-        #     metrics.log_scalar("_total", total)
-
-        #     metrics.log_derived(
-        #         "accuracy",
-        #         lambda meters: safe_round(
-        #             meters["_correct"].sum / meters["_total"].sum, 5
-        #         )
-        #         if meters["_total"].sum > 0
-        #         else float("nan"),
-        #     )
 
         # WER
         c_errors = sum(log.get("c_errors", 0) for log in logging_outputs)
@@ -508,18 +369,3 @@ class PantagruelMultiCriterion(FairseqCriterion):
         to True will improves distributed training speed.
         """
         True
-
-
-@torch.no_grad()
-def concat_all_gather(z: torch.Tensor):
-    """
-    Performs all_gather operation on the provided tensors.
-    *** Warning ***: torch.distributed.all_gather has no gradient.
-    """
-    gathered_zs = [torch.zeros_like(z)
-        for _ in range(dist.get_world_size())]
-    dist.all_gather(tensor_list=gathered_zs, tensor=z.contiguous())
-    gathered_zs[dist.get_rank()] = z
-
-    output = torch.cat(gathered_zs, dim=0)
-    return output

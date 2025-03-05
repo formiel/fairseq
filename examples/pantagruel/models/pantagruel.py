@@ -71,15 +71,16 @@ class PantagruelD2vModalitiesConfig(FairseqDataclass):
 class PantagruelData2VecMultiConfig(FairseqDataclass):
 
     loss_beta: float = field(
-        default=0, metadata={"help": "beta for smooth l1 loss. 0 means use l2 loss"}
+        default=0, 
+        metadata={"help": "beta for smooth l1 loss. 0 means use l2 loss"}
     )
     loss_scale: Optional[float] = field(
         default=None,
         metadata={
-            "help": "scale the reconstruction loss by this constant. if None then scales by 1/sqrt(dim)"
-        },
+            "help": ("Scale the reconstruction loss by this constant. "
+                "If None, then scales by 1/sqrt(dim).")
+        }
     )
-
     depth: int = 8
     start_drop_path_rate: float = 0
     end_drop_path_rate: float = 0
@@ -116,23 +117,17 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
     ema_end_decay: float = field(
         default=0.9999, metadata={"help": "final ema decay rate"}
     )
-
     # when to finish annealing ema decay rate
     ema_anneal_end_step: int = II("optimization.max_update")
-
     ema_encoder_only: bool = field(
         default=True,
         metadata={
             "help": "whether to momentum update only the shared transformer encoder"
         },
     )
-
+    skip_ema: bool = False
     max_update: int = II("optimization.max_update")
-
-    modalities: PantagruelD2vModalitiesConfig = PantagruelD2vModalitiesConfig()
-
-    shared_decoder: Optional[D2vDecoderConfig] = None
-
+    
     min_target_var: float = field(
         default=0.1, metadata={"help": "stop training if target var falls below this"}
     )
@@ -141,32 +136,18 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
         metadata={"help": "stop training if prediction var falls below this"},
     )
 
+    modalities: PantagruelD2vModalitiesConfig = PantagruelD2vModalitiesConfig()
     supported_modality: Optional[Modality] = None
-    mae_init: bool = False
 
+    mae_init: bool = False
     seed: int = II("common.seed")
 
-    skip_ema: bool = False
-
-    cls_loss: float = 0
-    recon_loss: float = 0
-    d2v_loss: float = 1
+    d2v_loss: float = 1.0
 
     decoder_group: bool = False
+    shared_decoder: Optional[D2vDecoderConfig] = None
 
     use_token_type_embeddings: bool = False
-    adversarial_loss: float = field(
-        default=0.0,
-        metadata={"help": "Adversarial weight in loss function"},
-    )
-    num_discriminator_layers: int = field(
-        default=-1,
-        metadata={"help": "number of discriminator layers"},
-    )
-    num_discriminator_steps: int = field(
-        default=-1,
-        metadata={"help": "number of discriminator steps"},
-    )
     dummy_factor: float = 0.0
     skip_mode: Optional[str] = field(
         default=None,
@@ -174,26 +155,12 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
             "help": "skip_mode"
         },
     )
-    use_modality_experts_at_ffn: bool = False
-    use_modality_experts_at_mha: bool = False
-    modality_expert_rank: int = 0
-    
-    mlp_after_local_encoder: bool = False
-    freeze_project_features: bool = False
-    
-    init_v2: bool = False
-    
-    ncp_loss_after_local_encoder: bool = False
-    ncp_loss_after_encoder: bool = False
-    
-    contrastive_loss_after_encoder: bool = False
-    
+
     do_shallow_fusion: bool = True
-    text_scale_in_fusion: float = 1.0
-    
     use_ctc_module: bool = False
     num_freeze_ctc_updates: int = 0
-    extract_modality_encoder_outs: bool = False
+
+    extract_encoder_outs: bool = False
     num_freeze_ot_updates: int = 0
 
     std_coeff: float = 0.0
@@ -213,44 +180,6 @@ class CTCDecoder(nn.Module):
     def forward(self, x):
         x = self.ctc_proj(self.dropout_module(x)) # BxLxD -> BxLxV
         return x.transpose(0, 1)
-
-
-class LinearDiscriminator(nn.Module):
-    """Adapted from https://github.com/facebookresearch/UnsupervisedMT/blob/main/NMT/src/model/discriminator.py
-    """
-    def __init__(self, 
-            input_dim, 
-            num_outputs=2, 
-            layers=3, 
-            hidden_dim=1024, 
-            dropout=0.1):
-        """
-        Discriminator initialization.
-        """
-        super(LinearDiscriminator, self).__init__()
-        self.num_outputs = num_outputs
-        self.input_dim = input_dim
-        self.layers = layers
-        self.hidden_dim = hidden_dim
-        self.dropout = dropout
-
-        layers = []
-        for i in range(self.layers + 1):
-            if i == 0:
-                input_dim = self.input_dim
-            else:
-                input_dim = self.hidden_dim
-            output_dim = self.hidden_dim if i < self.layers else self.num_outputs
-
-            layers.append(nn.Linear(input_dim, output_dim))
-            if i < self.layers:
-                layers.append(nn.LeakyReLU(0.01))
-                layers.append(nn.Dropout(self.dropout))
-        self.layers = nn.Sequential(*layers)
-
-    def forward(self, input):
-        return self.layers(input)
-
 
 
 @register_model("pantagruel_multi", dataclass=PantagruelData2VecMultiConfig)
@@ -288,7 +217,9 @@ class PantagruelMultiModel(BaseFairseqModel):
             token_type_embeddings,
         )
 
-    def __init__(self, cfg: PantagruelData2VecMultiConfig, modalities, skip_ema=False, task=None):
+    def __init__(
+        self, cfg: PantagruelData2VecMultiConfig, modalities, skip_ema=False, task=None
+    ):
         super().__init__()
 
         self.cfg = cfg
@@ -298,18 +229,13 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         self.dummy_factor = getattr(cfg, "dummy_factor", 0.0)
         self.skip_mode = getattr(cfg, "skip_mode", None)
-        self.use_modality_experts_at_ffn = getattr(cfg, "use_modality_experts_at_ffn", False)
-        self.use_modality_experts_at_mha = getattr(cfg, "use_modality_experts_at_mha", False)
-        self.mlp_after_local_encoder = getattr(cfg, "mlp_after_local_encoder", False)
-        self.freeze_project_features = getattr(cfg, "freeze_project_features", False)
-        self.ncp_loss_after_local_encoder = getattr(cfg, "ncp_loss_after_local_encoder", False)
-        self.ncp_loss_after_encoder = getattr(cfg, "ncp_loss_after_encoder", False)
-        self.contrastive_loss_after_encoder = getattr(cfg, "contrastive_loss_after_encoder", False)
-        self.do_shallow_fusion = getattr(cfg, "do_shallow_fusion", False)
-        self.text_scale_in_fusion = getattr(cfg, "text_scale_in_fusion", 1.0)
+
+        self.do_shallow_fusion = getattr(cfg, "do_shallow_fusion", True)
+
         self.use_ctc_module = getattr(cfg, "use_ctc_module", False)
         self.num_freeze_ctc_updates = getattr(cfg, "num_freeze_ctc_updates", 0)
-        self.extract_modality_encoder_outs = getattr(cfg, "extract_modality_encoder_outs", False)
+
+        self.extract_encoder_outs = getattr(cfg, "extract_encoder_outs", False)
         self.num_freeze_ot_updates = getattr(cfg, "num_freeze_ot_updates", 0)
 
         make_layer_norm = partial(
@@ -330,21 +256,14 @@ class PantagruelMultiModel(BaseFairseqModel):
                 norm_layer=make_layer_norm,
                 layer_norm_first=cfg.layer_norm_first,
                 ffn_targets=not cfg.end_of_block_targets,
-                dummy_factor=self.dummy_factor,
-                modality_expert_rank=getattr(cfg, "modality_expert_rank", 0),
-                modality_experts_at_ffn=(
-                    self.modalities if self.use_modality_experts_at_ffn else None
-                ),
-                modality_experts_at_mha=(
-                    self.modalities if self.use_modality_experts_at_mha else None
-                ),
             )
 
         token_type_embeddings = None
-        self.single_modalities = [m for m in self.modalities if "_" not in m.name]
+        self.uni_modalities = [m for m in self.modalities if "_" not in m.name]
         if cfg.use_token_type_embeddings:
-            token_type_embeddings = nn.Embedding(len(self.single_modalities), cfg.embed_dim)
-            # nn.init.kaiming_normal_(token_type_embeddings.weight)
+            token_type_embeddings = nn.Embedding(
+                len(self.uni_modalities), cfg.embed_dim
+            )
 
         self.alibi_biases = {}
         self.modality_encoders = nn.ModuleDict()
@@ -362,13 +281,6 @@ class PantagruelMultiModel(BaseFairseqModel):
                     task,
                     token_type_embeddings,
                 )
-                if self.freeze_project_features:
-                    logging.info(f'Freezeing project features layer of {enc.__class__.__name__}: {enc.project_features.__class__.__name__}')
-                    for _, m in enumerate(enc.project_features):
-                        # if isinstance(m, nn.Linear):
-                        #     nn.init.kaiming_normal_(m.weight)
-                        #     nn.init.zeros_(m.bias)
-                        m.requires_grad_(False)
                 self.modality_encoders[mod.name] = enc
             else:
                 if not self.do_shallow_fusion:
@@ -382,41 +294,6 @@ class PantagruelMultiModel(BaseFairseqModel):
                         self.alibi_biases,
                         token_type_embeddings,
                     )
-
-        # discriminator
-        self.discriminator = None
-        self.adversarial_loss = getattr(cfg, "adversarial_loss", 0.0)
-        self.num_discriminator_steps = getattr(cfg, "num_discriminator_steps", -1)
-        self.step_counter = 0
-        if self.adversarial_loss > 0:
-            self.discriminator = LinearDiscriminator(
-                input_dim=cfg.embed_dim, 
-                num_outputs=len(self.modalities), 
-                hidden_dim=cfg.embed_dim * 2,
-                layers=cfg.num_discriminator_layers,
-            )
-        # add mlp after local encoder
-        self.predictor = None
-        self.project_mlp, self.predictor_mlp = None, None
-        if self.mlp_after_local_encoder:
-            # self.predictor = nn.Linear(cfg.embed_dim, cfg.embed_dim, bias=False)
-            self.predictor = self._build_mlp(2, cfg.embed_dim, cfg.embed_dim*4, cfg.embed_dim, last_bn=True)
-        if self.contrastive_loss_after_encoder:
-            self.project_mlp = nn.Sequential(
-                nn.Linear(cfg.embed_dim, cfg.embed_dim*2, bias=True),
-                nn.LayerNorm(cfg.embed_dim*2),
-                nn.Tanh(),
-                nn.Linear(cfg.embed_dim*2, cfg.embed_dim*2, bias=True),
-                nn.LayerNorm(cfg.embed_dim*2),
-                nn.Tanh(),
-                nn.Linear(cfg.embed_dim*2, cfg.embed_dim, bias=True),
-            )
-            self.predictor_mlp = nn.Sequential(
-                nn.Linear(cfg.embed_dim, cfg.embed_dim*2, bias=True),
-                nn.LayerNorm(cfg.embed_dim*2),
-                nn.Tanh(),
-                nn.Linear(cfg.embed_dim*2, cfg.embed_dim, bias=True),
-            )
         
         self.ema = None
 
@@ -436,8 +313,6 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         if self.cfg.mae_init:
             self.apply(self._init_weights)
-        elif self.cfg.init_v2:
-            self.apply(self._init_weights_v2)
         else:
             from fairseq.modules.transformer_sentence_encoder import init_bert_params
 
@@ -457,10 +332,6 @@ class PantagruelMultiModel(BaseFairseqModel):
             if self.shared_decoder is not None:
                 self.shared_decoder.apply(self._init_weights)
 
-            self.recon_proj = None
-            if cfg.recon_loss > 0:
-                self.recon_proj = nn.Linear(cfg.embed_dim, cfg.embed_dim)
-
             if self.use_ctc_module:
                 # add ctc module
                 self.ctc_module = CTCDecoder(
@@ -476,27 +347,7 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         self.num_updates = 0
 
-    # copied from Moco-v3: https://github.com/facebookresearch/moco-v3/blob/main/moco/builder.py
-    def _build_mlp(self, num_layers, input_dim, mlp_dim, output_dim, last_bn=True):
-        mlp = []
-        for l in range(num_layers):
-            dim1 = input_dim if l == 0 else mlp_dim
-            dim2 = output_dim if l == num_layers - 1 else mlp_dim
-
-            mlp.append(nn.Linear(dim1, dim2, bias=False))
-
-            if l < num_layers - 1:
-                mlp.append(nn.BatchNorm1d(dim2))
-                mlp.append(nn.ReLU(inplace=True))
-            elif last_bn:
-                # follow SimCLR's design: https://github.com/google-research/simclr/blob/master/model_util.py#L157
-                # for simplicity, we further removed gamma in BN
-                mlp.append(nn.BatchNorm1d(dim2, affine=False))
-
-        return nn.Sequential(*mlp)
-
     def _init_weights(self, m):
-
         if isinstance(m, nn.Linear):
             torch.nn.init.kaiming_normal_(m.weight)
             if isinstance(m, nn.Linear) and m.bias is not None:
@@ -506,21 +357,6 @@ class PantagruelMultiModel(BaseFairseqModel):
                 nn.init.constant_(m.bias, 0)
             if m.weight is not None:
                 nn.init.constant_(m.weight, 1.0)
-
-    def _init_weights_v2(self, m):
-
-        if isinstance(m, nn.Linear):
-            nn.init.normal_(m.weight, mean=0, std=m.weight.shape[1] ** -0.5)
-            # torch.nn.init.kaiming_normal_(m.weight)
-            if isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-            if m.weight is not None:
-                nn.init.constant_(m.weight, 1.0)
-        elif isinstance(m, nn.Conv1d):
-            nn.init.kaiming_normal_(m.weight)
 
     @torch.no_grad()
     def make_ema_teacher(self, ema_decay):
@@ -559,9 +395,6 @@ class PantagruelMultiModel(BaseFairseqModel):
                 if not mod_enc.modality_cfg.ema_local_encoder:
                     mod_enc.local_encoder = None
                     mod_enc.project_features = None
-
-        if self.contrastive_loss_after_encoder:
-            model_copy.predictor_mlp = None
 
         model_copy.requires_grad_(False)
         return model_copy
@@ -652,15 +485,13 @@ class PantagruelMultiModel(BaseFairseqModel):
     def _get_feature_extractor(self, mode):
         extractor = self.modality_encoders
         remaining_extractor_names = []
-        # TODO: for more than two modalities, 
-        # backward compatibility for do_shallow_fusion=False
+        # TODO: do_shallow_fusion=False
         if mode in self.modality_encoders:
             extractor = self.modality_encoders[mode]
             remaining_extractor_names = [
                 m.name for m in self.modalities 
                 if m.name != mode and m.name in self.modality_encoders.keys()
             ]
-        # logger.info(f"remaining_extractor_names: {remaining_extractor_names}")
         return extractor, remaining_extractor_names
 
     def forward(
@@ -684,81 +515,58 @@ class PantagruelMultiModel(BaseFairseqModel):
         if isinstance(mode, Modality) or isinstance(mode, Data2vecModality):
             mode = mode.name
 
-        feature_extractor, remaining_extractor_names = self._get_feature_extractor(mode)
+        extractor, remaining_extractor_names = self._get_feature_extractor(mode)
         device = source.device if isinstance(source, torch.Tensor) else source["audio"]["source"].device
-        
-        token_type_ids = None
-        remaining_token_type_ids = {}
 
-        for it, im in enumerate(self.single_modalities):
-            if im.name == mode:
-                token_type_ids = torch.ones((1), dtype=torch.int64, device=device) * it
-            else:
-                remaining_token_type_ids[im.name] = torch.ones((1), dtype=torch.int64, device=device) * it
+        token_type_ids = {}
+        for it, im in enumerate(self.uni_modalities):
+            token_type_ids[im.name.lower()] = torch.ones((1), dtype=torch.int64, device=device) * it
 
         mask_seeds = None
         if id is not None:
             mask_seeds = MaskSeed(seed=self.cfg.seed, update=self.num_updates, ids=id)
 
         B, _ = source.size() if isinstance(source, torch.Tensor) else source["audio"]["source"].size()
-        if not isinstance(feature_extractor, nn.ModuleDict):
-            extractor_out = feature_extractor(
-                source, # B x T
-                padding_mask,
+        extractor_out = {
+                "x": {},
+                "local_features": {},
+                "encoder_mask": {},
+                "alibi_bias": {}, "alibi_scale": {},
+                "encoder_mask": {},
+                "padding_mask": {}
+            }
+        current_modes = [mode.lower()] if "_" not in mode else list(source.keys())
+        for _mod in current_modes:
+            _extractor_out_mod = self.modality_encoders[_mod.upper()](
+                (
+                    source if isinstance(source, torch.Tensor) 
+                    else source[_mod]["source"]
+                ),
+                (
+                    padding_mask if isinstance(source, torch.Tensor) 
+                    else source[_mod]["padding_mask"]
+                ),
                 mask,
                 remove_masked=not features_only or force_remove_masked,
                 clone_batch=self.cfg.clone_batch if not features_only else 1,
                 mask_seeds=mask_seeds,
-                precomputed_mask=precomputed_mask,
-                token_type_ids=token_type_ids,
-            )
-            dual_modes = [mode.lower()]
-        else:
-            extractor_out = {}
-            fused_x = []
-            fused_masked_padding_mask = []
-            extractor_out["encoder_mask"] = {}
-            extractor_out["loc"] = {}
-            prev_L = 0
-            dual_modes = list(source.keys())
-            for i, _mod in enumerate(dual_modes):
-                extractor_out[_mod] = feature_extractor[_mod.upper()](
-                    source[_mod]["source"],
-                    source[_mod]["padding_mask"],
-                    mask,
-                    remove_masked=not features_only or force_remove_masked,
-                    clone_batch=self.cfg.clone_batch if not features_only else 1,
-                    mask_seeds=mask_seeds,
-                    precomputed_mask=source[_mod]["precomputed_mask"],
-                    token_type_ids=token_type_ids,
-                ) # BxLxD
+                precomputed_mask=(
+                    precomputed_mask if isinstance(source, torch.Tensor)
+                    else source[_mod]["precomputed_mask"]
+                ),
+                token_type_ids=token_type_ids[_mod],
+            ) # BxLxD
+            for k, v in extractor_out.items():
+                extractor_out[k][_mod] = _extractor_out_mod[k]
 
-                B, L, D = extractor_out[_mod]["x"].size()
-                prev_L = L if i==0 else prev_L
-                extractor_out["loc"][_mod] = (0, L) if i==0 else (prev_L, prev_L+L)
-
-                fused_x.append(extractor_out[_mod]["x"])
-
-                if extractor_out[_mod]['padding_mask'] is not None:
-                    fused_masked_padding_mask.append(extractor_out[_mod]['padding_mask'])
-                else:
-                    fused_masked_padding_mask.append(torch.zeros((B, L)).bool().to(device=device))
-
-                extractor_out["encoder_mask"][_mod] = extractor_out[_mod]['encoder_mask']
-                
-            extractor_out["x"] = torch.cat(fused_x, dim=1)
-            extractor_out["padding_mask"] = torch.cat(fused_masked_padding_mask, dim=1)
-
-            # logger.info(f'x: {extractor_out["x"].size()}')
-            # logger.info(f'padding_mask: {extractor_out["padding_mask"].size()}')
-            # logger.info(f'loc: {extractor_out["loc"]}')
-
-        x = extractor_out["x"] # M x T x C (M=B*clone_batch)
+        x = extractor_out["x"] # {mod: M x T x C (M = B*clone_batch)}
+        encoder_mask = extractor_out["encoder_mask"]
+        masked_padding_mask = extractor_out["padding_mask"]
+        masked_alibi_bias = extractor_out["alibi_bias"]
+        alibi_scale = extractor_out["alibi_scale"]
 
         x_dummies, encoder_mask_dummies = None, None
         if len(remaining_extractor_names) > 0:
-            # modality: TEXT, source dtype: torch.int64
-            # modality: AUDIO, source dtype: torch.float16
             dummy_source_text = torch.randint(
                 self.task.vocab_size - 1, 
                 (1, self.task.tokens_per_sample), #(B, self.task.tokens_per_sample)
@@ -770,112 +578,138 @@ class PantagruelMultiModel(BaseFairseqModel):
                 dtype=torch.float16, 
                 device=device
             )
-            # forward dummy inputs
             x_dummies, encoder_mask_dummies = [], []
             for name in remaining_extractor_names:
                 dummy = dummy_source_audio if name == "AUDIO" else dummy_source_text
                 dummy_outs = self.modality_encoders[name](
-                    dummy, None, False, False, token_type_ids=remaining_token_type_ids[name]
+                    dummy, None, False, False, token_type_ids=token_type_ids[name.lower()]
                 )
                 _x_dummy = dummy_outs["x"].repeat_interleave(B * self.cfg.clone_batch,0) #1xTxC -> M x T x C
                 x_dummies.append(_x_dummy)
                 encoder_mask_dummies.append(dummy_outs["encoder_mask"])
-                x += self.dummy_factor * _x_dummy.mean(dim=1).unsqueeze(1)
-        encoder_mask = extractor_out["encoder_mask"]
-        masked_padding_mask = extractor_out["padding_mask"]
-        masked_alibi_bias = extractor_out.get("alibi_bias", None)
-        alibi_scale = extractor_out.get("alibi_scale", None)
+                for _mod, _x in x.items():
+                    x[_mod] = _x + self.dummy_factor * _x_dummy.mean(dim=1).unsqueeze(1)
 
         if self.dropout_input is not None:
-            x = self.dropout_input(x)
-        x_feat = x
+            for _mod, _x in x.items():
+                x[_mod] = self.dropout_input(_x)
+        
+        layer_results = {_mod: [] for _mod in current_modes}
+        for _mod in current_modes:
+            _x = x[_mod]
+            for i, blk in enumerate(self.blocks):
+                if (
+                    not self.training
+                    or self.cfg.layerdrop == 0
+                    or (np.random.random() > self.cfg.layerdrop)
+                ):
+                        ab = masked_alibi_bias[_mod]
+                        if ab is not None and alibi_scale[_mod] is not None:
+                            scale = (
+                                alibi_scale[_mod][i]
+                                if alibi_scale[_mod].size(0) > 1
+                                else alibi_scale[_mod].squeeze(0)
+                            )
+                            ab = ab * scale.type_as(ab)
 
-        # predictor
-        q = None
-        if self.predictor is not None:
-            q = self.predictor(x_feat.mean(dim=1)).reshape(B, self.cfg.clone_batch, -1) # MxTxC->MxC->B x clone_batch x C
-        if self.project_mlp is not None:
-            q = self.predictor_mlp(
-                self.project_mlp(x_feat.mean(dim=1)).reshape(B, self.cfg.clone_batch, -1)
-            )
-
-        layer_results = []
-        for i, blk in enumerate(self.blocks):
-            if (
-                not self.training
-                or self.cfg.layerdrop == 0
-                or (np.random.random() > self.cfg.layerdrop)
-            ):
-                ab = masked_alibi_bias
-                if ab is not None and alibi_scale is not None:
-                    scale = (
-                        alibi_scale[i]
-                        if alibi_scale.size(0) > 1
-                        else alibi_scale.squeeze(0)
-                    )
-                    ab = ab * scale.type_as(ab)
-
-                x, lr = blk(
-                    x,
-                    padding_mask=masked_padding_mask,
-                    alibi_bias=ab,
-                    mode=(
-                        mode if self.use_modality_experts_at_ffn or 
-                        self.use_modality_experts_at_mha
-                        else None
-                    ), 
-                )
-                if features_only:
-                    layer_results.append(lr)
+                        _x, lr = blk(
+                            _x,
+                            padding_mask=masked_padding_mask[_mod],
+                            alibi_bias=ab, 
+                        )
+                        if features_only:
+                            layer_results[_mod].append(lr)
+            x[_mod] = _x
 
         if self.norm is not None:
-            x = self.norm(x)
+            for _mod, _x in x.items():
+                x[_mod] = self.norm(_x)
 
-        ctc_out = {}
-        _speech_enc_out = None
-        if self.ctc_module is not None and mode == "AUDIO_TEXT":
-            ft = self.num_freeze_ctc_updates <= self.num_updates
-            with torch.no_grad() if not ft else contextlib.ExitStack():
-                _speech_enc_out = feature_extractor["AUDIO"].contextualized_features(
-                        extractor_out["audio"]["local_features"],
-                        source[_mod]["padding_mask"],
-                        mask=False,
-                        remove_masked=False,
-                    ) # BxLxD
-                ctc_out["x"] = self.ctc_module(_speech_enc_out["x"])
-                ctc_out["padding_mask"] = _speech_enc_out["padding_mask"]
+        _x_speech = None
+        ctc_out, dual_encoder_outs = {}, {}
+        if mode == "AUDIO_TEXT":
+            if self.ctc_module is not None:
+                ft = self.num_freeze_ctc_updates <= self.num_updates
+                _extractor = self.modality_encoders["AUDIO"]
+                with torch.no_grad() if not ft else contextlib.ExitStack():
+                    _speech_enc_out = _extractor.contextualized_features(
+                            extractor_out["local_features"]["audio"],
+                            source["audio"]["padding_mask"],
+                            mask=False,
+                            remove_masked=False,
+                        ) # BxLxD
+                    _x_speech = _speech_enc_out["x"]
+                    # forward to Transformer block
+                    for i, blk in enumerate(self.blocks):
+                        _alibi_bias = _speech_enc_out.get("alibi_bias", None)
+                        _alibi_scale = _speech_enc_out.get("alibi_scale", None)
+                        if _alibi_bias is not None and alibi_scale["audio"] is not None:
+                            scale = (
+                                _alibi_scale[i]
+                                if _alibi_scale.size(0) > 1
+                                else _alibi_scale.squeeze(0)
+                            )
+                            _alibi_bias = _alibi_bias * scale.type_as(_alibi_bias)
+
+                        _x_speech, _ = blk(
+                            _x_speech,
+                            padding_mask=_speech_enc_out["padding_mask"],
+                            alibi_bias=_alibi_bias,
+                        )
+                    ctc_out["x"] = self.ctc_module(_x_speech)
+                    ctc_out["padding_mask"] = _speech_enc_out["padding_mask"]
+                    if ft:
+                        ctc_out["is_frozen"] = False
+                    else:
+                        ctc_out["is_frozen"] = True
+            
+            if self.extract_encoder_outs:
+                ft = self.num_freeze_ot_updates <= self.num_updates
+                _modes = mode.split("_")
+                if _x_speech is not None:
+                    dual_encoder_outs["audio"] = _x_speech
+                    _modes = ["TEXT"]
+                with torch.no_grad() if not ft else contextlib.ExitStack():
+                    for _mod in _modes:
+                        _extractor = self.modality_encoders[_mod]
+                        _extractor_out_mod = _extractor.contextualized_features(
+                            extractor_out["local_features"][_mod.lower()],
+                            source[_mod.lower()]["padding_mask"],
+                            mask=False,
+                            remove_masked=False,
+                        )
+                        _x_mod = _extractor_out_mod["x"]
+                        for i, blk in enumerate(self.blocks):
+                            _alibi_bias = _extractor_out_mod.get("alibi_bias", None)
+                            _alibi_scale = _extractor_out_mod.get("alibi_scale", None)
+                            if _alibi_bias is not None and alibi_scale[_mod] is not None:
+                                scale = (
+                                    _alibi_scale[i]
+                                    if _alibi_scale.size(0) > 1
+                                    else _alibi_scale.squeeze(0)
+                                )
+                                _alibi_bias = _alibi_bias * scale.type_as(_alibi_bias)
+
+                            _x_mod, _ = blk(
+                                _x_mod,
+                                padding_mask=_extractor_out_mod["padding_mask"],
+                                alibi_bias=_alibi_bias,
+                            )
+                        dual_encoder_outs[_mod] = _x_mod
                 if ft:
-                    ctc_out["is_frozen"] = False
+                    dual_encoder_outs["is_frozen"] = False
                 else:
-                    ctc_out["is_frozen"] = True
-        
-        dual_encoders_out = {}
-        if self.extract_modality_encoder_outs and mode == "AUDIO_TEXT":
-            ft = self.num_freeze_ot_updates <= self.num_updates
-            _modes = mode.split("_")
-            if _speech_enc_out is not None:
-                _modes = ["TEXT"]
-                dual_encoders_out["audio"] = _speech_enc_out["x"]
-            with torch.no_grad() if not ft else contextlib.ExitStack():
-                for _mod in _modes:
-                    dual_encoders_out[_mod.lower()] = feature_extractor[_mod].contextualized_features(
-                        extractor_out[_mod.lower()]["local_features"],
-                        source[_mod.lower()]["padding_mask"],
-                        mask=False,
-                        remove_masked=False,
-                    )["x"]
-            if ft:
-                dual_encoders_out["is_frozen"] = False
-            else:
-                dual_encoders_out["is_frozen"] = True
+                    dual_encoder_outs["is_frozen"] = True
 
         if features_only:
             if remove_extra_tokens:
-                x = x[:, feature_extractor.modality_cfg.num_extra_tokens :]
-                if masked_padding_mask is not None:
-                    masked_padding_mask = masked_padding_mask[
-                        :, feature_extractor.modality_cfg.num_extra_tokens :
-                    ]
+                for _mod, _x in x.items():
+                    _extractor = self.modality_encoders[_mod.upper()]
+                    x[_mod] = _x[:, _extractor.modality_cfg.num_extra_tokens :]
+                    if masked_padding_mask[_mod] is not None:
+                        masked_padding_mask[_mod] = masked_padding_mask[_mod][
+                            :, _extractor.modality_cfg.num_extra_tokens :
+                        ]
 
             return {
                 "x": x,
@@ -884,35 +718,25 @@ class PantagruelMultiModel(BaseFairseqModel):
                 "mask": encoder_mask,
             }
 
-        xs = []
-
-        if self.shared_decoder is not None:
-            dx = self.forward_decoder(
-                x,
-                feature_extractor,
-                self.shared_decoder,
-                encoder_mask,
-            )
-            xs.append(dx)
-        if not isinstance(feature_extractor, nn.ModuleDict):
-            if feature_extractor.decoder is not None:
+        xs = {_mod: [] for _mod in current_modes}
+        for _mod in current_modes:
+            _extractor = self.modality_encoders[_mod.upper()]
+            if self.shared_decoder is not None:
                 dx = self.forward_decoder(
-                    x,
-                    feature_extractor,
-                    feature_extractor.decoder,
-                    encoder_mask,
+                    x[_mod],
+                    _extractor,
+                    self.shared_decoder,
+                    encoder_mask[_mod],
                 )
-                xs.append(dx)
-        else:
-            for i, _mod in enumerate(dual_modes):
-                start, end = extractor_out["loc"][_mod]
+                xs[_mod].append(dx)
+            if _extractor.decoder is not None:
                 dx = self.forward_decoder(
-                    x[:, start:end, :],
-                    self.modality_encoders[_mod.upper()],
-                    self.modality_encoders[_mod.upper()].decoder,
+                    x[_mod],
+                    _extractor,
+                    _extractor.decoder,
                     encoder_mask[_mod]
                 )
-                xs.append(dx)
+                xs[_mod].append(dx)
 
         if len(remaining_extractor_names) > 0:
             for name, x_dummy, encoder_mask_dummy in zip(
@@ -927,13 +751,13 @@ class PantagruelMultiModel(BaseFairseqModel):
                                 encoder_mask_dummy,
                                 )
                     dx += self.dummy_factor * dummy_out.mean(dim=1).unsqueeze(1)
-                    xs[-1] = dx
+                    xs[_mod][-1] = dx
 
-        assert len(xs) > 0
+        assert all(len(xs[_mod]) > 0 for _mod in current_modes)
 
         p = next(self.ema.model.parameters())
-        device = x.device
-        dtype = x.dtype
+        device = x[current_modes[0]].device
+        dtype = x[current_modes[0]].dtype
         ema_device = p.device
         ema_dtype = p.dtype
 
@@ -961,7 +785,7 @@ class PantagruelMultiModel(BaseFairseqModel):
             if self.cfg.ema_encoder_only:
                 assert target is None
                 ema_input = extractor_out["local_features"]
-                ema_input = feature_extractor.contextualized_features(
+                ema_input = extractor.contextualized_features(
                     ema_input.to(dtype=ema_dtype),
                     padding_mask,
                     mask=False,
@@ -970,227 +794,123 @@ class PantagruelMultiModel(BaseFairseqModel):
                 ema_blocks = tm
             else:
                 ema_blocks = tm.blocks
-                if not isinstance(feature_extractor, nn.ModuleDict):
-                    if feature_extractor.modality_cfg.ema_local_encoder:
+                ema_input = {
+                    "x": {}, "padding_mask": {}, "alibi_bias": {}, "alibi_scale": {}
+                }
+                for _mod in current_modes:
+                    _extractor = self.modality_encoders[_mod.upper()]
+                    _source = (
+                        source if isinstance(source, torch.Tensor) 
+                        else source[_mod]["source"]
+                    )
+                    _padding_mask = (
+                        padding_mask if isinstance(source, torch.Tensor) 
+                        else source[_mod]["padding_mask"]
+                    )
+                    if _extractor.modality_cfg.ema_local_encoder:
                         inp = (
                             target.to(dtype=ema_dtype)
                             if target is not None
-                            else source.to(dtype=ema_dtype)
+                            else _source.to(dtype=ema_dtype)
                         )
-                        ema_input = tm.modality_encoders[mode](
-                            inp.to(dtype=torch.int64) if mode=="TEXT" else inp,
-                            padding_mask,
+                        _ema_input = tm.modality_encoders[_mod.upper()](
+                            inp.to(dtype=torch.int64) if _mod=="text" else inp,
+                            _padding_mask,
                             mask=False,
                             remove_masked=False,
                         )
                     else:
                         assert target is None
-                        ema_input = extractor_out["local_features"]
-                        ema_feature_enc = tm.modality_encoders[mode]
-                        ema_input = ema_feature_enc.contextualized_features(
-                            ema_input.to(dtype=ema_dtype),
-                            padding_mask,
+                        _ema_input = extractor_out["local_features"][_mod]
+                        ema_feature_enc = tm.modality_encoders[_mod.upper()]
+                        _ema_input = ema_feature_enc.contextualized_features(
+                            _ema_input.to(dtype=ema_dtype),
+                            _padding_mask,
                             mask=False,
                             remove_masked=False,
                         )
-                else:
-                    prev_L = 0
-                    ema_input = {}
-                    ema_input_loc = {}
-                    ema_fused_x = []
-                    ema_fused_padding_mask = []
-                    for i, _mod in enumerate(dual_modes):
-                        ema_input[_mod] = tm.modality_encoders[_mod.upper()].contextualized_features(
-                            extractor_out[_mod]["local_features"].to(dtype=ema_dtype),
-                            source[_mod]["padding_mask"],
-                            mask=False,
-                            remove_masked=False,
-                        )
-
-                        B, L, D = ema_input[_mod]["x"].size()
-                        prev_L = L if i==0 else prev_L
-                        ema_input_loc[_mod] = (0, L) if i==0 else (prev_L, prev_L+L)
-                        ema_fused_x.append(ema_input[_mod]["x"])
-                        ema_fused_padding_mask.append(ema_input[_mod]["padding_mask"])
-
-                    ema_input["x"] = torch.cat(ema_fused_x, dim=1)
-                    ema_input["padding_mask"] = torch.cat(ema_fused_padding_mask, dim=1)
-                    # logger.info(f'ema_input["x"]: {ema_input["x"].size()}')
-                    # logger.info(f'ema_input["padding_mask"]: {ema_input["padding_mask"].size()}')
-                    # logger.info(f'ema_loc: {ema_loc}')
+                    for k in ema_input.keys():
+                        ema_input[k][_mod] = _ema_input[k]
 
             ema_padding_mask = ema_input["padding_mask"]
-            ema_alibi_bias = ema_input.get("alibi_bias", None)
-            ema_alibi_scale = ema_input.get("alibi_scale", None)
+            ema_alibi_bias = ema_input["alibi_bias"]
+            ema_alibi_scale = ema_input["alibi_scale"]
             ema_input = ema_input["x"]
 
-            # predictor
-            k = None
-            if self.predictor is not None:
-                k = tm.predictor(ema_input.mean(dim=1))
-            if tm.project_mlp is not None:
-                k = tm.project_mlp(ema_input.mean(dim=1)) # BxC
-                k = k.detach()
+            y = {_mod: [] for _mod in current_modes}
+            extra_tokens = {_mod: [] for _mod in current_modes}
+            for _mod in current_modes:
+                _extractor = self.modality_encoders[_mod.upper()]
+                extra_tokens[_mod] = _extractor.modality_cfg.num_extra_tokens
+                _ema_input_mod = ema_input[_mod]
+                for i, blk in enumerate(ema_blocks):
+                    ab = ema_alibi_bias[_mod]
+                    if ab is not None and alibi_scale[_mod] is not None:
+                        scale = (
+                            ema_alibi_scale[_mod][i]
+                            if ema_alibi_scale[_mod].size(0) > 1
+                            else ema_alibi_scale[_mod].squeeze(0)
+                        )
+                        ab = ab * scale.type_as(ab)
 
-            y = []
-            ema_x = []
-            extra_tokens = 0
-            if not isinstance(feature_extractor, nn.ModuleDict):
-                extra_tokens = feature_extractor.modality_cfg.num_extra_tokens
-            for i, blk in enumerate(ema_blocks):
-                ab = ema_alibi_bias
-                if ab is not None and alibi_scale is not None:
-                    scale = (
-                        ema_alibi_scale[i]
-                        if ema_alibi_scale.size(0) > 1
-                        else ema_alibi_scale.squeeze(0)
+                    _ema_input_mod, lr = blk(
+                        _ema_input_mod,
+                        padding_mask=ema_padding_mask[_mod],
+                        alibi_bias=ab,
                     )
-                    ab = ab * scale.type_as(ab)
+                    y[_mod].append(lr[:, extra_tokens[_mod] : ])
 
-                ema_input, lr = blk(
-                    ema_input,
-                    padding_mask=ema_padding_mask,
-                    alibi_bias=ab,
-                    mode=(
-                        mode if self.use_modality_experts_at_ffn or self.use_modality_experts_at_mha else None
-                    ),
-                )
-                y.append(lr[:, extra_tokens:])
-                ema_x.append(ema_input[:, extra_tokens:])
-
-        y = self.make_targets(y, self.average_top_k_layers)
-        orig_targets = y
+                y[_mod] = self.make_targets(y[_mod], self.average_top_k_layers)
 
         if self.cfg.clone_batch > 1:
-            y = y.repeat_interleave(self.cfg.clone_batch, 0)
+            for _mod in current_modes:
+                y[_mod] = y[_mod].repeat_interleave(self.cfg.clone_batch, 0)
 
-        sample_size_mods = None
-        if not isinstance(feature_extractor, nn.ModuleDict):
-            masked = encoder_mask.mask.unsqueeze(-1)
-            masked_b = encoder_mask.mask.bool()
-            ys = [y[masked_b]]
-            if xs[0].size(1) == masked_b.size(1):
-                xs = [x[masked_b] for x in xs]
+        masked, masked_b, sample_sizes = {}, {}, {}
+        for _mod in current_modes:
+            masked[_mod] = encoder_mask[_mod].mask.unsqueeze(-1)
+            masked_b[_mod] = encoder_mask[_mod].mask.bool()
+            y[_mod] = y[_mod][masked_b[_mod]]
+
+            if xs[_mod][0].size(1) == masked_b[_mod].size(1):
+                xs[_mod] = [x[masked_b[_mod]] for x in xs[_mod]]
             else:
-                xs = [x.reshape(-1, x.size(-1)) for x in xs]
+                xs[_mod] = [x.reshape(-1, x.size(-1)) for x in xs[_mod]]
 
-            sample_size = masked.sum().long()
-        else:
-            _y = []
-            masked_b = []
-            sample_size = torch.tensor(0, dtype=torch.long).to(device=device)
-            sample_size_mods = {_mod: 0 for _mod in dual_modes}
-            for i, _mod in enumerate(dual_modes):
-                _n = encoder_mask[_mod].mask.unsqueeze(-1).sum().long()
-                sample_size += _n
-                sample_size_mods[_mod] = _n
-                _masked_b = encoder_mask[_mod].mask.bool()
-                start, end = ema_input_loc[_mod]
-                _y.append(y[:, start : end, :][_masked_b])
-                masked_b.append(_masked_b)
-            ys = _y
-
-            for i, x in enumerate(xs):
-                if xs[i].size(1) == masked_b[i].size(1):
-                    xs[i] = xs[i][masked_b[i]]
-                else:
-                    xs[i] = xs[i].reshape(-1, xs[i].size(-1))
-
-        local_features = {modality: None for modality in self.modality_encoders.keys()}
-        if self.ncp_loss_after_local_encoder:
-            local_features[mode] = extractor_out["local_features"]
-        elif self.ncp_loss_after_encoder:
-            org_B, _, C =  extractor_out["local_features"].size()
-            local_features[mode] = extractor_out["x"].view(org_B, self.cfg.clone_batch, -1, C)
+            sample_sizes[_mod] = masked[_mod].sum().long()
         
         result = {
             "losses": {},
-            "sample_size": sample_size,
+            "sample_size": sample_sizes,
             "ctc_out": ctc_out,
-            "dual_encoders_out": dual_encoders_out,
-            # "q": q,
-            # "k": k,
-            # "local_features": local_features,
+            "dual_encoders_out": dual_encoder_outs,
         }
-        if sample_size_mods is not None:
-            for k, v in sample_size_mods.items():
-                result[f"sample_size_{k}"] = v
-
-        sample_size = result["sample_size"]
-
-        if self.cfg.cls_loss > 0:
-            assert extra_tokens > 0
-            cls_target = orig_targets.mean(dim=1)
-            if self.cfg.clone_batch > 1:
-                cls_target = cls_target.repeat_interleave(self.cfg.clone_batch, 0)
-            cls_pred = x[:, extra_tokens - 1]
-            result["losses"]["cls"] = self.d2v_loss(cls_pred, cls_target) * (
-                self.cfg.cls_loss * sample_size
-            )
-
-        if self.cfg.recon_loss > 0:
-
-            with torch.no_grad():
-                target = feature_extractor.patchify(source)
-                mean = target.mean(dim=-1, keepdim=True)
-                var = target.var(dim=-1, keepdim=True)
-                target = (target - mean) / (var + 1.0e-6) ** 0.5
-
-                if self.cfg.clone_batch > 1:
-                    target = target.repeat_interleave(self.cfg.clone_batch, 0)
-
-                if masked_b is not None:
-                    target = target[masked_b]
-
-            recon = xs[0]
-            if self.recon_proj is not None:
-                recon = self.recon_proj(recon)
-
-            result["losses"]["recon"] = (
-                self.d2v_loss(recon, target.float()) * self.cfg.recon_loss
-            )
-
-        if self.adversarial_loss > 0:
-            self.step_counter += 1
-            predictions = self.discriminator(x_feat.mean(dim=1)) # B x D
-            for im, m in enumerate(self.modalities):
-                if m.name == mode:
-                    targets = torch.zeros(predictions.size()[0]).fill_(im).long().to(device=device)
-                else:
-                    fake_targets = torch.zeros(predictions.size()[0]).fill_(im).long().to(device=device)
-
-            if self.step_counter % self.num_discriminator_steps == 0:
-                result["losses"]["discriminator"] = self.adversarial_loss * F.cross_entropy(predictions, targets)
-            else:
-                result["losses"]["generator"] = self.adversarial_loss * F.cross_entropy(predictions, fake_targets)
 
         if self.cfg.d2v_loss > 0:
-            for i, x in enumerate(xs):
-                reg_loss = self.d2v_loss(x, ys[i]) # x: TxD, y: TxD, reg_loss: TxD
-                n = dual_modes[i] if len(dual_modes) > 1 else f"{mode}_regression"
-                scale = self.text_scale_in_fusion if dual_modes[i] == "text" else 1.0
-                result["losses"][n] = reg_loss * self.cfg.d2v_loss * scale
-                if getattr(self.cfg, "std_coeff", 0.0) > 0.0 or getattr(self.cfg, "cov_coeff", 0.0) > 0.0:
-                    var_cov_loss = self.var_cov_loss(x, y)
-                    result["losses"][n] += var_cov_loss
-                    # logging.info(f"var_cov_loss: {var_cov_loss}")
+            for _mod in current_modes:
+                for i, x in enumerate(xs[_mod]):
+                    reg_loss = self.d2v_loss(x, y[_mod]) # x: TxD, y: TxD, reg_loss: TxD
+                    n = (
+                        f"{_mod.upper()}_regression_{i}" 
+                        if len(xs[_mod]) > 1 
+                        else f"{_mod.upper()}_regression"
+                    )
+                    result["losses"][n] = reg_loss * self.cfg.d2v_loss
+                    if getattr(self.cfg, "std_coeff", 0.0) > 0.0 or getattr(self.cfg, "cov_coeff", 0.0) > 0.0:
+                        var_cov_loss = self.var_cov_loss(x, y[_mod])
+                        result["losses"][n] += var_cov_loss
 
-        suffix = [f"_{_mod}" for _mod in dual_modes]
         with torch.no_grad():
-            if encoder_mask is not None:
-                if not isinstance(encoder_mask, dict):
-                    if encoder_mask.ids_restore.size(1) != 0:
-                        result["masked_pct"] = 1 - (
-                            encoder_mask.ids_keep.size(1) / encoder_mask.ids_restore.size(1)
+            for _mod in current_modes:
+                if encoder_mask[_mod] is not None:
+                    result[f"masked_pct_{_mod.upper()}"] = 1 - (
+                        encoder_mask[_mod].ids_keep.size(1) / 
+                        encoder_mask[_mod].ids_restore.size(1)
                         )
-                else:
-                    for _mod, _encoder_mask in encoder_mask.items():
-                        result[f"masked_pct_{_mod}"] = 1 - (
-                            _encoder_mask.ids_keep.size(1) / _encoder_mask.ids_restore.size(1)
-                        )
-            for i, x in enumerate(xs):
-                result[f"pred_var{suffix[i]}"] = self.compute_var(x.float())
-                result[f"target_var{suffix[i]}"] = self.compute_var(ys[i].float())
+
+                result[f"target_var_{_mod.upper()}"] = self.compute_var(y[_mod].float())
+                for i, x in enumerate(xs[_mod]):
+                    result[f"pred_var_{_mod.upper()}"] = self.compute_var(x.float())
 
             if self.ema is not None:
                 for k, v in self.ema.logs.items():

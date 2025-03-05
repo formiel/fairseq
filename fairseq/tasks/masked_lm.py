@@ -146,8 +146,12 @@ class MaskedLMTask(FairseqTask):
         else:
             self.mask_idx = self.dictionary.index("<mask>")
         if self.dictionary:
-            logger.info(f'bos:{self.dictionary.bos()}, pad:{self.dictionary.pad()}, eos:{self.dictionary.eos()}, unk:{self.dictionary.unk()}, mask_idx:{self.mask_idx}')
-            logger.info("dictionary: {} types".format(len(self.dictionary)))
+            logger.info(f'bos:{self.dictionary.index(self.dictionary.bos_word)},\t'
+                        f'pad:{self.dictionary.index(self.dictionary.pad_word)},\t'
+                        f'eos:{self.dictionary.index(self.dictionary.eos_word)},\t'
+                        f'unk:{self.dictionary.index(self.dictionary.unk_word)},\t'
+                        f'mask_idx:{self.mask_idx}')
+            logger.info("[final] dictionary: {} types".format(len(self.dictionary)))
 
     @classmethod
     def setup_task(cls, cfg: MaskedLMConfig, **kwargs):

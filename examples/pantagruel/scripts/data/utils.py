@@ -328,6 +328,7 @@ def include_accented_char(word):
 def get_zip_manifest(
         zip_path: Path, zip_root: Optional[Path] = None, is_audio=False
 ):
+    num_skip = 0
     _zip_path = Path.joinpath(zip_root or Path(""), zip_path)
     with zipfile.ZipFile(_zip_path, mode="r") as f:
         info = f.infolist()
@@ -342,16 +343,19 @@ def get_zip_manifest(
         with open(_zip_path, "rb") as f:
             f.seek(offset)
             byte_data = f.read(file_size)
-            assert len(byte_data) > 1
-            if is_audio:
-                assert is_sf_audio_data(byte_data), i
+            if len(byte_data) > 1:
+                if is_audio:
+                    assert is_sf_audio_data(byte_data), i
+                else:
+                    assert is_npy_data(byte_data), i
+                byte_data_fp = io.BytesIO(byte_data)
+                if is_audio:
+                    lengths[utt_id] = sf.info(byte_data_fp).frames
+                else:
+                    lengths[utt_id] = np.load(byte_data_fp).shape[0]
             else:
-                assert is_npy_data(byte_data), i
-            byte_data_fp = io.BytesIO(byte_data)
-            if is_audio:
-                lengths[utt_id] = sf.info(byte_data_fp).frames
-            else:
-                lengths[utt_id] = np.load(byte_data_fp).shape[0]
+                num_skip += 1
+    print(f'Number of IDs skipped because of invalid byte_data: {num_skip}')
     return paths, lengths
 
 

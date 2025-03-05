@@ -95,6 +95,7 @@ class WaveformAugmentation:
         return F.add_noise(speech, noise, snr)
     
     def apply_speed_perturb(self, speech: torch.Tensor, sample_rate=16000):
+        speech = speech.to(torch.float32)
         speed_perturb = torchaudio.transforms.SpeedPerturbation(
             sample_rate, [0.8, 0.9, 1.0, 1.1, 1.2]
         )
@@ -112,10 +113,12 @@ class WaveformAugmentation:
 
     def __call__(self, speech: torch.Tensor):
         num_augs = random.randint(1, MAX_AUGS)
+        # print(f'num_augs={num_augs}, speech: {speech.size()}')
         for _ in range(num_augs):
             aug_type = random.choice(self.augment_types)
             aug_fn = self.get_aug_fn(aug_type)
             speech = aug_fn(speech)
+        # print(f'speech size after augmentation: {speech.size()}')
         return speech
 
 

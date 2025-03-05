@@ -11,7 +11,6 @@ common:
   log_format: json
   log_interval: 200
   tensorboard_logdir: ???
-  # min_loss_scale: 1e-6
   fp16_no_flatten_grads: true
   # memory_efficient_fp16: true
   # fp16_scale_tolerance: 0.25
@@ -33,8 +32,10 @@ task:
   _name: pantagruel_multimodal_pretraining
   audio_ratio: 14
   text_ratio: 1
-  # update_freq: [4]
-  # vocab_path: /gpfswork/rech/ahm/umz16dj/pretrained/tokenizers/gpt2_bpe/dict.txt
+  aligned_st_ratio: 70
+  aligned_st_data_root: ???
+  aligned_text_tokenzizer_root: ???
+  vocab_path: ???
   audio:
     data: ???
     max_sample_size: 320000
@@ -52,6 +53,14 @@ task:
     skip_masking: true
     d2v2_multi: true
     mask_idx_in_vocab: true
+  aligned_st_cfg:
+    audio:
+      normalize: true
+      precompute_mask_config: {"mask_prob": 0.5}
+      musan_dir: "/lustre/fsn1/projects/rech/zbk/commun/Data/speech_augmentation"
+    text:
+      mask_prob: 0.62
+      mask_multiple_length: 3
 
 dataset:
   num_workers: 6
@@ -73,7 +82,7 @@ distributed_training:
   distributed_port: ???
 
 criterion:
-  _name: model
+  _name: pantagruel_multi_loss
   log_keys:
   - ema_decay
   - target_var
@@ -81,6 +90,9 @@ criterion:
   - model_norm
   - ema_norm
   - masked_pct
+  - loss_
+  - sample_size_
+  ctc_weight: 1.0
 
 optimization:
   clip_norm: 1
@@ -102,7 +114,7 @@ optimizer:
         weight_decay: 0.01
       lr_scheduler:
         _name: cosine
-        warmup_updates: 8000
+        warmup_updates: 16000
 
 lr_scheduler: pass_through
 
@@ -110,11 +122,11 @@ model:
   _name: pantagruel_multi
   # skip_mode: 'TEXT'
   dummy_factor: 0.0
+  use_ctc_module: true
+  num_freeze_ctc_updates: 100000
 
   loss_beta: 0
   loss_scale: null
-  std_coeff: 1.0
-  cov_coeff: 0.01
 
   depth: 12
   embed_dim: 768
@@ -122,7 +134,7 @@ model:
 
   ema_decay: 0.9999
   ema_end_decay: 0.99999
-  ema_anneal_end_step: 400000
+  ema_anneal_end_step: 200000
   ema_encoder_only: false # speech: false, text: true
 
   average_top_k_layers: 8
@@ -175,7 +187,7 @@ model:
         decoder_kernel: 7
         decoder_layers: 4
     text:
-      mask_prob: 0.48
+      mask_prob: 0.62
       mask_length: 3
       mask_noise_std: 0.01
       prenet_depth: 0

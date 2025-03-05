@@ -34,7 +34,7 @@ task:
   audio_ratio: 14
   text_ratio: 1
   # update_freq: [4]
-  # vocab_path: /gpfswork/rech/ahm/umz16dj/pretrained/tokenizers/gpt2_bpe/dict.txt
+  vocab_path: ???
   audio:
     data: ???
     max_sample_size: 320000
@@ -73,7 +73,7 @@ distributed_training:
   distributed_port: ???
 
 criterion:
-  _name: model
+  _name: pantagruel_multi_loss
   log_keys:
   - ema_decay
   - target_var
@@ -81,11 +81,13 @@ criterion:
   - model_norm
   - ema_norm
   - masked_pct
+  - loss_
+  - sample_size_
 
 optimization:
   clip_norm: 1
   lr: [0.0003]
-  max_update: 1000000
+  max_update: 2000000
   update_freq: [1]
   # max_epoch: 10
 
@@ -102,7 +104,7 @@ optimizer:
         weight_decay: 0.01
       lr_scheduler:
         _name: cosine
-        warmup_updates: 8000
+        warmup_updates: 16000
 
 lr_scheduler: pass_through
 
@@ -120,7 +122,7 @@ model:
 
   ema_decay: 0.9999
   ema_end_decay: 0.99999
-  ema_anneal_end_step: 400000
+  ema_anneal_end_step: 200000
   ema_encoder_only: false # speech: false, text: true
 
   average_top_k_layers: 8
@@ -173,7 +175,7 @@ model:
         decoder_kernel: 7
         decoder_layers: 4
     text:
-      mask_prob: 0.48
+      mask_prob: 0.62
       mask_length: 3
       mask_noise_std: 0.01
       prenet_depth: 0

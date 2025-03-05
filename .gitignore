@@ -148,6 +148,5 @@ _tools*/*
 # experiments and notes
 */*/_*
 fairseq_cli/train_profile.py
-examples/pantagruel/models/multimodal_tuning.py
 *old*
-examples/pantagruel/scripts/data/prep_lebenchmark_aligned_data.py
+*_bak*
