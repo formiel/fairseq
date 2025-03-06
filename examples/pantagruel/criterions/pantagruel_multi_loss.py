@@ -136,7 +136,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
 
             if not net_output["ctc_out"]["is_frozen"]:
                 loss = loss + self.ctc_weight * ctc_loss
-                if not model.training and model.num_updates % 100000 == 0: 
+                if not model.training and model.num_updates % 200000 == 0: 
                     _ctc_logging = self.compute_wer(
                         lprobs, net_output["ctc_out"], net_input, input_lengths
                     )
