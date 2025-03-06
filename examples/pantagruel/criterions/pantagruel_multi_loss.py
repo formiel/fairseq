@@ -133,15 +133,15 @@ class PantagruelMultiCriterion(FairseqCriterion):
                 net_output["ctc_out"], net_input
             )
             logging_output["loss_ctc"] = self.ctc_weight * ctc_loss
+
             if not net_output["ctc_out"]["is_frozen"]:
                 loss = loss + self.ctc_weight * ctc_loss
-
-            if not model.training:
-                _ctc_logging = self.compute_wer(
-                    lprobs, net_output["ctc_out"], net_input, input_lengths
-                )
-                for k, v in _ctc_logging.items():
-                    logging_output[k] = v
+                if not model.training:
+                    _ctc_logging = self.compute_wer(
+                        lprobs, net_output["ctc_out"], net_input, input_lengths
+                    )
+                    for k, v in _ctc_logging.items():
+                        logging_output[k] = v
 
         if "logs" in net_output:
             for lgw in net_output["logs"]:
@@ -163,9 +163,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
 
         audio_enc = dual_encoders_out["audio"] # BxTxD
         text_enc = dual_encoders_out["text"]
-        logger.info(f"text_enc before: {text_enc.size()}")
-        text_enc = text_enc[:, 1-1] # remove bos and eos token
-        logger.info(f"text_enc after: {text_enc.size()}")
+        text_enc = text_enc[:, 1:-1] # remove bos and eos token
         loss = ot_loss(
                 audio_enc.float().contiguous(),
                 text_enc.float().contiguous()
@@ -259,10 +257,10 @@ class PantagruelMultiCriterion(FairseqCriterion):
 
                 w_len += len(targ_words)
 
-            # printing out decoding results
-            if random.random() < 0.1:
-                logger.info(f"[TGT]: {' '.join(targ_words)}")
-                logger.info(f"[HYP]: {' '.join(pred_words_raw)}")
+            # # printing out decoding results
+            # if random.random() < 0.1:
+            #     logger.info(f"[TGT]: {' '.join(targ_words)}")
+            #     logger.info(f"[HYP]: {' '.join(pred_words_raw)}")
 
             _logging_output["wv_errors"] = wv_errs
             _logging_output["w_errors"] = w_errs
