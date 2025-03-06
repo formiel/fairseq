@@ -319,6 +319,11 @@ class PantagruelMultiCriterion(FairseqCriterion):
         world_size = utils.item(
             sum(log.get("_world_size", 0) for log in logging_outputs)
         )
+        for k in logging_outputs[0]:
+            if k not in builtin_keys and not k.startswith("_"):
+                val = sum(log.get(k, 0) for log in logging_outputs)
+                if not k.startswith("loss_"):
+                    metrics.log_scalar(k, val / world_size, round=3)
 
         # WER
         c_errors = sum(log.get("c_errors", 0) for log in logging_outputs)
