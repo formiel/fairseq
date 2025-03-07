@@ -54,6 +54,7 @@ from examples.pantagruel.models.modalities.text_type import (
     PantagruelD2vTextConfig,
 )
 from .modules import AltBlockWithModalityExpert
+from .utils import load_all_pretrained_modules_to_model
 
 
 logger = logging.getLogger(__name__)
@@ -166,6 +167,13 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
     std_coeff: float = 0.0
     cov_coeff: float = 0.0
 
+    pretrained_path: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": ("Scale the reconstruction loss by this constant. "
+                "If None, then scales by 1/sqrt(dim).")
+        }
+    )
 
 class CTCDecoder(nn.Module):
     def __init__(self, dictionary, embed_dim, dropout_rate=0.0, bias=True):
@@ -344,6 +352,21 @@ class PantagruelMultiModel(BaseFairseqModel):
                 p.optim_overrides = {"optimizer": {"weight_decay_scale": 0}}
             if cfg.decoder_group and "decoder" in pn:
                 p.param_group = "decoder"
+
+        # init using pretrained models
+        pretrained_path = getattr(cfg, "pretrained_path", None)
+        logger.info(f"pretrained_path: {pretrained_path}")
+        if pretrained_path is not None:
+            load_all_pretrained_modules_to_model(
+                self.modality_encoders, pretrained_path
+            )
+            load_all_pretrained_modules_to_model(
+                self.blocks, pretrained_path
+            )
+            if self.ctc_module is not None:
+                load_all_pretrained_modules_to_model(
+                self.ctc_module, pretrained_path
+            )
 
         self.num_updates = 0
 

@@ -114,11 +114,13 @@ class PantagruelMultiCriterion(FairseqCriterion):
         for k, v in net_output["sample_size"].items():
             logging_output[f"sample_size_{k}"] = v
 
-        self.log_keys = [
-            l for l in net_output if any([l.startswith(lk) for lk in self.log_keys])
+        log_keys = [
+            l for l in net_output.keys() if any([l.startswith(lk) for lk in self.log_keys])
         ]
+        self.log_keys.extend(log_keys)
+
         for lk in self.log_keys:
-            if net_output[lk] is not None:
+            if lk in net_output and net_output[lk] is not None:
                 if not torch.is_tensor(net_output[lk]) or net_output[lk].numel() == 1:
                     logging_output[lk] = float(net_output[lk])
                 elif lk.startswith("_"):
