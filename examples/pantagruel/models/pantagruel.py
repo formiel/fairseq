@@ -695,7 +695,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                                 padding_mask=_extractor_out_mod["padding_mask"],
                                 alibi_bias=_alibi_bias,
                             )
-                        dual_encoder_outs[_mod] = _x_mod
+                        dual_encoder_outs[_mod.lower()] = _x_mod
                 if ft:
                     dual_encoder_outs["is_frozen"] = False
                 else:
