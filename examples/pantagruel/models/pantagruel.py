@@ -98,8 +98,9 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
     mlp_ratio: float = 4
     layer_norm_first: bool = False
 
-    average_top_k_layers: int = field(
-        default=8, metadata={"help": "how many layers to average"}
+    average_top_k_layers: str = field(
+        default="{'audio': 8, 'text': 12}",
+        metadata={"help": "how many layers to average for each modality"},
     )
 
     end_of_block_targets: bool = False
@@ -305,7 +306,7 @@ class PantagruelMultiModel(BaseFairseqModel):
         
         self.ema = None
 
-        self.average_top_k_layers = cfg.average_top_k_layers
+        self.average_top_k_layers = eval(cfg.average_top_k_layers)
         self.loss_beta = cfg.loss_beta
         self.loss_scale = cfg.loss_scale
 
@@ -883,7 +884,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                     )
                     y[_mod].append(lr[:, extra_tokens[_mod] : ])
 
-                y[_mod] = self.make_targets(y[_mod], self.average_top_k_layers)
+                y[_mod] = self.make_targets(y[_mod], self.average_top_k_layers[_mod])
 
         if self.cfg.clone_batch > 1:
             for _mod in current_modes:

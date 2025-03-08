@@ -149,5 +149,8 @@ class PantagruelTextClassificationModel(BaseFairseqModel):
             features_only=features_only,
             remove_extra_tokens=remove_extra_tokens
         )
-        logits = self.classification_heads[classification_head_name](encoder_out["x"])
+        _text_encoder_out = encoder_out["x"]
+        if isinstance(_text_encoder_out, dict):
+            _text_encoder_out = _text_encoder_out["text"]
+        logits = self.classification_heads[classification_head_name](_text_encoder_out)
         return logits, encoder_out
