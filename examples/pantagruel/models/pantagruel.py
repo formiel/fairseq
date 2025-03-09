@@ -53,8 +53,8 @@ from examples.pantagruel.models.modalities.text_type import (
     TextTypeEncoder,
     PantagruelD2vTextConfig,
 )
-from .modules import AltBlockWithModalityExpert
-from .utils import load_all_pretrained_modules_to_model
+from examples.pantagruel.models.modules import AltBlockWithModalityExpert
+from examples.pantagruel.models.utils import load_all_pretrained_modules_to_model
 
 
 logger = logging.getLogger(__name__)

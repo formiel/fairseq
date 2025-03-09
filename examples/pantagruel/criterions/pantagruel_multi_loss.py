@@ -65,6 +65,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
         super().__init__(task)
         
         self.log_keys = log_keys
+        logger.info(f"self.log_keys: {self.log_keys}")
         self.task = task
 
         self.ctc_weight = ctc_weight
@@ -115,9 +116,10 @@ class PantagruelMultiCriterion(FairseqCriterion):
             logging_output[f"sample_size_{k}"] = v
 
         log_keys = [
-            l for l in net_output.keys() if any([l.startswith(lk) for lk in self.log_keys])
+            l for l in net_output if any([l.startswith(lk) for lk in self.log_keys])
         ]
-        self.log_keys.extend(log_keys)
+        for lk in log_keys:
+            self.log_keys.append(lk)
 
         for lk in self.log_keys:
             if lk in net_output and net_output[lk] is not None:
