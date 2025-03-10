@@ -9,7 +9,7 @@ hydra:
 common:
   fp16: true
   log_format: json
-  log_interval: 200
+  log_interval: 500
   tensorboard_logdir: ???
   fp16_no_flatten_grads: true
   # memory_efficient_fp16: true
@@ -20,7 +20,7 @@ common:
 
 checkpoint:
   # save_interval: 1
-  save_interval_updates: 20000
+  save_interval_updates: 40000
   # keep_interval_updates: 1
   # no_epoch_checkpoints: true
   # keep_best_checkpoints: 10
@@ -30,9 +30,9 @@ checkpoint:
 
 task:
   _name: pantagruel_multimodal_pretraining
-  audio_ratio: 14
+  audio_ratio: 8
   text_ratio: 1
-  aligned_st_ratio: 70
+  aligned_st_ratio: 7
   aligned_st_data_root: ???
   aligned_text_tokenzizer_root: ???
   vocab_path: ???
@@ -71,7 +71,7 @@ dataset:
   skip_invalid_size_inputs_valid_test: true
   # validate_interval: 1
   # required_batch_size_multiple: 1
-  # disable_validation: true
+  disable_validation: true
   # train_subset: train
   # valid_subset: valid
 
@@ -97,7 +97,7 @@ criterion:
 optimization:
   clip_norm: 1
   lr: [0.0003]
-  max_update: 2000000
+  max_update: 1600000
   update_freq: [1]
   # max_epoch: 10
 
@@ -123,7 +123,7 @@ model:
   # skip_mode: 'TEXT'
   dummy_factor: 0.0
   use_ctc_module: true
-  num_freeze_ctc_updates: 100000
+  num_freeze_ctc_updates: 800000
 
   loss_beta: 0
   loss_scale: null
@@ -134,10 +134,10 @@ model:
 
   ema_decay: 0.9999
   ema_end_decay: 0.99999
-  ema_anneal_end_step: 200000
+  ema_anneal_end_step: 400000
   ema_encoder_only: false # speech: false, text: true
 
-  average_top_k_layers: 8
+  average_top_k_layers: "{'audio': 8, 'text': 12}"
   instance_norm_target_layer: true
   layer_norm_target_layer: false
   layer_norm_targets: false
@@ -187,7 +187,7 @@ model:
         decoder_kernel: 7
         decoder_layers: 4
     text:
-      mask_prob: 0.62
+      mask_prob: 0.58
       mask_length: 3
       mask_noise_std: 0.01
       prenet_depth: 0
