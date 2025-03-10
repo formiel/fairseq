@@ -30,9 +30,9 @@ checkpoint:
 
 task:
   _name: pantagruel_multimodal_pretraining
-  audio_ratio: 14
+  audio_ratio: 8
   text_ratio: 1
-  aligned_st_ratio: 74
+  aligned_st_ratio: 7
   aligned_st_data_root: ???
   aligned_text_tokenzizer_root: ???
   vocab_path: ???
@@ -93,11 +93,12 @@ criterion:
   - loss_
   - sample_size_
   ctc_weight: 1.0
+  ot_weight: 1.0
 
 optimization:
   clip_norm: 1
   lr: [0.0003]
-  max_update: 4400000
+  max_update: 1600000
   update_freq: [1]
   # max_epoch: 10
 
@@ -114,7 +115,7 @@ optimizer:
         weight_decay: 0.01
       lr_scheduler:
         _name: cosine
-        warmup_updates: 44000
+        warmup_updates: 16000
 
 lr_scheduler: pass_through
 
@@ -122,8 +123,12 @@ model:
   _name: pantagruel_multi
   # skip_mode: 'TEXT'
   dummy_factor: 0.0
+  
   use_ctc_module: true
-  num_freeze_ctc_updates: 1000000
+  num_freeze_ctc_updates: 800000
+
+  extract_encoder_outs: true
+  num_freeze_ot_updates: 800000
 
   loss_beta: 0
   loss_scale: null
@@ -134,7 +139,7 @@ model:
 
   ema_decay: 0.9999
   ema_end_decay: 0.99999
-  ema_anneal_end_step: 1000000
+  ema_anneal_end_step: 400000
   ema_encoder_only: false # speech: false, text: true
 
   average_top_k_layers: "{'audio': 8, 'text': 12}"

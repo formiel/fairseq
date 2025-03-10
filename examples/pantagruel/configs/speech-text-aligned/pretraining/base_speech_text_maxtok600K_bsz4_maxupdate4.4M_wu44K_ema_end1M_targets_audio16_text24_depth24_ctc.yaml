@@ -30,9 +30,9 @@ checkpoint:
 
 task:
   _name: pantagruel_multimodal_pretraining
-  audio_ratio: 8
+  audio_ratio: 14
   text_ratio: 1
-  aligned_st_ratio: 7
+  aligned_st_ratio: 74
   aligned_st_data_root: ???
   aligned_text_tokenzizer_root: ???
   vocab_path: ???
