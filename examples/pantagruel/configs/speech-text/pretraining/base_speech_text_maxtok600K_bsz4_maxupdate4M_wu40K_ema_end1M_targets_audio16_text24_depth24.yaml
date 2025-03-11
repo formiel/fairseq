@@ -62,7 +62,7 @@ dataset:
   skip_invalid_size_inputs_valid_test: true
   # validate_interval: 1
   # required_batch_size_multiple: 1
-  disable_validation: true
+  # disable_validation: true
   # train_subset: train
   # valid_subset: valid
 
