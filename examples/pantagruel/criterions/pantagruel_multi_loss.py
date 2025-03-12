@@ -163,7 +163,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
 
     def compute_ot_loss(self, dual_encoders_out):
         #TODO: OT with positional encoding!
-        ot_loss = SamplesLoss(loss="sinkhorn", p=2, blur=0.05, scaling=1.0)
+        ot_loss = SamplesLoss(loss="sinkhorn", p=2, blur=0.05)
 
         audio_enc = dual_encoders_out["audio"] # BxTxD
         text_enc = dual_encoders_out["text"]
