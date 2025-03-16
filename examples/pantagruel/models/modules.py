@@ -1,10 +1,15 @@
-import logging
+from functools import partial
 import importlib
+
+import logging
+import math
+
+from timm.models.vision_transformer import DropPath
+
 import torch
+import torch.version
 import torch.nn as nn
 import torch.nn.functional as F
-from timm.models.vision_transformer import DropPath, Mlp
-import torch.version
 
 
 def is_flash_attn_2_available():
@@ -18,27 +23,137 @@ if is_flash_attn_2_available():
 logger = logging.getLogger(__name__)
 
 
+# copied from timm.layers.helpers
+def _ntuple(n):
+    import collections.abc
+    from itertools import repeat
+    def parse(x):
+        if isinstance(x, collections.abc.Iterable) and not isinstance(x, str):
+            return tuple(x)
+        return tuple(repeat(x, n))
+    return parse
+to_2tuple = _ntuple(2)
+
+
 class ModalityExpert(nn.Module):
-    def __init__(self, in_dim, out_dim, rank, alpha=1.0):
+    def __init__(
+        self, in_dim: int, out_dim: int, rank: int, 
+        alpha: float, ln: bool,
+    ):
         super().__init__()
-        std_dev = 1 / torch.sqrt(torch.tensor(rank).float())
-        # self.A = nn.Parameter(torch.randn(in_dim, rank) * std_dev)
-        # self.B = nn.Parameter(torch.zeros(rank, out_dim))
-        self.A = nn.Linear(in_features=in_dim,
-                                 out_features=rank,
-                                 bias=False)
-        self.A.weight.data.normal_(mean=0.0, std=std_dev)
-        self.B = nn.Linear(in_features=rank,
-                                 out_features=out_dim,
-                                 bias=False)
-        self.B.weight.data.fill_(0.0)
-        self.alpha = alpha
+        self.scaling = alpha / rank
+
+        self.moex_A = nn.Linear(in_features=in_dim, out_features=rank, bias=False)
+        nn.init.kaiming_uniform_(self.moex_A.weight, a=math.sqrt(5))
+
+        self.moex_B = nn.Linear(in_features=rank, out_features=out_dim, bias=False)
+        nn.init.zeros_(self.moex_B.weight)
+        
+        self.moex_ln = None
+        if ln:
+            self.moex_ln = nn.LayerNorm(out_dim)
 
     def forward(self, x):
-        # x = self.alpha * (x @ self.A @ self.B)
-        x = self.alpha * self.B(self.A(x))
+        # W = self.moex_A @ self.moex_B
+        # x =  x @ W
+        x = self.scaling * self.moex_B(self.moex_A(x))
+        if self.moex_ln:
+            x = self.moex_ln(x)
         return x
-    
+
+
+# modified from timm.models.vision_transformer.MLP
+class Mlp(nn.Module):
+    """ MLP as used in Vision Transformer, MLP-Mixer and related networks
+    """
+    def __init__(
+            self,
+            in_features,
+            hidden_features=None,
+            out_features=None,
+            act_layer=nn.GELU,
+            norm_layer=None,
+            bias=True,
+            drop=0.,
+            use_conv=False,
+            moex_args=None,
+            dummy_factor=0.0,
+            freeze_backbone=False,
+    ):
+        super().__init__()
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+        bias = to_2tuple(bias)
+        drop_probs = to_2tuple(drop)
+        linear_layer = partial(nn.Conv2d, kernel_size=1) if use_conv else nn.Linear
+
+        self.fc1 = linear_layer(in_features, hidden_features, bias=bias[0])
+        self.act = act_layer()
+        self.drop1 = nn.Dropout(drop_probs[0])
+        self.norm = norm_layer(hidden_features) if norm_layer is not None else nn.Identity()
+        self.fc2 = linear_layer(hidden_features, out_features, bias=bias[1])
+        self.drop2 = nn.Dropout(drop_probs[1])
+
+        def make_moex_modules(in_dim, out_dim, moex_args):
+            return nn.ModuleDict(
+                    {
+                        _mod: ModalityExpert(
+                            in_dim=in_dim, out_dim=out_dim,
+                            rank=moex_args["rank"], alpha=moex_args["alpha"],
+                            ln=moex_args["use_ln"]
+                        ) for _mod in moex_args["modalities"]
+                    }
+                )
+        
+        self.dummy_factor = dummy_factor
+        self.modalities = moex_args.get("modalities", None) if moex_args else None
+        self.moex_fc1, self.moex_fc2 = None, None
+        if moex_args:
+            # creating moex modules for each modality
+            self.moex_fc1 = make_moex_modules(in_features, hidden_features, moex_args)
+            self.moex_fc2 = make_moex_modules(hidden_features, out_features, moex_args)
+            if freeze_backbone:
+                logger.info("freezing the backbone: MLP layer")
+                # do not freeze layernorm
+                for param in self.fc1.parameters():
+                    param.requires_grad = False
+                for param in self.fc2.parameters():
+                    param.requires_grad = False
+
+    def get_remaining_experts(self, mode):
+        remaining_modes = []
+        if mode:
+            remaining_modes = list(set(self.modalities) - set([mode]))
+        return remaining_modes
+
+    def apply_experts(self, x, mode, experts_modules, remaining_modes):
+        x_in = x
+        x = experts_modules[mode](x)
+        for _mod in remaining_modes:
+            x += self.dummy_factor * experts_modules[_mod](x_in.mean(dim=1)).unsqueeze(1)
+        return x
+
+    def forward(self, x, mode=None):
+        remaining_modes = self.get_remaining_experts(mode)
+
+        # First linear layer and modality expert processing (if any)
+        x_in = x
+        x = self.fc1(x)
+        if mode and self.moex_fc1:
+            x = x + self.apply_experts(x_in, mode, self.moex_fc1, remaining_modes)
+
+        x = self.act(x)
+        x = self.drop1(x)
+        x = self.norm(x)
+
+        # Second linear layer and modality expert processing (if any)
+        x_in = x
+        x = self.fc2(x)
+        if mode and self.moex_fc2:
+            x = x + self.apply_experts(x_in, mode, self.moex_fc2, remaining_modes)
+
+        x = self.drop2(x)
+        return x
 
 class AltBlockWithModalityExpert(nn.Module):
     def __init__(
@@ -58,9 +173,9 @@ class AltBlockWithModalityExpert(nn.Module):
         ffn_targets=False,
         cosine_attention=False,
         dummy_factor=0.0,
-        modality_expert_rank=0,
-        modality_experts_at_ffn=None,
-        modality_experts_at_mha=None,
+        moex_args_ffn=None,
+        moex_args_mha=None,
+        freeze_backbone=False,
     ):
         super().__init__()
 
@@ -72,27 +187,22 @@ class AltBlockWithModalityExpert(nn.Module):
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
+
+        self.moex_args_ffn = eval(moex_args_ffn) if moex_args_ffn else None
         self.mlp = Mlp(
             in_features=dim,
             hidden_features=mlp_hidden_dim,
             act_layer=act_layer,
             drop=mlp_drop,
+            moex_args=self.moex_args_ffn,
+            dummy_factor=dummy_factor,
+            freeze_backbone=freeze_backbone,
         )
         self.post_mlp_dropout = nn.Dropout(post_mlp_drop, inplace=False)
 
-        # Modality-specific modules
-        self.modality_experts_at_ffn = modality_experts_at_ffn
-        self.modality_experts_at_mha = modality_experts_at_mha
-        if modality_experts_at_ffn is not None or modality_experts_at_mha is not None:
-            assert modality_expert_rank > 0
-
         self.dummy_factor = dummy_factor
-        self.modality_experts = None
-        if self.modality_experts_at_ffn is not None:
-            self.modality_experts = nn.ModuleDict()
-            for mod in self.modality_experts_at_ffn:
-                self.modality_experts[mod.name] = ModalityExpert(dim, dim, modality_expert_rank)
 
+        self.moex_args_mha = eval(moex_args_mha) if moex_args_mha else None
         self.attn = AltAttentionWithExperts(
             dim,
             num_heads=num_heads,
@@ -101,50 +211,32 @@ class AltBlockWithModalityExpert(nn.Module):
             attn_drop=attn_drop,
             proj_drop=drop,
             cosine_attention=cosine_attention,
-            modalities=modality_experts_at_mha,
+            moex_args=self.moex_args_mha,
             dummy_factor=dummy_factor,
-            modality_expert_rank=modality_expert_rank,
+            freeze_backbone=freeze_backbone,
         )
     
     def forward(self, x, padding_mask=None, alibi_bias=None, mode=None):
-
-        if self.modality_experts is not None:
-            remaining_experts = [
-                m.name for m in self.modality_experts_at_ffn if (
-                    m.name != mode and m.name in self.modality_experts.keys()
-                )
-            ]
-
         if self.layer_norm_first:
             x = x + self.drop_path(
                 self.attn(
-                    self.norm1(x), padding_mask, alibi_bias, mode=(
-                        mode if self.modality_experts_at_mha is not None else None)
+                    self.norm1(x), padding_mask, alibi_bias, 
+                    mode=mode if self.moex_args_mha else None
                 )
             )
-            x_modality = x = self.norm2(x)
-            r = x = self.mlp(x)
-            if self.modality_experts is not None:
-                x += self.modality_experts[mode](x_modality)
-                for name in remaining_experts:
-                    x += self.dummy_factor * self.modality_experts[name](x_modality)
+            r = x = self.mlp(self.norm2(x), mode=mode if self.moex_args_ffn else None)
             t = x
             x = r + self.drop_path(self.post_mlp_dropout(x))
             if not self.ffn_targets:
                 t = x
         else:
             x = x + self.drop_path(
-                self.attn(x, padding_mask, alibi_bias, mode=(
-                    mode if self.modality_experts_at_mha is not None else None)
-                    )
+                self.attn(x, padding_mask, alibi_bias, 
+                mode=mode if self.moex_args_mha else None,
+                )
             )
             r = x = self.norm1(x)
-            x_modality = x
-            x = self.mlp(x)
-            if self.modality_experts is not None:
-                x += self.modality_experts[mode](x_modality)
-                for name in remaining_experts:
-                    x += self.dummy_factor * self.modality_experts[name](x_modality)
+            x = self.mlp(x, mode=mode if self.moex_args_ffn else None)
             t = x
             x = self.norm2(r + self.drop_path(self.post_mlp_dropout(x)))
             if not self.ffn_targets:
@@ -163,9 +255,9 @@ class AltAttentionWithExperts(nn.Module):
         attn_drop=0.0,
         proj_drop=0.0,
         cosine_attention=False,
-        modalities=None,
+        moex_args=None,
         dummy_factor=0.0,
-        modality_expert_rank=0,
+        freeze_backbone=False,
     ):
         super().__init__()
         self.num_heads = num_heads
@@ -187,12 +279,42 @@ class AltAttentionWithExperts(nn.Module):
 
         # Modality-specific experts
         self.dummy_factor = dummy_factor
-        self.modalities = modalities
-        self.modality_experts_qkv = None
-        if self.modalities is not None:
-            self.modality_experts_qkv = nn.ModuleDict()
-            for mod in self.modalities:
-                self.modality_experts_qkv[mod.name] = ModalityExpert(dim, dim*3, modality_expert_rank)
+        self.modalities = moex_args.get("modalities", None) if moex_args else None
+        self.moex_qkv, self.moex_proj = None, None
+
+        def make_moex_modules(in_dim, out_dim, moex_args):
+            return nn.ModuleDict(
+                    {
+                        _mod: ModalityExpert(
+                            in_dim=in_dim, out_dim=out_dim,
+                            rank=moex_args["rank"], alpha=moex_args["alpha"],
+                            ln=moex_args["use_ln"]
+                        ) for _mod in moex_args["modalities"]
+                    }
+                )
+
+        if moex_args:
+            self.moex_qkv = make_moex_modules(dim, dim*3, moex_args)
+            self.moex_proj = make_moex_modules(dim, dim, moex_args)
+            if freeze_backbone:
+                logger.info("freezing the backbone: MHA module")
+                for param in self.qkv.parameters():
+                    param.requires_grad = False
+                for param in self.proj.parameters():
+                    param.requires_grad = False
+
+    def get_remaining_experts(self, mode):
+        remaining_modes = []
+        if mode:
+            remaining_modes = list(set(self.modalities) - set([mode]))
+        return remaining_modes
+
+    def apply_experts(self, x, mode, experts_modules, remaining_modes=None):
+        x_in = x
+        x = experts_modules[mode](x)
+        for _mod in remaining_modes:
+            x += self.dummy_factor * experts_modules[_mod](x_in.mean(dim=1)).unsqueeze(1)
+        return x
 
     def forward(self, x, padding_mask=None, alibi_bias=None, fast=True, mode=None):
         B, N, C = x.shape
@@ -206,30 +328,20 @@ class AltAttentionWithExperts(nn.Module):
             qkv[1],
             qkv[2],
         )  # make torchscript happy (cannot use tensor as tuple)
-        if self.modality_experts_qkv is not None:
+
+        # modality experts
+        remaining_modes = self.get_remaining_experts(mode)
+        if self.moex_qkv:
+            qkv_experts = self.apply_experts(
+                x, mode, self.moex_qkv, remaining_modes=remaining_modes
+            )
             qkv_experts = (
-                self.modality_experts_qkv[mode](x)
-                .reshape(B, N, 3, self.num_heads, C // self.num_heads)
+                qkv_experts.reshape(B, N, 3, self.num_heads, C // self.num_heads)
                 .permute(2, 0, 3, 1, 4)
             )
-            q += qkv_experts[0]
-            k += qkv_experts[1]
-            v += qkv_experts[2]
-
-            remaining_experts = [
-                m.name for m in self.modalities if (
-                    m.name != mode and m.name in self.modality_experts_qkv.keys()
-                )
-            ]
-            for name in remaining_experts:
-                qkv_remainings = (
-                    self.modality_experts_qkv[name](x)
-                    .reshape(B, N, 3, self.num_heads, C // self.num_heads)
-                    .permute(2, 0, 3, 1, 4)
-                )
-                q += self.dummy_factor * qkv_remainings[0]
-                k += self.dummy_factor * qkv_remainings[1]
-                v += self.dummy_factor * qkv_remainings[2]
+            q = q + qkv_experts[0]
+            k = k + qkv_experts[1]
+            v = v + qkv_experts[2]
 
         dtype = q.dtype
 
@@ -296,8 +408,13 @@ class AltAttentionWithExperts(nn.Module):
             #                                         dropout=self.attn_drop if self.training else 0.0)
 
         x = x.reshape(B, N, C)
+        x_in = x
         x = self.proj(x)
         # x = self.proj_drop(x)
+        if self.moex_proj:
+            x = x + self.apply_experts(
+                x_in, mode, self.moex_proj, remaining_modes=remaining_modes
+            )
         x = F.dropout(x, p=self.proj_drop if self.training else 0.0)
         return x
     

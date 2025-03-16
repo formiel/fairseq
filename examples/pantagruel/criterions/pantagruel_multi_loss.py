@@ -115,21 +115,18 @@ class PantagruelMultiCriterion(FairseqCriterion):
         for k, v in net_output["sample_size"].items():
             logging_output[f"sample_size_{k}"] = v
 
-        # log_keys = [
-        #     l for l in net_output if any([l.startswith(lk) for lk in self.log_keys])
-        # ]
-        # for lk in log_keys:
-        #     self.log_keys.append(lk)
-
-        # for lk in self.log_keys:
-        #     if lk in net_output and net_output[lk] is not None:
-        #         if not torch.is_tensor(net_output[lk]) or net_output[lk].numel() == 1:
-        #             logging_output[lk] = float(net_output[lk])
-        #         elif lk.startswith("_"):
-        #             logging_output[lk] = net_output[lk]
-        #         else:
-        #             for i, v in enumerate(net_output[lk]):
-        #                 logging_output[f"{lk}_{i}"] = float(v)
+        log_keys = [
+            l for l in net_output if any([l.startswith(lk) for lk in self.log_keys])
+        ]
+        for lk in log_keys:
+            if lk in net_output and net_output[lk] is not None:
+                if not torch.is_tensor(net_output[lk]) or net_output[lk].numel() == 1:
+                    logging_output[lk] = float(net_output[lk])
+                elif lk.startswith("_"):
+                    logging_output[lk] = net_output[lk]
+                else:
+                    for i, v in enumerate(net_output[lk]):
+                        logging_output[f"{lk}_{i}"] = float(v)
 
         ctc_loss, lprobs = None, None
         if self.ctc_weight > 0 and net_output["ctc_out"]:

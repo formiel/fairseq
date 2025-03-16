@@ -170,11 +170,20 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
 
     pretrained_path: Optional[str] = field(
         default=None,
-        metadata={
-            "help": ("Scale the reconstruction loss by this constant. "
-                "If None, then scales by 1/sqrt(dim).")
-        }
+        metadata={"help": "path to load pretrained weights"}
     )
+
+    moex_args_ffn: Optional[str] = field(
+        default=None,
+        metadata={"help": "configuration of the modality experts at FFN module"},
+    )
+    moex_args_mha: Optional[str] = field(
+        default=None,
+        metadata={"help": "configuration of the modality experts at MHA module"},
+    )
+    freeze_backbone: Optional[bool] = False
+    freeze_decoder: Optional[bool] = False
+
 
 class CTCDecoder(nn.Module):
     def __init__(self, dictionary, embed_dim, dropout_rate=0.0, bias=True):
@@ -267,6 +276,26 @@ class PantagruelMultiModel(BaseFairseqModel):
                 ffn_targets=not cfg.end_of_block_targets,
             )
 
+        def make_block_moex(drop_path, dim=None, heads=None):
+            return AltBlockWithModalityExpert(
+                cfg.embed_dim if dim is None else dim,
+                cfg.num_heads if heads is None else heads,
+                cfg.mlp_ratio,
+                qkv_bias=True,
+                drop=cfg.encoder_dropout,
+                attn_drop=cfg.attention_dropout,
+                mlp_drop=cfg.activation_dropout,
+                post_mlp_drop=cfg.post_mlp_drop,
+                drop_path=drop_path,
+                norm_layer=make_layer_norm,
+                layer_norm_first=cfg.layer_norm_first,
+                ffn_targets=not cfg.end_of_block_targets,
+                dummy_factor=self.dummy_factor,
+                moex_args_ffn=getattr(cfg, "moex_args_ffn", None),
+                moex_args_mha=getattr(cfg, "moex_args_mha", None),
+                freeze_backbone=getattr(cfg, "freeze_backbone", False),
+            )
+
         token_type_embeddings = None
         self.uni_modalities = [m for m in self.modalities if "_" not in m.name]
         if cfg.use_token_type_embeddings:
@@ -276,6 +305,7 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         self.alibi_biases = {}
         self.modality_encoders = nn.ModuleDict()
+        # modalities: use uppercase for modules and lowercase for variables
         for mod in self.modalities:
             if "_" not in mod.name:
                 self.alibi_biases[mod.name] = {}
@@ -291,6 +321,10 @@ class PantagruelMultiModel(BaseFairseqModel):
                     token_type_embeddings,
                 )
                 self.modality_encoders[mod.name] = enc
+                if getattr(cfg, "freeze_decoder", False):
+                    logger.info("freezing freeze_decoder in modality encoders...")
+                    for param in enc.decoder.parameters():
+                        param.requires_grad = False
             else:
                 if not self.do_shallow_fusion:
                     self.modality_encoders[mod.name] = PantagruelFusionEncoder.build_dual_encoders_from_unimodal(
@@ -314,7 +348,7 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         dpr = np.linspace(cfg.start_drop_path_rate, cfg.end_drop_path_rate, cfg.depth)
 
-        self.blocks = nn.ModuleList([make_block(dpr[i]) for i in range(cfg.depth)])
+        self.blocks = nn.ModuleList([make_block_moex(dpr[i]) for i in range(cfg.depth)])
 
         self.norm = None
         if cfg.layer_norm_first:
@@ -639,7 +673,8 @@ class PantagruelMultiModel(BaseFairseqModel):
                         _x, lr = blk(
                             _x,
                             padding_mask=masked_padding_mask[_mod],
-                            alibi_bias=ab, 
+                            alibi_bias=ab,
+                            mode=_mod.upper(),
                         )
                         if features_only:
                             layer_results[_mod].append(lr)
@@ -679,6 +714,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                             _x_speech,
                             padding_mask=_speech_enc_out["padding_mask"],
                             alibi_bias=_alibi_bias,
+                            mode="AUDIO"
                         )
                     ctc_out["x"] = self.ctc_module(_x_speech)
                     ctc_out["padding_mask"] = _speech_enc_out["padding_mask"]
@@ -718,6 +754,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                                 _x_mod,
                                 padding_mask=_extractor_out_mod["padding_mask"],
                                 alibi_bias=_alibi_bias,
+                                mode=_mod
                             )
                         dual_encoder_outs[_mod.lower()] = _x_mod
                 if ft:
@@ -881,6 +918,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                         _ema_input_mod,
                         padding_mask=ema_padding_mask[_mod],
                         alibi_bias=ab,
+                        mode=_mod.upper(),
                     )
                     y[_mod].append(lr[:, extra_tokens[_mod] : ])
 
