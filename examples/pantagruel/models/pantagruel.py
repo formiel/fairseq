@@ -742,7 +742,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                         for i, blk in enumerate(self.blocks):
                             _alibi_bias = _extractor_out_mod.get("alibi_bias", None)
                             _alibi_scale = _extractor_out_mod.get("alibi_scale", None)
-                            if _alibi_bias is not None and alibi_scale[_mod] is not None:
+                            if _alibi_bias is not None and alibi_scale[_mod.lower()] is not None:
                                 scale = (
                                     _alibi_scale[i]
                                     if _alibi_scale.size(0) > 1
