@@ -1146,20 +1146,41 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         if not keep_decoder:
             self.shared_decoder = None
-
-        modality = modality.lower() if modality is not None else None
-        for k in list(self.modality_encoders.keys()):
-            if modality is not None and k.lower() != modality:
-                logger.info(f"Removing pre-trained models self.modality_encoders[{k}]")
-                del self.modality_encoders[k]
-            else:
-                self.modality_encoders[k].remove_pretraining_modules(
-                    keep_decoder=keep_decoder
-                )
-                if not keep_decoder:
-                    self.modality_encoders[k].decoder = None
         if self.ctc_module is not None:
             self.ctc_module = None
+
+        modality = modality.upper() if modality is not None else None
+        for k in list(self.modality_encoders.keys()):
+            if not keep_decoder:
+                self.modality_encoders[k].decoder = None
+
+        if modality:
+            self.keep_modules_by_name(modality)
+
+    def keep_modules_by_name(self, kept_modality):
+        modalities_to_remove = [mod for mod in list(self.modality_encoders.keys()) if mod != kept_modality.upper()]
+        logger.info(f"modalities_to_remove: {modalities_to_remove}")
+
+        for _mod_to_remove in modalities_to_remove:
+            to_delete = []
+            for name, module in list(self.named_modules()):
+                if _mod_to_remove in name:
+                    to_delete.append(name)
+
+            for name in to_delete:
+                parts = name.split(".")
+                parent_name = ".".join(parts[:-1])  # Parent module
+                child_name = parts[-1]  # Module to delete
+
+                if parent_name:
+                    parent_module = dict(self.named_modules()).get(parent_name, None)
+                    if (
+                        parent_module and hasattr(parent_module, "_modules") and child_name in parent_module._modules
+                    ):
+                        del parent_module._modules[child_name]
+                else:  # If it's a top-level module
+                    if child_name in self._modules:
+                        del self._modules[child_name]
 
     def merge_modality_experts(self, modality=None):
         if self.use_modality_experts_at_mha:

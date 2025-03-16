@@ -130,7 +130,8 @@ class Mlp(nn.Module):
         x_in = x
         x = experts_modules[mode](x)
         for _mod in remaining_modes:
-            x += self.dummy_factor * experts_modules[_mod](x_in.mean(dim=1)).unsqueeze(1)
+            if _mod in experts_modules:
+                x += self.dummy_factor * experts_modules[_mod](x_in.mean(dim=1)).unsqueeze(1)
         return x
 
     def forward(self, x, mode=None):
@@ -313,7 +314,8 @@ class AltAttentionWithExperts(nn.Module):
         x_in = x
         x = experts_modules[mode](x)
         for _mod in remaining_modes:
-            x += self.dummy_factor * experts_modules[_mod](x_in.mean(dim=1)).unsqueeze(1)
+            if _mod in experts_modules:
+                x += self.dummy_factor * experts_modules[_mod](x_in.mean(dim=1)).unsqueeze(1)
         return x
 
     def forward(self, x, padding_mask=None, alibi_bias=None, fast=True, mode=None):

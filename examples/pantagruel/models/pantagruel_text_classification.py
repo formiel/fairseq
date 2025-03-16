@@ -68,6 +68,7 @@ class PantagruelTextClassificationModel(BaseFairseqModel):
             pretrained_args = cfg.pretrained_model_args
 
         task = tasks.setup_task(pretrained_args.task)
+        pretrained_args.model.freeze_backbone = False
         model = task.build_model(pretrained_args.model, from_checkpoint=True)
 
         model.remove_pretraining_modules(modality="TEXT")
