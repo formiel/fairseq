@@ -478,9 +478,8 @@ class Wav2VecEncoder(FairseqEncoder):
             logger.info("Removing pre-trained modules...")
             model.remove_pretraining_modules(modality="audio")
             d = w2v_args.model.embed_dim
-            if hasattr(w2v_args.model, "use_modality_experts_at_mha"):
-                model.merge_modality_experts(modality="audio")
-                w2v_args.model.use_modality_experts_at_mha = False
+            # for name, param in model.named_parameters():
+            #     logger.info(f"[{name}]: {param.size() if isinstance(param, torch.Tensor) else param.keys()}")
 
         if state is not None and not cfg.no_pretrained_weights:
             if cfg.load_ema:
@@ -618,10 +617,16 @@ class Wav2VecEncoder(FairseqEncoder):
             res = self.w2v_model.extract_features(**w2v_args)
 
             x = res["x"]
-            padding_mask = res["padding_mask"]
+            padding_mask = (
+                res["padding_mask"] if isinstance(x, torch.Tensor) 
+                else res["padding_mask"]["audio"]
+            )
 
             # B x T x C -> T x B x C
-            x = x.transpose(0, 1)
+            x = (
+                x.transpose(0, 1) if isinstance(x, torch.Tensor) 
+                else x["audio"].transpose(0, 1)
+            )
 
         x = self.final_dropout(x)
 
