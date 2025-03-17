@@ -159,6 +159,8 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
     )
 
     do_shallow_fusion: bool = True
+    compute_cross_targets: Optional[bool] = False
+
     use_ctc_module: bool = False
     num_freeze_ctc_updates: int = 0
 
@@ -249,6 +251,7 @@ class PantagruelMultiModel(BaseFairseqModel):
         self.skip_mode = getattr(cfg, "skip_mode", None)
 
         self.do_shallow_fusion = getattr(cfg, "do_shallow_fusion", True)
+        self.compute_cross_targets = getattr(cfg, "compute_cross_targets", False)
 
         self.use_ctc_module = getattr(cfg, "use_ctc_module", False)
         self.num_freeze_ctc_updates = getattr(cfg, "num_freeze_ctc_updates", 0)
@@ -923,6 +926,18 @@ class PantagruelMultiModel(BaseFairseqModel):
                     y[_mod].append(lr[:, extra_tokens[_mod] : ])
 
                 y[_mod] = self.make_targets(y[_mod], self.average_top_k_layers[_mod])
+            
+            if len(current_modes) == 2 and self.compute_cross_targets:
+                # represent one modality using the other modality
+                y_new = {}
+                for i in range(2):
+                    query = y[current_modes[i]]
+                    key = value = y[current_modes[1-i]]
+                    attn_scores = F.softmax(
+                        query @ key.transpose(1, 2), dim=-1, dtype=torch.float32
+                    )
+                    y_new[current_modes[i]] = attn_scores @ value
+                y = y_new
 
         if self.cfg.clone_batch > 1:
             for _mod in current_modes:
