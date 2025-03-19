@@ -301,6 +301,7 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         token_type_embeddings = None
         self.uni_modalities = [m for m in self.modalities if "_" not in m.name]
+        logger.info(f"[Pretraining] self.uni_modalities: {self.uni_modalities}")
         if cfg.use_token_type_embeddings:
             token_type_embeddings = nn.Embedding(
                 len(self.uni_modalities), cfg.embed_dim
