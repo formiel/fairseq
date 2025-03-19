@@ -462,6 +462,10 @@ class Wav2VecEncoder(FairseqEncoder):
             d = w2v_args.model.encoder_embed_dim
         else:
             assert cfg.normalize
+            if hasattr(w2v_args.model, "freeze_backbone"):
+                logger.info(f"Unfreezing backbone for finetuning")
+                w2v_args.model.freeze_backbone = False
+
             task = tasks.setup_task(w2v_args.task, from_checkpoint=True)
             model = task.build_model(w2v_args.model, from_checkpoint=True)
 
@@ -589,6 +593,11 @@ class Wav2VecEncoder(FairseqEncoder):
                         "modality_encoders.AUDIO"
                     ):
                         del state["model"][k]
+
+            # for modality experts in PantagurelMulti
+            for k in list(state["model"].keys()):
+                if "TEXT" in k:
+                    del state["model"][k]
 
             print(model)
             model.load_state_dict(state["model"], strict=True)
