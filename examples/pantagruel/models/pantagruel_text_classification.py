@@ -71,7 +71,8 @@ class PantagruelTextClassificationModel(BaseFairseqModel):
         if hasattr(pretrained_args.model, "freeze_backbone"):
             pretrained_args.model.freeze_backbone = False
         model = task.build_model(pretrained_args.model, from_checkpoint=True)
-        logger.info(f"[Finetuning] uni_modalities: {model.uni_modalities}")
+        if hasattr(model, "uni_modalities"):
+            logger.info(f"[Finetuning] uni_modalities: {model.uni_modalities}")
 
         model.remove_pretraining_modules(modality="TEXT")
 
