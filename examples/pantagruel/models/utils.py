@@ -20,9 +20,6 @@ def _to_bf16(x, forward=True):
         return x.to(torch.float16)
 
 
-
-
-
 def load_all_pretrained_modules_to_model(
     model: nn.Module,
     checkpoint: str,

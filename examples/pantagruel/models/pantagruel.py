@@ -53,7 +53,7 @@ from examples.pantagruel.models.modalities.text_type import (
     TextTypeEncoder,
     PantagruelD2vTextConfig,
 )
-from examples.pantagruel.models.modules import AltBlockWithModalityExpert
+from examples.pantagruel.models.modules import AltBlockWithModalityExpert, MHAPooling
 from examples.pantagruel.models.utils import load_all_pretrained_modules_to_model
 
 
@@ -185,6 +185,11 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
     )
     freeze_backbone: Optional[bool] = False
     freeze_decoder: Optional[bool] = False
+
+    use_map_head_for_speech: Optional[bool] = False
+    num_map_heads: Optional[int] = 1
+    use_linear_head_for_text: Optional[bool]= False
+    num_freeze_sigloss_updates: int = 0
 
 
 class CTCDecoder(nn.Module):
@@ -341,7 +346,21 @@ class PantagruelMultiModel(BaseFairseqModel):
                         self.alibi_biases,
                         token_type_embeddings,
                     )
-        
+        self.aux_heads = None
+        use_map_head_for_speech = getattr(cfg, "use_map_head_for_speech", False)
+        use_linear_head_for_text = getattr(cfg, "use_linear_head_for_text", False)
+        self.num_freeze_sigloss_updates = getattr(cfg, "num_freeze_sigloss_updates", 0)
+        if use_map_head_for_speech or use_linear_head_for_text:
+            self.aux_heads = nn.ModuleDict()
+            if use_map_head_for_speech:
+                self.aux_heads["AUDIO"] = MHAPooling(
+                    cfg.embed_dim, getattr(cfg, "num_map_heads", 1)
+                )
+            if use_linear_head_for_text:
+                self.aux_heads["TEXT"] = nn.Linear(
+                    cfg.embed_dim, cfg.embed_dim
+                )
+
         self.ema = None
 
         self.average_top_k_layers = eval(cfg.average_top_k_layers)
@@ -556,6 +575,172 @@ class PantagruelMultiModel(BaseFairseqModel):
             ]
         return extractor, remaining_extractor_names
 
+    def forward_ctc(self, extractor_out, padding_mask):
+        ctc_out = {}
+        ft = self.num_freeze_ctc_updates <= self.num_updates
+        audio_extractor = self.modality_encoders["AUDIO"]
+        
+        with torch.no_grad() if not ft else contextlib.ExitStack():
+            _speech_enc_out = audio_extractor.contextualized_features(
+                extractor_out["local_features"]["audio"],
+                padding_mask,
+                mask=False,
+                remove_masked=False,
+            )
+            _x_speech = _speech_enc_out["x"] # BxLxD
+            
+            # Forward through Transformer blocks
+            for i, blk in enumerate(self.blocks):
+                _alibi_bias = _speech_enc_out.get("alibi_bias", None)
+                _alibi_scale = _speech_enc_out.get("alibi_scale", None)
+                
+                if _alibi_bias is not None and _alibi_scale is not None:
+                    scale = (
+                        _alibi_scale[i]
+                        if _alibi_scale.size(0) > 1
+                        else _alibi_scale.squeeze(0)
+                    )
+                    _alibi_bias = _alibi_bias * scale.type_as(_alibi_bias)
+
+                _x_speech, _ = blk(
+                    _x_speech,
+                    padding_mask=_speech_enc_out["padding_mask"],
+                    alibi_bias=_alibi_bias,
+                    mode="AUDIO"
+                )
+            ctc_out["x"] = self.ctc_module(_x_speech)
+            ctc_out["padding_mask"] = _speech_enc_out["padding_mask"]
+            ctc_out["is_frozen"] = not ft
+            ctc_out["_x_speech"] = _x_speech
+
+        return ctc_out
+
+    def forward_audio_map(self, extractor_out, padding_mask, ctc_out):
+        ft = self.num_freeze_sigloss_updates <= self.num_updates
+
+        if ctc_out and ft != ctc_out["is_frozen"]:
+            _x_speech = ctc_out["_x_speech"]
+            padding_mask = ctc_out["padding_mask"]
+        else:
+            # forward
+            audio_extractor = self.modality_encoders["AUDIO"]
+            with torch.no_grad() if not ft else contextlib.ExitStack():
+                _speech_enc_out = audio_extractor.contextualized_features(
+                    extractor_out["local_features"]["audio"],
+                    padding_mask,
+                    mask=False,
+                    remove_masked=False,
+                )
+                _x_speech = _speech_enc_out["x"] # BxLxD
+                
+                # Forward through Transformer blocks
+                for i, blk in enumerate(self.blocks):
+                    _alibi_bias = _speech_enc_out.get("alibi_bias", None)
+                    _alibi_scale = _speech_enc_out.get("alibi_scale", None)
+                    
+                    if _alibi_bias is not None and _alibi_scale is not None:
+                        scale = (
+                            _alibi_scale[i]
+                            if _alibi_scale.size(0) > 1
+                            else _alibi_scale.squeeze(0)
+                        )
+                        _alibi_bias = _alibi_bias * scale.type_as(_alibi_bias)
+
+                    _x_speech, _ = blk(
+                        _x_speech,
+                        padding_mask=_speech_enc_out["padding_mask"],
+                        alibi_bias=_alibi_bias,
+                        mode="AUDIO"
+                    )
+                padding_mask = _speech_enc_out["padding_mask"]
+        
+        # forward to MAP head
+        with torch.no_grad() if not ft else contextlib.ExitStack():
+            _aux_head_audio = self.aux_heads["AUDIO"](
+                        _x_speech, padding_mask=padding_mask
+                    ) # B x D
+
+        return _aux_head_audio
+
+    def forward_dual_encoder(
+        self, extractor_out, source, mode, ctc_out
+    ):
+        dual_encoder_outs = {}
+        ft = self.num_freeze_ot_updates <= self.num_updates
+        _modes = mode.split("_")
+        if ctc_out and ft != ctc_out["is_frozen"]:
+            dual_encoder_outs["audio"] = ctc_out["_x_speech"]
+            _modes = ["TEXT"]
+
+        with torch.no_grad() if not ft else contextlib.ExitStack():
+            for _mod in _modes:
+                _extractor = self.modality_encoders[_mod]
+                _extractor_out_mod = _extractor.contextualized_features(
+                    extractor_out["local_features"][_mod.lower()],
+                    source[_mod.lower()]["padding_mask"],
+                    mask=False,
+                    remove_masked=False,
+                )
+                _x_mod = _extractor_out_mod["x"]
+                for i, blk in enumerate(self.blocks):
+                    _alibi_bias = _extractor_out_mod.get("alibi_bias", None)
+                    _alibi_scale = _extractor_out_mod.get("alibi_scale", None)
+                    if _alibi_bias is not None and _alibi_scale[_mod.lower()] is not None:
+                        scale = (
+                            _alibi_scale[i]
+                            if _alibi_scale.size(0) > 1
+                            else _alibi_scale.squeeze(0)
+                        )
+                        _alibi_bias = _alibi_bias * scale.type_as(_alibi_bias)
+
+                    _x_mod, _ = blk(
+                        _x_mod,
+                        padding_mask=_extractor_out_mod["padding_mask"],
+                        alibi_bias=_alibi_bias,
+                        mode=_mod
+                    )
+                dual_encoder_outs[_mod.lower()] = _x_mod
+        dual_encoder_outs["is_frozen"] = not ft
+        return dual_encoder_outs
+
+    def forward_text_head(self, extractor_out, padding_mask, dual_encoder_outs):
+        ft = self.num_freeze_sigloss_updates <= self.num_updates
+
+        if dual_encoder_outs and ft != dual_encoder_outs["is_frozen"]:
+            _x_text = dual_encoder_outs["text"]
+        else:
+            with torch.no_grad() if not ft else contextlib.ExitStack():
+                text_extractor = self.modality_encoders[_mod]
+                _text_extractor_out = text_extractor.contextualized_features(
+                    extractor_out["local_features"]["text"],
+                    padding_mask,
+                    mask=False,
+                    remove_masked=False,
+                )
+                _x_text = _text_extractor_out["x"]
+                for i, blk in enumerate(self.blocks):
+                    _alibi_bias = _text_extractor_out.get("alibi_bias", None)
+                    _alibi_scale = _text_extractor_out.get("alibi_scale", None)
+                    if _alibi_bias is not None and _alibi_scale["text"] is not None:
+                        scale = (
+                            _alibi_scale[i]
+                            if _alibi_scale.size(0) > 1
+                            else _alibi_scale.squeeze(0)
+                        )
+                        _alibi_bias = _alibi_bias * scale.type_as(_alibi_bias)
+
+                    _x_text, _ = blk(
+                        _x_text,
+                        padding_mask=_text_extractor_out["padding_mask"],
+                        alibi_bias=_alibi_bias,
+                        mode="TEXT"
+                    )
+        # forward to MAP head
+        with torch.no_grad() if not ft else contextlib.ExitStack():
+            _aux_head_text = self.aux_heads["TEXT"](_x_text[:,0,:]) # B x D
+
+        return _aux_head_text
+
     def forward(
         self,
         source,
@@ -684,87 +869,31 @@ class PantagruelMultiModel(BaseFairseqModel):
                             layer_results[_mod].append(lr)
             x[_mod] = _x
 
-        if self.norm is not None:
+        if self.norm:
             for _mod, _x in x.items():
                 x[_mod] = self.norm(_x)
 
-        _x_speech = None
         ctc_out, dual_encoder_outs = {}, {}
+        aux_heads_out = {}
         if mode == "AUDIO_TEXT":
             if self.ctc_module is not None:
-                ft = self.num_freeze_ctc_updates <= self.num_updates
-                _extractor = self.modality_encoders["AUDIO"]
-                with torch.no_grad() if not ft else contextlib.ExitStack():
-                    _speech_enc_out = _extractor.contextualized_features(
-                            extractor_out["local_features"]["audio"],
-                            source["audio"]["padding_mask"],
-                            mask=False,
-                            remove_masked=False,
-                        ) # BxLxD
-                    _x_speech = _speech_enc_out["x"]
-                    # forward to Transformer block
-                    for i, blk in enumerate(self.blocks):
-                        _alibi_bias = _speech_enc_out.get("alibi_bias", None)
-                        _alibi_scale = _speech_enc_out.get("alibi_scale", None)
-                        if _alibi_bias is not None and alibi_scale["audio"] is not None:
-                            scale = (
-                                _alibi_scale[i]
-                                if _alibi_scale.size(0) > 1
-                                else _alibi_scale.squeeze(0)
-                            )
-                            _alibi_bias = _alibi_bias * scale.type_as(_alibi_bias)
+                ctc_out = self.forward_ctc(
+                    extractor_out, source["audio"]["padding_mask"]
+                )
 
-                        _x_speech, _ = blk(
-                            _x_speech,
-                            padding_mask=_speech_enc_out["padding_mask"],
-                            alibi_bias=_alibi_bias,
-                            mode="AUDIO"
-                        )
-                    ctc_out["x"] = self.ctc_module(_x_speech)
-                    ctc_out["padding_mask"] = _speech_enc_out["padding_mask"]
-                    if ft:
-                        ctc_out["is_frozen"] = False
-                    else:
-                        ctc_out["is_frozen"] = True
-            
             if self.extract_encoder_outs:
-                ft = self.num_freeze_ot_updates <= self.num_updates
-                _modes = mode.split("_")
-                if _x_speech is not None:
-                    dual_encoder_outs["audio"] = _x_speech
-                    _modes = ["TEXT"]
-                with torch.no_grad() if not ft else contextlib.ExitStack():
-                    for _mod in _modes:
-                        _extractor = self.modality_encoders[_mod]
-                        _extractor_out_mod = _extractor.contextualized_features(
-                            extractor_out["local_features"][_mod.lower()],
-                            source[_mod.lower()]["padding_mask"],
-                            mask=False,
-                            remove_masked=False,
-                        )
-                        _x_mod = _extractor_out_mod["x"]
-                        for i, blk in enumerate(self.blocks):
-                            _alibi_bias = _extractor_out_mod.get("alibi_bias", None)
-                            _alibi_scale = _extractor_out_mod.get("alibi_scale", None)
-                            if _alibi_bias is not None and alibi_scale[_mod.lower()] is not None:
-                                scale = (
-                                    _alibi_scale[i]
-                                    if _alibi_scale.size(0) > 1
-                                    else _alibi_scale.squeeze(0)
-                                )
-                                _alibi_bias = _alibi_bias * scale.type_as(_alibi_bias)
+                dual_encoder_outs = self.forward_dual_encoder(
+                    extractor_out, source, mode, ctc_out
+                )
 
-                            _x_mod, _ = blk(
-                                _x_mod,
-                                padding_mask=_extractor_out_mod["padding_mask"],
-                                alibi_bias=_alibi_bias,
-                                mode=_mod
-                            )
-                        dual_encoder_outs[_mod.lower()] = _x_mod
-                if ft:
-                    dual_encoder_outs["is_frozen"] = False
-                else:
-                    dual_encoder_outs["is_frozen"] = True
+            if self.aux_heads is not None:
+                aux_heads_out["audio"] = self.forward_audio_map(
+                    extractor_out, source["audio"]["padding_mask"], ctc_out
+                )
+                aux_heads_out["text"] = self.forward_text_head(
+                    extractor_out,  source["text"]["padding_mask"], dual_encoder_outs
+                )
+                aux_heads_out["is_frozen"] = (self.num_updates <= self.num_freeze_sigloss_updates)
 
         if features_only:
             if remove_extra_tokens:
@@ -962,6 +1091,7 @@ class PantagruelMultiModel(BaseFairseqModel):
             "sample_size": sample_sizes,
             "ctc_out": ctc_out,
             "dual_encoders_out": dual_encoder_outs,
+            "aux_heads_out": aux_heads_out,
         }
 
         if self.cfg.d2v_loss > 0:

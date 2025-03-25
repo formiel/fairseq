@@ -35,6 +35,47 @@ def _ntuple(n):
 to_2tuple = _ntuple(2)
 
 
+# based on 
+# https://github.com/juho-lee/set_transformer/blob/73432c640ac78140496d6738416c54d32c686d65/modules.py#L55C1-L63C59 
+# and https://github.com/huggingface/transformers/blob/1a374799cedcf7a7df14256226a7576c324a42fa/src/transformers/models/siglip2/modeling_siglip2.py#L1149
+class MHAPooling(nn.Module):
+    def __init__(self, dim, num_heads):
+        super(MHAPooling, self).__init__()
+        self.S = nn.Parameter(torch.Tensor(1, 1, dim))
+        self.attn = torch.nn.MultiheadAttention(dim, num_heads, batch_first=True)
+        self.layernorm = nn.LayerNorm(dim, eps=1e-6)
+        self.mlp = Mlp(
+            dim, act_layer=nn.GELU(approximate="tanh"), bias=True
+        )
+        self.num_heads = num_heads
+        self._init_weights()
+
+    def _init_weights(self):
+        nn.init.xavier_uniform_(self.S.data)
+        nn.init.xavier_uniform_(self.attn.in_proj_weight.data)
+        nn.init.zeros_(self.attn.in_proj_bias.data)
+
+        nn.init.xavier_uniform_(self.mlp.fc1.weight)
+        nn.init.xavier_uniform_(self.mlp.fc2.weight)
+        nn.init.normal_(self.mlp.fc1.bias, std=1e-6)
+        nn.init.normal_(self.mlp.fc2.bias, std=1e-6)
+
+    def forward(self, X, padding_mask=None):
+        batch_size = X.size()[0]
+        query = self.S.repeat(batch_size, 1, 1)
+
+        if padding_mask is not None:
+            target_len, source_len = query.shape[1], X.shape[1]
+            padding_mask = padding_mask.repeat(1, self.num_heads, target_len, 1)
+            padding_mask = padding_mask.reshape(-1, target_len, source_len)
+
+        X = self.attn(query, X, X, attn_mask=padding_mask)[0]
+
+        residual = X
+        X = residual + self.mlp(self.layernorm(X)) # Bx1xD
+        return X.squeeze(1)
+
+
 class ModalityExpert(nn.Module):
     def __init__(
         self, in_dim: int, out_dim: int, rank: int, 
@@ -43,22 +84,22 @@ class ModalityExpert(nn.Module):
         super().__init__()
         self.scaling = alpha / rank
 
-        self.moex_A = nn.Linear(in_features=in_dim, out_features=rank, bias=False)
-        nn.init.kaiming_uniform_(self.moex_A.weight, a=math.sqrt(5))
+        # self.moex_A = nn.Linear(in_features=in_dim, out_features=rank, bias=False)
+        # nn.init.kaiming_uniform_(self.moex_A.weight, a=math.sqrt(5))
+        # self.moex_B = nn.Linear(in_features=rank, out_features=out_dim, bias=False)
+        # nn.init.zeros_(self.moex_B.weight)
 
-        self.moex_B = nn.Linear(in_features=rank, out_features=out_dim, bias=False)
-        nn.init.zeros_(self.moex_B.weight)
+        self.moex_A = nn.Parameter(torch.zeros(in_dim, rank))
+        self.moex_B = nn.Parameter(torch.zeros(rank, out_dim))
+        nn.init.kaiming_uniform_(self.moex_A, a=math.sqrt(5))
         
-        self.moex_ln = None
-        if ln:
-            self.moex_ln = nn.LayerNorm(out_dim)
+        self.moex_ln = nn.LayerNorm(out_dim) if ln else None
 
     def forward(self, x):
-        # W = self.moex_A @ self.moex_B
-        # x =  x @ W
-        x = self.scaling * self.moex_B(self.moex_A(x))
-        if self.moex_ln:
-            x = self.moex_ln(x)
+        # x = self.scaling * self.moex_B(self.moex_A(x))
+        W = self.moex_A @ self.moex_B
+        x = x @ W
+        x = self.moex_ln(x) if self.moex_ln else x
         return x
 
 
@@ -88,7 +129,7 @@ class Mlp(nn.Module):
         linear_layer = partial(nn.Conv2d, kernel_size=1) if use_conv else nn.Linear
 
         self.fc1 = linear_layer(in_features, hidden_features, bias=bias[0])
-        self.act = act_layer()
+        self.act = act_layer() if act_layer is nn.GELU else act_layer
         self.drop1 = nn.Dropout(drop_probs[0])
         self.norm = norm_layer(hidden_features) if norm_layer is not None else nn.Identity()
         self.fc2 = linear_layer(hidden_features, out_features, bias=bias[1])
