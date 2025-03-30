@@ -147,6 +147,9 @@ model:
 
   use_token_type_embeddings: true
 
+  pretrained_path: /linkhome/rech/genlig01/umz16dj/experiments/fairseq_checkpoints/pantagruel/speech-text/pretraining/base_speech_text_maxtok600K_bsz4_maxupdate1.2M_wu12K_ema_end300K_targets_audio8_text12_prenet_audio6L_FR_gpu_p6_gpus16_mls1K_wiki19/checkpoint_last.pt
+  skip_pretrained_module: decoder
+
   # shared_decoder:
   #   input_dropout: 0.1
   #   decoder_dim: 384

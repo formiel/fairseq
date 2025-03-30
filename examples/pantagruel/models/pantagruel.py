@@ -174,6 +174,10 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
         default=None,
         metadata={"help": "path to load pretrained weights"}
     )
+    skip_pretrained_module: Optional[str] = field(
+        default="",
+        metadata={"help": "modules to skip when pre-training"}
+    )
 
     moex_args_ffn: Optional[str] = field(
         default=None,
@@ -416,14 +420,17 @@ class PantagruelMultiModel(BaseFairseqModel):
         logger.info(f"pretrained_path: {pretrained_path}")
         if pretrained_path is not None:
             load_all_pretrained_modules_to_model(
-                self.modality_encoders, pretrained_path
+                self.modality_encoders, pretrained_path,
+                skip_module=getattr(cfg, "skip_pretrained_module", "")
             )
             load_all_pretrained_modules_to_model(
-                self.blocks, pretrained_path
+                self.blocks, pretrained_path,
+                skip_module=getattr(cfg, "skip_pretrained_module", "")
             )
             if self.ctc_module is not None:
                 load_all_pretrained_modules_to_model(
-                self.ctc_module, pretrained_path
+                self.ctc_module, pretrained_path,
+                skip_module=getattr(cfg, "skip_pretrained_module", "")
             )
 
         self.num_updates = 0
