@@ -692,7 +692,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                 for i, blk in enumerate(self.blocks):
                     _alibi_bias = _extractor_out_mod.get("alibi_bias", None)
                     _alibi_scale = _extractor_out_mod.get("alibi_scale", None)
-                    if _alibi_bias is not None and _alibi_scale[_mod.lower()] is not None:
+                    if _alibi_bias is not None and _alibi_scale is not None:
                         scale = (
                             _alibi_scale[i]
                             if _alibi_scale.size(0) > 1
@@ -717,7 +717,7 @@ class PantagruelMultiModel(BaseFairseqModel):
             _x_text = dual_encoder_outs["text"]
         else:
             with torch.no_grad() if not ft else contextlib.ExitStack():
-                text_extractor = self.modality_encoders[_mod]
+                text_extractor = self.modality_encoders["TEXT"]
                 _text_extractor_out = text_extractor.contextualized_features(
                     extractor_out["local_features"]["text"],
                     padding_mask,
@@ -728,7 +728,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                 for i, blk in enumerate(self.blocks):
                     _alibi_bias = _text_extractor_out.get("alibi_bias", None)
                     _alibi_scale = _text_extractor_out.get("alibi_scale", None)
-                    if _alibi_bias is not None and _alibi_scale["text"] is not None:
+                    if _alibi_bias is not None and _alibi_scale is not None:
                         scale = (
                             _alibi_scale[i]
                             if _alibi_scale.size(0) > 1
