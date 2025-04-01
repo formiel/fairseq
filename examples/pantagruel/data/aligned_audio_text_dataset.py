@@ -266,7 +266,9 @@ class AlignedSpeechTextDataset(FairseqDataset):
         masks = [mask_generator() for _ in range(self.clone_batch)]
         max_length = max(mask.shape[0] for mask in masks)
         padded_masks = torch.stack([F.pad(torch.tensor(mask), (0, max_length - mask.shape[0])) for mask in masks])
-        text_item["precomputed_mask"] = torch.tensor(padded_masks.clone()) # clone_batch x len
+        text_item["precomputed_mask"] = torch.tensor(
+            padded_masks.clone().detach().requires_grad_(True)
+        ) # clone_batch x len
 
         # mask = create_single_mask(
         #     sz, self.cfg.text.mask_prob, self.cfg.text.mask_multiple_length,
