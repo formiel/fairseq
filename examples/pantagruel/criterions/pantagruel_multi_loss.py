@@ -22,6 +22,10 @@ from fairseq.logging.meters import safe_round
 from examples.pantagruel.data.utils import get_random_crops, create_negative_pairs
 
 try:
+    from open_clip.loss import SigLipLoss
+except ImportError:
+    raise ImportError("The 'open_clip' library is not installed.")
+try:
     from geomloss import SamplesLoss
 except ImportError:
     raise ImportError("The 'geomloss' library is not installed. Please install it by running 'pip install geomloss'.")
@@ -85,12 +89,23 @@ class PantagruelMultiCriterion(FairseqCriterion):
 
         self.siglip_weight = siglip_weight
         self.logit_scale, self.logit_bias = 0, 0
+        self.siglip_loss = None
         if self.siglip_weight > 0.0:
             self.logit_scale = nn.Parameter(torch.randn(1))
             self.logit_bias = nn.Parameter(torch.randn(1))
-        
+            rank = dist.get_rank()
+            world_size = dist.get_world_size()
+            logger.info(f"initializing SigLipLoss for rank [{rank}] / [{world_size}]")
+            self.siglip_loss = SigLipLoss(
+                                rank=rank,
+                                world_size=world_size,
+                                dist_impl="bidir",
+                            )
         logger.info(
-            f"data2vec={self.d2v_weight}, OT={self.ot_weight}, SigLIP={self.siglip_weight}"
+            f"data2vec={self.d2v_weight}, "
+            f"ctc_weight={self.ctc_weight}, "
+            f"OT={self.ot_weight}, "
+            f"SigLIP={self.siglip_weight}"
         )
 
     def forward(self, model, sample, reduce=True):
@@ -127,7 +142,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
                     l = l.sum()
                 logging_output[f"loss_d2v_{lk}"] = l.item()
         for k, v in net_output["sample_size"].items():
-            logging_output[f"sample_size_{k}"] = v
+            logging_output[f"sample_size_{k.upper()}"] = v
 
         log_keys = [
             l for l in net_output if any([l.startswith(lk) for lk in self.log_keys])
@@ -147,7 +162,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
             ctc_loss, lprobs, input_lengths = self.compute_ctc_loss(
                 net_output["ctc_out"], net_input
             )
-            logging_output["loss_ctc"] = self.ctc_weight * ctc_loss
+            logging_output["loss_ctc_AUDIO"] = self.ctc_weight * ctc_loss
 
             if not net_output["ctc_out"]["is_frozen"]:
                 loss = loss + self.ctc_weight * ctc_loss
@@ -166,20 +181,18 @@ class PantagruelMultiCriterion(FairseqCriterion):
             if not net_output["dual_encoders_out"]["is_frozen"]:
                 ot_loss = self.compute_ot_loss(net_output["dual_encoders_out"])
                 loss = loss + self.ot_weight * ot_loss
-                logging_output["loss_ot"] = self.ot_weight * ot_loss
+                logging_output["loss_ot_ALIGNED"] = self.ot_weight * ot_loss
 
         if self.siglip_weight > 0 and net_output["aux_heads_out"]:
             if not net_output["aux_heads_out"]["is_frozen"]:
                 siglip_loss = self.compute_siglip_loss(net_output["aux_heads_out"])
                 loss = loss + self.siglip_weight * siglip_loss
-                logging_output["loss_siglip"] = self.siglip_weight * siglip_loss
+                logging_output["loss_siglip_ALIGNED"] = self.siglip_weight * siglip_loss
 
         logging_output["loss"] = loss.data # update loss
 
         return loss, sample_size, logging_output
 
-    # based on original implementation in the SigLIP paper:  
-    # https://github.com/google-research/big_vision/blob/6d6c28a9634fd2f48f0f505f112d063dfc9bdf96/big_vision/trainers/proj/image_text/_deprecated_contrastive.py#L168C1-L200C57
     def compute_siglip_loss(self, aux_heads_out):
         # aux_heads_out: {"audio": BxD, "text": BxD}
         z_speech = aux_heads_out["audio"]
@@ -187,39 +200,10 @@ class PantagruelMultiCriterion(FairseqCriterion):
         z_speech = F.normalize(z_speech, p=2, dim=-1)
         z_text = F.normalize(z_text, p=2, dim=-1)
 
-        current_device = z_speech.device
-        per_gpu_bsz = z_speech.size()[0]
-
-        def get_labels(on_same_device):
-            if on_same_device:
-                eye = torch.eye(per_gpu_bsz, device=current_device)
-                labels = 2 * eye - torch.ones(per_gpu_bsz, device=current_device)
-            else:
-                labels = - torch.ones(per_gpu_bsz, device=current_device)
-            return labels
-
-        def compute_device_loss(zs, zt, on_same_device):
-            logits = torch.mm(zs, zt.T)  # (B, D) @ (D, B) -> (B, B)
-            logits = logits * self.logit_scale.exp() + self.logit_bias
-
-            labels = get_labels(on_same_device=on_same_device)
-            loss = F.logsigmoid(labels * logits)
-            return -loss.sum()
-
-        # Gather text embeddings from all devices
-        z_text_gathered = gather_tensors_list(z_text)
-        world_size = dist.get_world_size()
-        rank = dist.get_rank()
-
-        loss_total = 0
-        for i in range(world_size):
-            per_device_loss = compute_device_loss(
-                z_speech, z_text_gathered[i], 
-                on_same_device=(i==rank)
-            )
-            loss_total += per_device_loss
-
-        return loss_total
+        loss = self.siglip_loss(
+            z_speech, z_text, self.logit_scale.exp(), logit_bias=self.logit_bias 
+        )
+        return loss
 
     def compute_ot_loss(self, dual_encoders_out):
         #TODO: OT with positional encoding!
@@ -341,22 +325,22 @@ class PantagruelMultiCriterion(FairseqCriterion):
         if len(loss_keys) >= 1:
             for lk in loss_keys:
                 mod = (
-                    "AUDIO" if "ctc" in lk or "audio" in lk 
-                    else "AUDIO_TEXT" if "ot" in lk or "siglip" in lk
+                    "AUDIO" if "AUDIO" in lk 
+                    else "AUDIO_TEXT" if "ALIGNED" in lk
                     else "TEXT"
                 )
-                _loss = utils.item(sum(log.get(lk, 0) for log in logging_outputs))
+                _loss_sum = utils.item(sum(log.get(lk, 0) for log in logging_outputs))
                 _sample_size = (
                     utils.item(
-                        sum(
-                            log.get(f"sample_size_{mod.lower()}", 0) 
-                            for log in logging_outputs
-                        )
-                    ) if "_" not in mod else utils.item(
                         sum(log.get("nsentences", 0) for log in logging_outputs)
-                    )
+                    ) if mod == "AUDIO_TEXT" else
+                        utils.item(
+                            sum(
+                                log.get(f"sample_size_{mod}", 0) for log in logging_outputs
+                            )
+                        )
                 )
-                metrics.log_scalar(lk, _loss / _sample_size, _sample_size, round=3)
+                metrics.log_scalar(lk, _loss_sum / _sample_size, _sample_size, round=3)
                 metrics.log_scalar(f"sample_size_{mod}", _sample_size)
 
         ntokens = utils.item(sum(log.get("ntokens", 0) for log in logging_outputs))
@@ -435,16 +419,3 @@ class PantagruelMultiCriterion(FairseqCriterion):
         to True will improves distributed training speed.
         """
         True
-
-
-@torch.no_grad()
-def gather_tensors_list(z: torch.Tensor):
-    """
-    Performs all_gather operation on the provided tensors.
-    *** Warning ***: torch.distributed.all_gather has no gradient.
-    """
-    gathered_zs = [torch.zeros_like(z)
-        for _ in range(dist.get_world_size())]
-    dist.all_gather(tensor_list=gathered_zs, tensor=z.contiguous())
-    gathered_zs[dist.get_rank()] = z
-    return gathered_zs
