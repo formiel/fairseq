@@ -21,10 +21,10 @@ from fairseq.dataclass import FairseqDataclass
 from fairseq.logging.meters import safe_round
 from examples.pantagruel.data.utils import get_random_crops, create_negative_pairs
 
-try:
-    from open_clip.loss import SigLipLoss
-except ImportError:
-    raise ImportError("The 'open_clip' library is not installed.")
+# try:
+#     from open_clip.loss import SigLipLoss
+# except ImportError:
+#     raise ImportError("The 'open_clip' library is not installed.")
 try:
     from geomloss import SamplesLoss
 except ImportError:
@@ -93,14 +93,14 @@ class PantagruelMultiCriterion(FairseqCriterion):
         if self.siglip_weight > 0.0:
             self.logit_scale = nn.Parameter(torch.randn(1))
             self.logit_bias = nn.Parameter(torch.randn(1))
-            rank = dist.get_rank()
-            world_size = dist.get_world_size()
-            logger.info(f"initializing SigLipLoss for rank [{rank}] / [{world_size}]")
-            self.siglip_loss = SigLipLoss(
-                                rank=rank,
-                                world_size=world_size,
-                                dist_impl="bidir",
-                            )
+            # rank = dist.get_rank()
+            # world_size = dist.get_world_size()
+            # logger.info(f"initializing SigLipLoss for rank [{rank}] / [{world_size}]")
+            # self.siglip_loss = SigLipLoss(
+            #                     rank=rank,
+            #                     world_size=world_size,
+            #                     dist_impl="gather",
+            #                 )
         logger.info(
             f"data2vec={self.d2v_weight}, "
             f"ctc_weight={self.ctc_weight}, "
@@ -200,10 +200,60 @@ class PantagruelMultiCriterion(FairseqCriterion):
         z_speech = F.normalize(z_speech, p=2, dim=-1)
         z_text = F.normalize(z_text, p=2, dim=-1)
 
-        loss = self.siglip_loss(
-            z_speech, z_text, self.logit_scale.exp(), logit_bias=self.logit_bias 
-        )
-        return loss
+        # # using open_clip implementation
+        # loss = self.siglip_loss(
+        #     z_speech, z_text, self.logit_scale.exp(), logit_bias=self.logit_bias 
+        # )
+
+        z_speech = aux_heads_out["audio"]
+        z_text = aux_heads_out["text"]
+        z_speech = F.normalize(z_speech, p=2, dim=-1)
+        z_text = F.normalize(z_text, p=2, dim=-1)
+
+        def get_labels(on_same_device):
+            per_gpu_bsz = z_speech.size()[0]
+            if on_same_device:
+                eye = torch.eye(per_gpu_bsz, device=z_speech.device)
+                labels = 2 * eye - torch.ones(per_gpu_bsz, device=z_speech.device)
+            else:
+                labels = -1
+            return labels
+
+        def compute_device_loss(zs, zt, on_same_device):
+            logits = torch.mm(zs, zt.T)  # (B, D) @ (D, B) -> (B, B)
+            logits = logits * self.logit_scale.exp() + self.logit_bias
+
+            labels = get_labels(on_same_device=on_same_device)
+            loss = F.logsigmoid(labels * logits)
+            return -loss.sum()
+
+        # Gather text embeddings from all devices
+        z_text_gathered = gather_tensors_with_padding(z_text)
+        world_size = dist.get_world_size()
+        rank = dist.get_rank()
+        
+        # z_text_gathered = None
+        # if rank == 0:
+        #     z_text_gathered = [torch.zeros_like(z_text) for _ in range(world_size)]
+        # dist.gather(z_text, gather_list=z_text_gathered, dst=0)
+        # if rank == 0:
+        #     z_text_gathered = torch.stack(z_text_gathered, dim=0)
+        #     logger.info(f"z_text_gathered: {z_text_gathered.size()}")
+        #     dist.broadcast(z_text_gathered, src=0)
+        # dist.barrier()
+        # logger.info(f"Rank {rank} received broadcasted tensor: {z_text_gathered.size()}")
+
+        # z_text_gathered = torch.distributed.nn.functional.all_gather(z_text) # tuple
+ 
+        loss_total = 0
+        for i in range(world_size):
+            per_device_loss = compute_device_loss(
+                z_speech, z_text_gathered[i],
+                on_same_device=(i==rank)
+            )
+            loss_total += per_device_loss
+
+        return loss_total
 
     def compute_ot_loss(self, dual_encoders_out):
         #TODO: OT with positional encoding!
@@ -419,3 +469,30 @@ class PantagruelMultiCriterion(FairseqCriterion):
         to True will improves distributed training speed.
         """
         True
+
+
+def gather_tensors_with_padding(tensor):
+    """Gather tensors of different batch sizes across ranks."""
+    world_size = dist.get_world_size()
+    local_bsz = tensor.shape[0]
+
+    # gather the batch size across all devices
+    local_shape = torch.tensor([local_bsz], device=tensor.device)
+    gathered_shapes = [torch.zeros_like(local_shape) for _ in range(world_size)]
+    dist.all_gather(gathered_shapes, local_shape)
+
+    gathered_shapes = torch.stack(gathered_shapes).cpu()
+    max_size = gathered_shapes.max().item()
+
+    # pad tensor to the max size
+    padded_tensor = torch.zeros((max_size, *tensor.shape[1:]), dtype=tensor.dtype, device=tensor.device)
+    padded_tensor[:local_bsz] = tensor
+
+    # gather padded tensors
+    gathered_tensors = [torch.zeros_like(padded_tensor) for _ in range(world_size)]
+    dist.all_gather(gathered_tensors, padded_tensor)
+
+    # remove padding after gathering
+    gathered_tensors = [g[:s.item()] for g, s in zip(gathered_tensors, gathered_shapes)]
+
+    return gathered_tensors

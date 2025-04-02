@@ -21,7 +21,7 @@ common:
 
 checkpoint:
   # save_interval: 1
-  save_interval_updates: 40000
+  save_interval_updates: 5000
   # keep_interval_updates: 1
   # no_epoch_checkpoints: true
   # keep_best_checkpoints: 10
@@ -64,7 +64,7 @@ task:
       mask_multiple_length: 3
 
 dataset:
-  num_workers: 6
+  num_workers: 1
   max_tokens: 600000
   # batch_size: 16
   batch_size: 4
@@ -72,7 +72,7 @@ dataset:
   skip_invalid_size_inputs_valid_test: true
   # validate_interval: 1
   # required_batch_size_multiple: 1
-  # disable_validation: true
+  disable_validation: true
   # train_subset: train
   # valid_subset: valid
 
