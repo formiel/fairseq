@@ -174,9 +174,17 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
         default=None,
         metadata={"help": "path to load pretrained weights"}
     )
-    skip_pretrained_module: Optional[str] = field(
+    skip_pretrained_modules: Optional[str] = field(
         default="",
-        metadata={"help": "modules to skip when pre-training"}
+        metadata={"help": "modules to skip when pre-training, seperated by commas"}
+    )
+    pretrained_path_overlay: Optional[str] = field(
+        default=None,
+        metadata={"help": "path to load pretrained weights"}
+    )
+    skip_pretrained_modules_overlay: Optional[str] = field(
+        default="",
+        metadata={"help": "modules to skip when pre-training, , seperated by commas"}
     )
 
     moex_args_ffn: Optional[str] = field(
@@ -416,22 +424,51 @@ class PantagruelMultiModel(BaseFairseqModel):
                 p.param_group = "decoder"
 
         # init using pretrained models
-        pretrained_path = getattr(cfg, "pretrained_path", None)
-        logger.info(f"pretrained_path: {pretrained_path}")
-        if pretrained_path is not None:
-            load_all_pretrained_modules_to_model(
-                self.modality_encoders, pretrained_path,
-                skip_module=getattr(cfg, "skip_pretrained_module", "")
-            )
-            load_all_pretrained_modules_to_model(
-                self.blocks, pretrained_path,
-                skip_module=getattr(cfg, "skip_pretrained_module", "")
-            )
-            if self.ctc_module is not None:
+        def parse_skip_modules(cfg_attr):
+            skip = getattr(cfg, cfg_attr, "")
+            if skip:
+                skip = eval(skip)
+                for k, v in skip.items():
+                    if v == "none":
+                        skip[k] = []
+            return skip
+
+        def load_pretrained_if_available(
+            path_attr, skip_attr, modules,
+        ):
+            path = getattr(cfg, path_attr, None)
+            logger.info(f"{path_attr}: {path}")
+            if path:
+                skip_modules = parse_skip_modules(skip_attr)
+                logger.info(f"{skip_attr}: {skip_modules}")
+                load_modules(
+                    modules, path, skip_modules, 
+                )
+
+        def load_modules(
+            modules, pretrained_path, skip_modules,
+        ):
+            for name, module in modules.items():
                 load_all_pretrained_modules_to_model(
-                self.ctc_module, pretrained_path,
-                skip_module=getattr(cfg, "skip_pretrained_module", "")
-            )
+                    module, pretrained_path, skip_modules[name],
+                )
+        
+        # Collect modules to load
+        modules_to_load_pretrained = {
+            'modality_encoders': self.modality_encoders, 'backbone': self.blocks
+        }
+        if self.ctc_module:
+            modules_to_load_pretrained['ctc_module'] = self.ctc_module
+
+        # Load initial and overlay pretrained weights if applicable
+        load_pretrained_if_available(
+            "pretrained_path", "skip_pretrained_modules", 
+            modules_to_load_pretrained,
+        )
+        load_pretrained_if_available(
+            "pretrained_path_overlay", "skip_pretrained_modules_overlay", 
+            modules_to_load_pretrained,
+        )
 
         self.num_updates = 0
 

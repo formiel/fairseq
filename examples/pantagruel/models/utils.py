@@ -23,13 +23,13 @@ def _to_bf16(x, forward=True):
 def load_all_pretrained_modules_to_model(
     model: nn.Module,
     checkpoint: str,
-    skip_module="",
+    skip_modules=[],
 ):
     """
     load all modules in the checkpopint to the model if the module exists in the model
     """
     l2_norm = torch.sqrt(sum(torch.sum(p ** 2) for p in model.parameters()))
-    logger.info(f"L2 norm of model parameters BEFORE init: {l2_norm.item()}")
+    logger.info(f"{model.__class__.__name__} BEFORE init: {l2_norm.item()}")
 
     if not PathManager.exists(checkpoint):
         raise IOError("Model file not found: {}".format(checkpoint))
@@ -38,18 +38,21 @@ def load_all_pretrained_modules_to_model(
     model_state_dict_after_init = OrderedDict()
     for key, value in model.state_dict().items():
         _init_pretrained = False
-        if not skip_module or skip_module not in key:
-            for pk, pv in state["model"].items():
-                if key in pk:
-                    logger.info(f"init {key} using pretrained weights")
-                    model_state_dict_after_init[key] = pv
-                    _init_pretrained = True
-                    break
+        if not skip_modules or (skip_modules and skip_modules[0] != "all"):
+            not_skip = all([m not in key for m in skip_modules]) if skip_modules else True
+            if not_skip:
+                for pk, pv in state["model"].items():
+                    if key in pk:
+                        logger.info(f"init {key} using pretrained weights")
+                        model_state_dict_after_init[key] = pv
+                        _init_pretrained = True
+                        break
         if not _init_pretrained:
+            logger.info(f"random/previous init for {key}")
             model_state_dict_after_init[key] = value
 
     model.load_state_dict(model_state_dict_after_init, strict=True)
 
     l2_norm = torch.sqrt(sum(torch.sum(p ** 2) for p in model.parameters()))
-    logger.info(f"L2 norm of model parameters AFTER init: {l2_norm.item()}")
+    logger.info(f"{model.__class__.__name__} AFTER init: {l2_norm.item()}")
     return model
