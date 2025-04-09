@@ -135,10 +135,10 @@ model:
 
   use_token_type_embeddings: true
   pretrained_path: /linkhome/rech/genlig01/umz16dj/experiments/fairseq_checkpoints/pantagruel/text/pretraining/base_wiki19_bsz4_lr2e-4_step500K_wu4K_ema100K_masklen3_maskprob0.6_gpu_p6_gpus16_h100_py310_cu1241_torch251/checkpoint_last.pt
-  skip_pretrained_modules: "{'modality_encoders': ['none'], 'backbone': ['none']}"
+  skip_pretrained_modules: "{'modality_encoders': 'none', 'backbone': 'none'}"
 
   pretrained_path_overlay: /linkhome/rech/genlig01/umz16dj/experiments/fairseq_checkpoints/pantagruel/speech/pretraining/base_audio_only_task_prenet6L_lr3e-4_gpu_p6_gpus16_h100_py310_cu1241_torch251_MLS1K/checkpoint_92_400000.pt
-  skip_pretrained_modules_overlay: "{'modality_encoders': ['none'], 'backbone': ['none']}"
+  skip_pretrained_modules_overlay: "{'modality_encoders': 'none', 'backbone': 'none'}"
 
   # shared_decoder:
   #   input_dropout: 0.1
