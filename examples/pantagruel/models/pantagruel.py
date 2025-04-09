@@ -429,7 +429,7 @@ class PantagruelMultiModel(BaseFairseqModel):
             if skip:
                 skip = eval(skip)
                 for k, v in skip.items():
-                    if v.lower() == "none":
+                    if v[0].lower() == "none":
                         skip[k] = []
             return skip
 
