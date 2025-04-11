@@ -169,6 +169,7 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
 
     std_coeff: float = 0.0
     cov_coeff: float = 0.0
+    d2v_text_coeff: float = 1.0
 
     pretrained_path: Optional[str] = field(
         default=None,
@@ -266,6 +267,7 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         self.dummy_factor = getattr(cfg, "dummy_factor", 0.0)
         self.skip_mode = getattr(cfg, "skip_mode", None)
+        self.d2v_text_coeff = getattr(cfg, "d2v_text_coeff", 1.0)
 
         self.do_shallow_fusion = getattr(cfg, "do_shallow_fusion", True)
         self.compute_cross_targets = getattr(cfg, "compute_cross_targets", False)
@@ -1147,7 +1149,10 @@ class PantagruelMultiModel(BaseFairseqModel):
                         if len(xs[_mod]) > 1 
                         else f"{_mod.upper()}_regression"
                     )
-                    result["losses"][n] = reg_loss * self.cfg.d2v_loss
+                    d2v_loss_scale = self.cfg.d2v_loss
+                    if _mod.upper() == "TEXT":
+                        d2v_loss_scale *= self.d2v_text_coeff
+                    result["losses"][n] = reg_loss * d2v_loss_scale
                     if getattr(self.cfg, "std_coeff", 0.0) > 0.0 or getattr(self.cfg, "cov_coeff", 0.0) > 0.0:
                         var_cov_loss = self.var_cov_loss(x, y[_mod])
                         result["losses"][n] += var_cov_loss
