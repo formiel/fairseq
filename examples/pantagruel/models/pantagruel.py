@@ -160,6 +160,7 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
 
     do_shallow_fusion: bool = True
     compute_cross_targets: Optional[bool] = False
+    compute_cross_preds_for_text: Optional[bool] = False
 
     use_ctc_module: bool = False
     num_freeze_ctc_updates: int = 0
@@ -271,6 +272,7 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         self.do_shallow_fusion = getattr(cfg, "do_shallow_fusion", True)
         self.compute_cross_targets = getattr(cfg, "compute_cross_targets", False)
+        self.compute_cross_preds_for_text = getattr(cfg, "compute_cross_preds_for_text", False)
 
         self.use_ctc_module = getattr(cfg, "use_ctc_module", False)
         self.num_freeze_ctc_updates = getattr(cfg, "num_freeze_ctc_updates", 0)
@@ -1118,6 +1120,13 @@ class PantagruelMultiModel(BaseFairseqModel):
         if self.cfg.clone_batch > 1:
             for _mod in current_modes:
                 y[_mod] = y[_mod].repeat_interleave(self.cfg.clone_batch, 0)
+
+        if len(current_modes) == 2 and self.compute_cross_preds_for_text:
+            assert all(len(xs[_mod])==1 for _mod in current_modes)
+            _audio = xs["audio"][0].clone()
+            xs["text"][0] = F.softmax(torch.matmul(
+                xs["text"][0], _audio.transpose(1, 2)
+            ), dim=-1) @ _audio
 
         masked, masked_b, sample_sizes = {}, {}, {}
         for _mod in current_modes:
