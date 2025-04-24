@@ -150,4 +150,3 @@ _tools*/*
 fairseq_cli/train_profile.py
 *old*
 *_bak*
-*mimi_encoder.py
