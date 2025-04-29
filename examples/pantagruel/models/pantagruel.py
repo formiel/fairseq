@@ -55,7 +55,7 @@ from examples.pantagruel.models.modalities.text_type import (
 )
 from examples.pantagruel.models.modules import AltBlockWithModalityExpert, MHAPooling
 from examples.pantagruel.models.utils import load_all_pretrained_modules_to_model
-
+from examples.pantagruel.models.modalities.mimi_audio_encoder import MimiAudioEncoder
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +178,7 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
     )
     skip_pretrained_modules: Optional[str] = field(
         default="",
-        metadata={"help": "modules to skip when pre-training, seperated by commas"}
+        metadata={"help": "modules to skip when pre-training, in form of dict[module_name:list(skip_modules)]. use 'none' to not skip any modules, 'all' to skip all modules. e.g. {'modality_encoders': ['none'], 'backbone': ['all']}"} 
     )
     pretrained_path_overlay: Optional[str] = field(
         default=None,
@@ -186,7 +186,7 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
     )
     skip_pretrained_modules_overlay: Optional[str] = field(
         default="",
-        metadata={"help": "modules to skip when pre-training, , seperated by commas"}
+        metadata={"help": "modules to skip when pre-training, in form of dict[module_name:list(skip_modules)]"}
     )
 
     moex_args_ffn: Optional[str] = field(
@@ -204,6 +204,8 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
     num_map_heads: Optional[int] = 1
     use_linear_head_for_text: Optional[bool]= False
     num_freeze_sigloss_updates: int = 0
+
+    use_mimi_for_audio: bool = False
 
 
 class CTCDecoder(nn.Module):
@@ -233,9 +235,13 @@ class PantagruelMultiModel(BaseFairseqModel):
         alibi_biases,
         task,
         token_type_embeddings,
+        use_mimi_for_audio=False,
     ) -> PantagruelModalitySpecificEncoder:
         if cfg.type == Modality.AUDIO:
-            enc_cls = AudioTypeEncoder
+            if not use_mimi_for_audio:
+                enc_cls = AudioTypeEncoder
+            else:
+                enc_cls = MimiAudioEncoder
         elif cfg.type == Modality.IMAGE:
             enc_cls = ImageEncoder
         elif cfg.type == Modality.TEXT:
@@ -344,6 +350,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                     self.alibi_biases[mod.name],
                     task,
                     token_type_embeddings,
+                    use_mimi_for_audio=getattr(cfg, "use_mimi_for_audio", False),
                 )
                 self.modality_encoders[mod.name] = enc
                 if getattr(cfg, "freeze_decoder", False):
