@@ -24,8 +24,14 @@ from examples.pantagruel.data.modality import Modality
 class PantagruelD2vAudioConfig(D2vAudioConfig):
     type: Modality = Modality.AUDIO
     local_grad_mult_mimi_encoder_transformer: float = 1.0
+
+    use_mimi_downsample: bool = True
     local_grad_mult_mimi_downsample: float = 1.0
+
     init_mimi_pretrained: bool = True
+    
+    use_mimi_discrete_codebook: bool = False
+    local_grad_mult_mimi_discrete_codebook: float = 0.0
 
 
 class AudioTypeEncoder(PantagruelModalitySpecificEncoder):
