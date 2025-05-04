@@ -233,24 +233,25 @@ class MimiAudioEncoder(PantagruelModalitySpecificEncoder):
             if self.grad_mult_quantizer > 0:
                 if self.grad_mult_quantizer == 1.0:
                     x = self.local_encoder["quantizer"].encode(
-                        x, self.num_quantizers
+                        x, num_quantizers=1
                     )
                 else:
                     x = GradMultiply.apply(
                         self.local_encoder["quantizer"].encode(
-                            x, self.num_quantizers
+                            x, num_quantizers=1
                         ),
                         self.grad_mult_quantizer,
                     )
             else:
                 with torch.no_grad():
                     x = self.local_encoder["quantizer"].encode(
-                        x, self.num_quantizers
+                        x, num_quantizers=1
                     )
+            x = x.squeeze(0)  # num_codebooks x B x L -> B x L
             
             # x: num_codebooks x B x L
-            indices = torch.randint(0, self.num_quantizers, (x.shape[1],), device=x.device)
-            x = x[indices, torch.arange(x.shape[1])] # B x L
+            # indices = torch.randint(0, self.num_quantizers, (x.shape[1],), device=x.device)
+            # x = x[indices, torch.arange(x.shape[1])] # B x L
 
         if self.num_quantizers == 0 and self.do_downsampling:
             x = self.project_features(x.transpose(1, 2))
