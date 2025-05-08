@@ -469,6 +469,7 @@ class Wav2VecEncoder(FairseqEncoder):
             task = tasks.setup_task(w2v_args.task, from_checkpoint=True)
             model = task.build_model(w2v_args.model, from_checkpoint=True)
 
+            self.use_mimi_for_audio = False
             if hasattr(w2v_args.task, "audio"):
                 w2v_args.task.audio.data = cfg.data
             else:
@@ -478,6 +479,8 @@ class Wav2VecEncoder(FairseqEncoder):
                 w2v_args.model.skip_mode = None
                 w2v_args.task.text = None
                 w2v_args.model.supported_modality = "AUDIO"
+                self.use_mimi_for_audio = getattr(w2v_args.model, "use_mimi_for_audio", False)
+                logger.info(f"Using Mimi for audio: {self.use_mimi_for_audio}")
 
             logger.info("Removing pre-trained modules...")
             model.remove_pretraining_modules(modality="audio")
@@ -609,10 +612,16 @@ class Wav2VecEncoder(FairseqEncoder):
 
     def forward(self, source, padding_mask, **kwargs):
 
+        if self.use_mimi_for_audio:
+            padding_mask = None
+            mask = False
+        else:
+            mask = self.apply_mask and self.training
+
         w2v_args = {
             "source": source,
             "padding_mask": padding_mask,
-            "mask": self.apply_mask and self.training,
+            "mask": mask,
         }
         if "corpus_key" in kwargs:
             w2v_args["corpus_key"] = kwargs["corpus_key"]
