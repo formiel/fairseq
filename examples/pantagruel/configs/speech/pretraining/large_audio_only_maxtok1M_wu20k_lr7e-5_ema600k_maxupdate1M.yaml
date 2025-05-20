@@ -12,7 +12,7 @@ common:
 
 checkpoint:
   # save_interval: 1
-  save_interval_updates: 10000
+  save_interval_updates: 20000
   keep_interval_updates: 1
   # no_epoch_checkpoints: true
   # keep_best_checkpoints: 10
@@ -34,7 +34,7 @@ dataset:
   skip_invalid_size_inputs_valid_test: true
   validate_interval: 1
   required_batch_size_multiple: 1
-  disable_validation: true
+  # disable_validation: true
   valid_subset: lebenchmark_valid
   train_subset: train_combined_96K_and_14K
 
