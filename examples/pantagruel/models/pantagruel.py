@@ -188,6 +188,10 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
         default="",
         metadata={"help": "modules to skip when pre-training, in form of dict[module_name:list(skip_modules)]"}
     )
+    # for freezeing all the local encoders and decoders for a number of steps
+    # local_grad_mult: is applied to the respective local encoder after num_steps_freeze_local_encoder
+    num_steps_freeze_local_encoders: int = 0
+    num_steps_freeze_local_decoders: int = 0
 
     moex_args_ffn: Optional[str] = field(
         default=None,
@@ -285,6 +289,9 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         self.extract_encoder_outs = getattr(cfg, "extract_encoder_outs", False)
         self.num_freeze_ot_updates = getattr(cfg, "num_freeze_ot_updates", 0)
+
+        self.num_steps_freeze_local_encoders = getattr(cfg, "num_steps_freeze_local_encoders", 0)
+        self.num_steps_freeze_local_decoders = getattr(cfg, "num_steps_freeze_local_decoders", 0)
 
         make_layer_norm = partial(
             nn.LayerNorm, eps=cfg.norm_eps, elementwise_affine=cfg.norm_affine
@@ -480,6 +487,27 @@ class PantagruelMultiModel(BaseFairseqModel):
             "pretrained_path_overlay", "skip_pretrained_modules_overlay", 
             modules_to_load_pretrained,
         )
+        # freeze the pre-trained modules if specified
+        self._update_status_local_encoders = False
+        self._update_status_local_decoders = False
+        if self.num_steps_freeze_local_encoders > 0 or self.num_steps_freeze_local_decoders > 0:
+            for name, module in self.modality_encoders.items():
+                for param_name, param in module.named_parameters():
+                    is_decoder_param = "decoder" in param_name
+
+                    if (
+                        is_decoder_param and 
+                        self.num_steps_freeze_local_decoders > 0
+                    ):
+                        logger.info(f"Freezing {param_name}: {param.shape}")
+                        param.requires_grad = False
+
+                    elif (
+                        not is_decoder_param and 
+                        self.num_steps_freeze_local_encoders > 0
+                    ):
+                        logger.info(f"Freezing {param_name}: {param.shape}")
+                        param.requires_grad = False
 
         self.num_updates = 0
 
@@ -796,6 +824,24 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         return _aux_head_text
 
+    def update_freeze_status(self):
+        """
+        Enable gradients for encoder/decoder parameters in modality_encoders
+        based on the current number of updates and configured freeze durations.
+        """
+        for name, module in self.modality_encoders.items():
+            for param_name, param in module.named_parameters():
+                is_decoder_param = "decoder" in param_name
+
+                if is_decoder_param and self.num_updates >= self.num_steps_freeze_local_decoders:
+                    logger.info(f"Unfreezing {param_name}: {param.shape}")
+                    param.requires_grad = True
+                    self._update_status_local_decoders = True
+                elif not is_decoder_param and self.num_updates >= self.num_steps_freeze_local_encoders:
+                    logger.info(f"Unfreezing {param_name}: {param.shape}")
+                    param.requires_grad = True
+                    self._update_status_local_encoders = True
+
     def forward(
         self,
         source,
@@ -816,6 +862,20 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         if isinstance(mode, Modality) or isinstance(mode, Data2vecModality):
             mode = mode.name
+
+        should_unfreeze_encoders = (
+            self.num_steps_freeze_local_encoders > 0 and 
+            self.num_updates >= self.num_steps_freeze_local_encoders and
+            not self._update_status_local_encoders
+        )
+        should_unfreeze_decoder = (
+            self.num_steps_freeze_local_decoders > 0 and 
+            self.num_updates >= self.num_steps_freeze_local_decoders and
+            not self._update_status_local_decoders
+        )
+
+        if should_unfreeze_encoders or should_unfreeze_decoder:
+            self.update_freeze_status()
 
         extractor, remaining_extractor_names = self._get_feature_extractor(mode)
         device = source.device if isinstance(source, torch.Tensor) else source["audio"]["source"].device
