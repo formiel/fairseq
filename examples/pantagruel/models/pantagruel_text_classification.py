@@ -70,6 +70,16 @@ class PantagruelTextClassificationModel(BaseFairseqModel):
         task = tasks.setup_task(pretrained_args.task)
         if hasattr(pretrained_args.model, "freeze_backbone"):
             pretrained_args.model.freeze_backbone = False
+        if hasattr(pretrained_args.model, "num_steps_freeze_local_encoders"):
+            logger.info(
+                f"[Finetuning] num_steps_freeze_local_encoders: {pretrained_args.model.num_steps_freeze_local_encoders}"
+            )
+            pretrained_args.model.num_steps_freeze_local_encoders = 0
+        if hasattr(pretrained_args.model, "num_steps_freeze_local_decoders"):
+            logger.info(
+                f"[Finetuning] num_steps_freeze_local_decoders: {pretrained_args.model.num_steps_freeze_local_decoders}"
+            )
+            pretrained_args.model.num_steps_freeze_local_decoders = 0
         model = task.build_model(pretrained_args.model, from_checkpoint=True)
         if hasattr(model, "uni_modalities"):
             logger.info(f"[Finetuning] uni_modalities: {model.uni_modalities}")

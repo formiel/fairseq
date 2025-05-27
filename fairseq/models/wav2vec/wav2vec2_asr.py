@@ -466,6 +466,18 @@ class Wav2VecEncoder(FairseqEncoder):
                 logger.info(f"Unfreezing backbone for finetuning")
                 w2v_args.model.freeze_backbone = False
 
+            if self.is_pantagruel_multi:
+                if hasattr(w2v_args.model, "num_steps_freeze_local_encoders"):
+                    logger.info(
+                        f"[Finetuning] num_steps_freeze_local_encoders: {w2v_args.model.num_steps_freeze_local_encoders}"
+                    )
+                    w2v_args.model.num_steps_freeze_local_encoders = 0
+                if hasattr(w2v_args.model, "num_steps_freeze_local_decoders"):
+                    logger.info(
+                        f"[Finetuning] num_steps_freeze_local_decoders: {w2v_args.model.num_steps_freeze_local_decoders}"
+                    )
+                    w2v_args.model.num_steps_freeze_local_decoders = 0
+
             task = tasks.setup_task(w2v_args.task, from_checkpoint=True)
             model = task.build_model(w2v_args.model, from_checkpoint=True)
 
