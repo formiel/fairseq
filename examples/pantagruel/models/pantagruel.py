@@ -1093,13 +1093,20 @@ class PantagruelMultiModel(BaseFairseqModel):
 
             if self.cfg.ema_encoder_only:
                 assert target is None
-                ema_input = extractor_out["local_features"]
-                ema_input = extractor.contextualized_features(
-                    ema_input.to(dtype=ema_dtype),
-                    padding_mask,
-                    mask=False,
-                    remove_masked=False,
-                )
+                ema_input = {
+                    "x": {}, "padding_mask": {}, "alibi_bias": {}, "alibi_scale": {}
+                }
+                _ema_input = extractor_out["local_features"]
+                for _mod in current_modes:
+                    _extractor = self.modality_encoders[_mod.upper()]
+                    _ema_input_mod = _extractor.contextualized_features(
+                        _ema_input[_mod].to(dtype=ema_dtype),
+                        extractor_out["padding_mask"][_mod],
+                        mask=False,
+                        remove_masked=False,
+                    )
+                    for k in ema_input.keys():
+                        ema_input[k][_mod] = _ema_input_mod[k]
                 ema_blocks = tm
             else:
                 ema_blocks = tm.blocks
