@@ -4,14 +4,17 @@
 # LICENSE file in the root directory of this source tree.
 
 import contextlib
+import copy
+
+from dataclasses import dataclass, field
+from functools import partial
+
 import logging
 import math
-from dataclasses import dataclass, field
-from typing import Optional, Callable
-from functools import partial
 import numpy as np
-
 from omegaconf import II, MISSING
+
+from typing import Optional, Callable
 
 import torch
 import torch.nn as nn
@@ -19,6 +22,7 @@ import torch.nn.functional as F
 import torch.distributed as dist
 
 from fairseq.modules import EMAModule, EMAModuleConfig
+from fairseq.file_io import PathManager
 
 from fairseq.dataclass import FairseqDataclass
 from fairseq.models import BaseFairseqModel, register_model, FairseqDecoder
@@ -376,22 +380,6 @@ class PantagruelMultiModel(BaseFairseqModel):
                         self.alibi_biases,
                         token_type_embeddings,
                     )
-        self.aux_heads = None
-        use_map_head_for_speech = getattr(cfg, "use_map_head_for_speech", False)
-        use_linear_head_for_text = getattr(cfg, "use_linear_head_for_text", False)
-        self.num_freeze_sigloss_updates = getattr(cfg, "num_freeze_sigloss_updates", 0)
-        if use_map_head_for_speech or use_linear_head_for_text:
-            self.aux_heads = nn.ModuleDict()
-            if use_map_head_for_speech:
-                self.aux_heads["AUDIO"] = MHAPooling(
-                    cfg.embed_dim, getattr(cfg, "num_map_heads", 1)
-                )
-            if use_linear_head_for_text:
-                self.aux_heads["TEXT"] = nn.Linear(
-                    cfg.embed_dim, cfg.embed_dim
-                )
-
-        self.ema = None
 
         self.average_top_k_layers = eval(cfg.average_top_k_layers)
         self.loss_beta = cfg.loss_beta
@@ -417,29 +405,28 @@ class PantagruelMultiModel(BaseFairseqModel):
         for mod_enc in self.modality_encoders.values():
             mod_enc.reset_parameters()
 
-        self.ctc_module = None
-        if not skip_ema:
-            self.ema = self.make_ema_teacher(cfg.ema_decay)
-            self.shared_decoder = (
-                Decoder1d(cfg.shared_decoder, cfg.embed_dim)
-                if self.cfg.shared_decoder is not None
-                else None
-            )
-            if self.shared_decoder is not None:
-                self.shared_decoder.apply(self._init_weights)
-
-            if self.use_ctc_module:
-                # add ctc module
-                self.ctc_module = CTCDecoder(
-                    self.task.source_dictionary,
-                    self.cfg.embed_dim,
+        # build auxiliary components used for the supervised losses during pre-training
+        self.aux_heads = None
+        use_map_head_for_speech = getattr(cfg, "use_map_head_for_speech", False)
+        use_linear_head_for_text = getattr(cfg, "use_linear_head_for_text", False)
+        self.num_freeze_sigloss_updates = getattr(cfg, "num_freeze_sigloss_updates", 0)
+        if use_map_head_for_speech or use_linear_head_for_text:
+            self.aux_heads = nn.ModuleDict()
+            if use_map_head_for_speech:
+                self.aux_heads["AUDIO"] = MHAPooling(
+                    cfg.embed_dim, getattr(cfg, "num_map_heads", 1)
+                )
+            if use_linear_head_for_text:
+                self.aux_heads["TEXT"] = nn.Linear(
+                    cfg.embed_dim, cfg.embed_dim
                 )
 
-        for pn, p in self.named_parameters():
-            if len(p.shape) == 1 or pn.endswith(".bias") or "alibi_scale" in pn:
-                p.optim_overrides = {"optimizer": {"weight_decay_scale": 0}}
-            if cfg.decoder_group and "decoder" in pn:
-                p.param_group = "decoder"
+        self.ctc_module = None
+        if self.use_ctc_module:
+            self.ctc_module = CTCDecoder(
+                self.task.source_dictionary,
+                self.cfg.embed_dim,
+            )
 
         # init using pretrained models
         def parse_skip_modules(cfg_attr):
@@ -475,8 +462,8 @@ class PantagruelMultiModel(BaseFairseqModel):
         modules_to_load_pretrained = {
             'modality_encoders': self.modality_encoders, 'backbone': self.blocks
         }
-        if self.ctc_module:
-            modules_to_load_pretrained['ctc_module'] = self.ctc_module
+        # if self.ctc_module:
+        #     modules_to_load_pretrained['ctc_module'] = self.ctc_module
 
         # Load initial and overlay pretrained weights if applicable
         load_pretrained_if_available(
@@ -508,6 +495,24 @@ class PantagruelMultiModel(BaseFairseqModel):
                     ):
                         logger.info(f"Freezing {param_name}: {param.shape}")
                         param.requires_grad = False
+
+        self.ema = None
+        if not skip_ema:
+            logger.info("Initializing EMA teacher model")
+            self.ema = self.make_ema_teacher(cfg.ema_decay)
+            self.shared_decoder = (
+                Decoder1d(cfg.shared_decoder, cfg.embed_dim)
+                if self.cfg.shared_decoder is not None
+                else None
+            )
+            if self.shared_decoder is not None:
+                self.shared_decoder.apply(self._init_weights)
+
+        for pn, p in self.named_parameters():
+            if len(p.shape) == 1 or pn.endswith(".bias") or "alibi_scale" in pn:
+                p.optim_overrides = {"optimizer": {"weight_decay_scale": 0}}
+            if cfg.decoder_group and "decoder" in pn:
+                p.param_group = "decoder"
 
         self.num_updates = 0
 
@@ -542,11 +547,19 @@ class PantagruelMultiModel(BaseFairseqModel):
     def make_target_model(self):
         logger.info("making target model")
 
+        ema_cfg = copy.deepcopy(self.cfg)
+        if hasattr(ema_cfg, "use_map_head_for_speech"):
+            ema_cfg.use_map_head_for_speech = False
+        if hasattr(ema_cfg, "use_linear_head_for_text"):
+            ema_cfg.use_linear_head_for_text = False
+        if hasattr(ema_cfg, "use_ctc_module"):
+            ema_cfg.use_ctc_module = False
+
         model_copy = PantagruelMultiModel(
-            self.cfg, self.modalities, skip_ema=True, task=self.task
+            ema_cfg, self.modalities, skip_ema=True, task=self.task
         )
 
-        if self.cfg.ema_encoder_only:
+        if ema_cfg.ema_encoder_only:
             model_copy = model_copy.blocks
             for p_s, p_t in zip(self.blocks.parameters(), model_copy.parameters()):
                 p_t.data.copy_(p_s.data)

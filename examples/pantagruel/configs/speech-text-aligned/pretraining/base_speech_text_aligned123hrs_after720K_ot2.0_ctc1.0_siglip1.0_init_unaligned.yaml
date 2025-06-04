@@ -9,7 +9,7 @@ hydra:
 common:
   fp16: true
   log_format: json
-  log_interval: 500
+  log_interval: 800
   tensorboard_logdir: ???
   # min_loss_scale: 1e-6
   fp16_no_flatten_grads: true
@@ -31,9 +31,11 @@ checkpoint:
 
 task:
   _name: pantagruel_multimodal_pretraining
-  audio_ratio: 8
+  audio_ratio: 6
   text_ratio: 1
-  # update_freq: [4]
+  aligned_st_ratio: 3
+  aligned_st_data_root: ???
+  aligned_text_tokenzizer_root: ???
   vocab_path: ???
   audio:
     data: ???
@@ -52,6 +54,14 @@ task:
     skip_masking: true
     d2v2_multi: true
     mask_idx_in_vocab: true
+  aligned_st_cfg:
+    audio:
+      normalize: true
+      precompute_mask_config: {"mask_prob": 0.5}
+      musan_dir: "/lustre/fsn1/projects/rech/zbk/commun/Data/speech_augmentation"
+    text:
+      mask_prob: 0.5
+      mask_multiple_length: 1
 
 dataset:
   num_workers: 6
@@ -83,6 +93,9 @@ criterion:
   - masked_pct
   - loss_
   - sample_size_
+  siglip_weight: 1.0
+  ctc_weight: 1.0
+  ot_weight: 2.0
 
 optimization:
   clip_norm: 1
@@ -113,6 +126,24 @@ model:
   # skip_mode: 'TEXT'
   dummy_factor: 0.0
 
+  use_map_head_for_speech: true
+  num_map_heads: 4
+  use_linear_head_for_text: true
+  num_freeze_sigloss_updates: 720000
+
+  use_ctc_module: true
+  num_freeze_ctc_updates: 720000
+
+  extract_encoder_outs: true
+  num_freeze_ot_updates: 720000
+
+  # compute_cross_preds_for_text: true
+
+  use_token_type_embeddings: true
+
+  pretrained_path: /linkhome/rech/genlig01/umz16dj/experiments/fairseq_checkpoints/pantagruel/speech-text/pretraining/base_speech_text_maxtok600K_bsz4_maxupdate1.2M_wu12K_ema_end300K_targets_audio12_text12_prenet_audio6L_alibi_text_FR_gpu_p6_gpus16_mls1K_wiki19/checkpoint_last.pt
+  skip_pretrained_modules: "{'modality_encoders': ['none'], 'backbone': ['none']}"
+
   loss_beta: 0
   loss_scale: null
 
@@ -132,10 +163,6 @@ model:
 
   layerdrop: 0.0
   norm_eps: 1e-5
-
-  use_token_type_embeddings: true
-  pretrained_path: /linkhome/rech/genlig01/umz16dj/experiments/fairseq_checkpoints/pantagruel/text/pretraining/base_wiki19_bsz4_lr2e-4_step500K_wu4K_ema100K_masklen3_maskprob0.6_gpu_p6_gpus16_h100_py310_cu1241_torch251/checkpoint_last.pt
-  skip_pretrained_modules: "{'modality_encoders': ['all'], 'backbone': ['none']}"
 
   # shared_decoder:
   #   input_dropout: 0.1
