@@ -168,6 +168,7 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
 
     use_ctc_module: bool = False
     num_freeze_ctc_updates: int = 0
+    insert_ctc_after_context_encoder: bool = False
 
     extract_encoder_outs: bool = False
     num_freeze_ot_updates: int = 0
@@ -290,6 +291,7 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         self.use_ctc_module = getattr(cfg, "use_ctc_module", False)
         self.num_freeze_ctc_updates = getattr(cfg, "num_freeze_ctc_updates", 0)
+        self.insert_ctc_after_context_encoder = getattr(cfg, "insert_ctc_after_context_encoder", False)
 
         self.extract_encoder_outs = getattr(cfg, "extract_encoder_outs", False)
         self.num_freeze_ot_updates = getattr(cfg, "num_freeze_ot_updates", 0)
@@ -685,25 +687,26 @@ class PantagruelMultiModel(BaseFairseqModel):
             )
             _x_speech = _speech_enc_out["x"] # BxLxD
             
-            # Forward through Transformer blocks
-            for i, blk in enumerate(self.blocks):
-                _alibi_bias = _speech_enc_out.get("alibi_bias", None)
-                _alibi_scale = _speech_enc_out.get("alibi_scale", None)
-                
-                if _alibi_bias is not None and _alibi_scale is not None:
-                    scale = (
-                        _alibi_scale[i]
-                        if _alibi_scale.size(0) > 1
-                        else _alibi_scale.squeeze(0)
-                    )
-                    _alibi_bias = _alibi_bias * scale.type_as(_alibi_bias)
+            if not self.insert_ctc_after_context_encoder:
+                # Forward through Transformer blocks
+                for i, blk in enumerate(self.blocks):
+                    _alibi_bias = _speech_enc_out.get("alibi_bias", None)
+                    _alibi_scale = _speech_enc_out.get("alibi_scale", None)
+                    
+                    if _alibi_bias is not None and _alibi_scale is not None:
+                        scale = (
+                            _alibi_scale[i]
+                            if _alibi_scale.size(0) > 1
+                            else _alibi_scale.squeeze(0)
+                        )
+                        _alibi_bias = _alibi_bias * scale.type_as(_alibi_bias)
 
-                _x_speech, _ = blk(
-                    _x_speech,
-                    padding_mask=_speech_enc_out["padding_mask"],
-                    alibi_bias=_alibi_bias,
-                    mode="AUDIO"
-                )
+                    _x_speech, _ = blk(
+                        _x_speech,
+                        padding_mask=_speech_enc_out["padding_mask"],
+                        alibi_bias=_alibi_bias,
+                        mode="AUDIO"
+                    )
             ctc_out["x"] = self.ctc_module(_x_speech)
             ctc_out["padding_mask"] = _speech_enc_out["padding_mask"]
             ctc_out["is_frozen"] = not ft
