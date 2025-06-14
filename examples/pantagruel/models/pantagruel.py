@@ -57,6 +57,12 @@ from examples.pantagruel.models.modalities.text_type import (
     TextTypeEncoder,
     PantagruelD2vTextConfig,
 )
+from examples.pantagruel.models.modalities.random_projection_quantizer import (
+    RPQConfig, RandomProjectionQuantizer
+)
+from examples.pantagruel.models.mlm_multimodal_encoder import (
+    MLMMultimodalEncoder, MLMMultimodalEncoderConfig
+)
 from examples.pantagruel.models.modules import AltBlockWithModalityExpert, MHAPooling
 from examples.pantagruel.models.utils import load_all_pretrained_modules_to_model
 from examples.pantagruel.models.modalities.mimi_audio_encoder import MimiAudioEncoder
@@ -216,6 +222,10 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
 
     use_mimi_for_audio: bool = False
 
+    enable_mlm_multimodal_encoder: bool = False
+    mlm_multimodal_encoder_config: Optional[MLMMultimodalEncoderConfig] = None
+    random_projection_quantizer_config: Optional[RPQConfig] = None
+
 
 class CTCDecoder(nn.Module):
     def __init__(self, dictionary, embed_dim, dropout_rate=0.0, bias=True):
@@ -298,6 +308,10 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         self.num_steps_freeze_local_encoders = getattr(cfg, "num_steps_freeze_local_encoders", 0)
         self.num_steps_freeze_local_decoders = getattr(cfg, "num_steps_freeze_local_decoders", 0)
+
+        self.enable_mlm_multimodal_encoder = getattr(
+            cfg, "enable_mlm_multimodal_encoder", False
+        )
 
         make_layer_norm = partial(
             nn.LayerNorm, eps=cfg.norm_eps, elementwise_affine=cfg.norm_affine
@@ -430,6 +444,18 @@ class PantagruelMultiModel(BaseFairseqModel):
                 self.cfg.embed_dim,
             )
 
+        self.mlm_multimodal_encoder = None
+        if self.enable_mlm_multimodal_encoder:
+            logger.info("Initializing MLMMultimodalEncoder...")
+            self.mlm_multimodal_encoder = MLMMultimodalEncoder(
+                task,
+                cfg.embed_dim,
+                cfg.mlm_multimodal_encoder_config, 
+                cfg.random_projection_quantizer_config,
+                self.modalities,
+                embedding_weights=self.modality_encoders["TEXT"].local_encoder.embed_tokens.weight if cfg.mlm_multimodal_encoder_config.tie_weights_embeddings else None,
+            )
+
         # init using pretrained models
         def parse_skip_modules(cfg_attr):
             skip = getattr(cfg, cfg_attr, "")
@@ -556,6 +582,8 @@ class PantagruelMultiModel(BaseFairseqModel):
             ema_cfg.use_linear_head_for_text = False
         if hasattr(ema_cfg, "use_ctc_module"):
             ema_cfg.use_ctc_module = False
+        if hasattr(ema_cfg, "enable_mlm_multimodal_encoder"):
+            ema_cfg.enable_mlm_multimodal_encoder = False
 
         model_copy = PantagruelMultiModel(
             ema_cfg, self.modalities, skip_ema=True, task=self.task
@@ -1026,18 +1054,33 @@ class PantagruelMultiModel(BaseFairseqModel):
                 )
                 aux_heads_out["is_frozen"] = (self.num_updates <= self.num_freeze_sigloss_updates)
 
+        # forward to mlm_multimodal_encoder
+        mlm_enc_outs = None
+        x_features = {k: v.clone() for k, v in x.items()}
+        if self.mlm_multimodal_encoder is not None:
+            mlm_enc_outs = self.mlm_multimodal_encoder(
+                x_features, 
+                source, 
+                target,
+                mask_info=encoder_mask,
+                padding_mask=masked_padding_mask,
+                clone_batch=self.cfg.clone_batch if not features_only else 1,
+            )
+            for _mod in current_modes:
+                x_features[_mod] = mlm_enc_outs["x"][_mod]
+        
         if features_only:
             if remove_extra_tokens:
-                for _mod, _x in x.items():
+                for _mod, _x in x_features.items():
                     _extractor = self.modality_encoders[_mod.upper()]
-                    x[_mod] = _x[:, _extractor.modality_cfg.num_extra_tokens :]
+                    x_features[_mod] = _x[:, _extractor.modality_cfg.num_extra_tokens :]
                     if masked_padding_mask[_mod] is not None:
                         masked_padding_mask[_mod] = masked_padding_mask[_mod][
                             :, _extractor.modality_cfg.num_extra_tokens :
                         ]
 
             return {
-                "x": x,
+                "x": x_features,
                 "padding_mask": masked_padding_mask,
                 "layer_results": layer_results,
                 "mask": encoder_mask,
@@ -1108,7 +1151,7 @@ class PantagruelMultiModel(BaseFairseqModel):
             tm.eval()
 
             if self.cfg.ema_encoder_only:
-                assert target is None
+                # assert target is None # default not to use provided target for ema
                 ema_input = {
                     "x": {}, "padding_mask": {}, "alibi_bias": {}, "alibi_scale": {}
                 }
@@ -1140,11 +1183,12 @@ class PantagruelMultiModel(BaseFairseqModel):
                         else source[_mod]["padding_mask"]
                     )
                     if _extractor.modality_cfg.ema_local_encoder:
-                        inp = (
-                            target.to(dtype=ema_dtype)
-                            if target is not None
-                            else _source.to(dtype=ema_dtype)
-                        )
+                        # inp = (
+                        #     target.to(dtype=ema_dtype)
+                        #     if target is not None
+                        #     else _source.to(dtype=ema_dtype)
+                        # )
+                        inp = _source.to(dtype=ema_dtype)
                         _ema_input = tm.modality_encoders[_mod.upper()](
                             inp.to(dtype=torch.int64) if _mod=="text" else inp,
                             _padding_mask,
@@ -1152,7 +1196,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                             remove_masked=False,
                         )
                     else:
-                        assert target is None
+                        # assert target is None
                         _ema_input = extractor_out["local_features"][_mod]
                         ema_feature_enc = tm.modality_encoders[_mod.upper()]
                         _ema_input = ema_feature_enc.contextualized_features(
@@ -1237,6 +1281,7 @@ class PantagruelMultiModel(BaseFairseqModel):
             "ctc_out": ctc_out,
             "dual_encoders_out": dual_encoder_outs,
             "aux_heads_out": aux_heads_out,
+            "mlm_enc_outs": mlm_enc_outs,
         }
 
         if self.cfg.d2v_loss > 0:

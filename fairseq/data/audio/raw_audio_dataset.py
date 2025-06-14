@@ -13,6 +13,8 @@ import io
 import numpy as np
 import torch
 import torch.nn.functional as F
+import torchaudio.transforms as T
+from torch.nn.utils.rnn import pad_sequence
 
 from .. import FairseqDataset
 from ..data_utils import compute_block_mask_1d, get_buckets, get_bucketed_sizes
@@ -48,6 +50,7 @@ class RawAudioDataset(FairseqDataset):
         mask_dropout: float = 0,
         non_overlapping: bool = False,
         corpus_key=None,
+        use_mel_spec_targets=False,
     ):
         super().__init__()
 
@@ -75,6 +78,8 @@ class RawAudioDataset(FairseqDataset):
         self.non_overlapping = non_overlapping
         self.corpus_key = corpus_key
 
+        self.use_mel_spec_targets = use_mel_spec_targets
+
     def __getitem__(self, index):
         raise NotImplementedError()
 
@@ -94,6 +99,42 @@ class RawAudioDataset(FairseqDataset):
             with torch.no_grad():
                 feats = F.layer_norm(feats, feats.shape)
         return feats
+
+    def compute_mel_spectrogram(
+            self,
+            wav,
+            curr_sample_rate=16000,
+            n_fft=400,
+            n_mel=80,
+        ):
+        """
+        Processes a single waveform through spectrogram, mel scaling, and normalization.
+
+        Args:
+            wav (np.ndarray): Input waveform.
+            curr_sample_rate (int): Sample rate of the input waveform.
+            input_freq (int): Expected input frequency for the model.
+            resample_freq (int): Target resample frequency.
+            n_fft (int): FFT size.
+            n_mel (int): Number of mel bins.
+
+        Returns:
+            torch.Tensor: Mel-scaled, augmented spectrogram.
+        """
+        assert curr_sample_rate == self.sample_rate, (
+            f"Sample rate mismatch: expected {self.sample_rate}, got {curr_sample_rate}"
+        )
+        # Convert to torch tensor
+        waveform = torch.tensor(wav).unsqueeze(0)  # (time,) -> [1, time]
+
+        # Compute power spectrogram
+        spec = T.Spectrogram(n_fft=n_fft, power=2, normalized=True)(waveform) # [1, n_fft // 2 + 1, time]
+
+        # Convert to mel scale
+        mel = T.MelScale(n_mels=n_mel, sample_rate=curr_sample_rate, n_stft=n_fft // 2 + 1)(spec)
+        mel = mel.squeeze(0)  # [1, n_mel, time] -> [n_mel, time]
+
+        return mel
 
     def crop_to_max_size(self, t, target_size, dim=0):
         size = t.size(dim)
@@ -132,6 +173,7 @@ class RawAudioDataset(FairseqDataset):
         padding_mask = (
             torch.BoolTensor(collated_sources.shape).fill_(False) if self.pad else None
         )
+        collated_melspec_targets = [None] * len(sources)
         for i, (source, size) in enumerate(zip(sources, sizes)):
             diff = size - target_size
             if diff == 0:
@@ -144,8 +186,19 @@ class RawAudioDataset(FairseqDataset):
                 padding_mask[i, diff:] = True
             else:
                 collated_sources[i] = self.crop_to_max_size(source, target_size)
+            # compute mel spectrogram targets if needed
+            if self.use_mel_spec_targets:
+                collated_melspec_targets[i] = self.compute_mel_spectrogram(
+                    collated_sources[i].numpy(),
+                )
+
+        # create tensor for mel spectrogram targets
+        if self.use_mel_spec_targets:
+            collated_melspec_targets = pad_sequence(collated_melspec_targets, batch_first=True)
 
         input = {"source": collated_sources}
+        if self.use_mel_spec_targets:
+            input["target"] = collated_melspec_targets
         if self.corpus_key is not None:
             input["corpus_key"] = [self.corpus_key] * len(sources)
         out = {"id": torch.LongTensor([s["id"] for s in samples])}
@@ -246,6 +299,7 @@ class FileAudioDataset(RawAudioDataset):
         num_buckets=0,
         compute_mask=False,
         text_compression_level=TextCompressionLevel.none,
+        use_mel_spec_targets=False,
         **mask_compute_kwargs,
     ):
         super().__init__(
@@ -256,6 +310,7 @@ class FileAudioDataset(RawAudioDataset):
             pad=pad,
             normalize=normalize,
             compute_mask=compute_mask,
+            use_mel_spec_targets=use_mel_spec_targets,
             **mask_compute_kwargs,
         )
 

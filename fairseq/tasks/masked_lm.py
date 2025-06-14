@@ -127,6 +127,10 @@ class MaskedLMConfig(FairseqDataclass):
         default=False,
         metadata={"help": "mask index is included in vocab already."}
     )
+    pantagruel_multi: bool = field(
+        default=False,
+        metadata={"help": "prepare dataset for pantagruel training with multimodal encoder"},
+    )
 
 
 @register_task("masked_lm", dataclass=MaskedLMConfig)
@@ -246,7 +250,10 @@ class MaskedLMTask(FairseqTask):
         )
 
         if self.cfg.d2v2_multi:
-            dataset = self._d2v2_multi_dataset(src_dataset)
+            dataset = self._d2v2_multi_dataset(
+                src_dataset, 
+                target_dataset=target_dataset if getattr(self.cfg, "pantagruel_multi", False) else None,
+            )
         else:
             dataset = self._regular_dataset(src_dataset, target_dataset)
 
@@ -279,7 +286,7 @@ class MaskedLMTask(FairseqTask):
         )
         return dataset
 
-    def _d2v2_multi_dataset(self, src_dataset):
+    def _d2v2_multi_dataset(self, src_dataset, target_dataset=None):
         input_dict = {
             "source": RightPadDataset(
                 src_dataset,
@@ -288,6 +295,9 @@ class MaskedLMTask(FairseqTask):
             "id": IdDataset(),
             "padding_mask": RightPaddingMaskDataset(src_dataset),
         }
+        if target_dataset is not None:
+            logger.info("Using target dataset for data2vec_multi")
+            input_dict["target"] = target_dataset
 
         dataset = NestedDictionaryDataset(
             {

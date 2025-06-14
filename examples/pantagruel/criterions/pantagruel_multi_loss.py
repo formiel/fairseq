@@ -54,6 +54,14 @@ class PantagruelMultiConfig(FairseqDataclass):
         default=0.0,
         metadata={"help": "weight of SigLIP loss"},
     )
+    mlm_weight: float = field(
+        default=0.0,
+        metadata={"help": "weight of masked language modeling loss"},
+    )
+    best_rq_weight: float = field(
+        default=0.0,
+        metadata={"help": "weight of best random quantization loss"},
+    )
     log_keys: List[str] = field(
         default_factory=list,
         metadata={"help": "additional output keys to log"},
@@ -69,6 +77,8 @@ class PantagruelMultiCriterion(FairseqCriterion):
         ctc_weight=0.0,
         ot_weight=0.0,
         siglip_weight=0.0,
+        mlm_weight=0.0,
+        best_rq_weight=0.0,
         log_keys=None,
     ):
         super().__init__(task)
@@ -93,19 +103,17 @@ class PantagruelMultiCriterion(FairseqCriterion):
         if self.siglip_weight > 0.0:
             self.logit_scale = nn.Parameter(torch.randn(1))
             self.logit_bias = nn.Parameter(torch.randn(1))
-            # rank = dist.get_rank()
-            # world_size = dist.get_world_size()
-            # logger.info(f"initializing SigLipLoss for rank [{rank}] / [{world_size}]")
-            # self.siglip_loss = SigLipLoss(
-            #                     rank=rank,
-            #                     world_size=world_size,
-            #                     dist_impl="gather",
-            #                 )
+        
+        self.mlm_weight = mlm_weight
+        self.best_rq_weight = best_rq_weight
+
         logger.info(
             f"data2vec={self.d2v_weight}, "
             f"ctc_weight={self.ctc_weight}, "
             f"OT={self.ot_weight}, "
-            f"SigLIP={self.siglip_weight}"
+            f"SigLIP={self.siglip_weight}, "
+            f"mlm_weight={self.mlm_weight}, "
+            f"best_rq_weight={self.best_rq_weight}, "
         )
 
     def forward(self, model, sample, reduce=True):
@@ -188,6 +196,26 @@ class PantagruelMultiCriterion(FairseqCriterion):
                 siglip_loss = self.compute_siglip_loss(net_output["aux_heads_out"])
                 loss = loss + self.siglip_weight * siglip_loss
                 logging_output["loss_siglip_ALIGNED"] = self.siglip_weight * siglip_loss
+
+        if (self.mlm_weight > 0 or self.best_rq_weight > 0) and net_output["mlm_enc_outs"]:
+            mlm_enc_outs = net_output["mlm_enc_outs"]
+            # {"x": {mod: M x T_masked x D_out}, "labels": {mod: M x T_masked x D_out}}
+            for _mod, logits in mlm_enc_outs["x"].items():
+                M, T, D = logits.size()
+                logits_flat = logits.reshape(-1, D)
+                labels_flat = mlm_enc_outs["labels"][_mod].reshape(-1)
+                _loss = F.cross_entropy(
+                            logits_flat,
+                            labels_flat,
+                            reduction="sum",
+                            ignore_index=self.pad_idx if _mod.upper() == "TEXT" else -100,
+                        )
+                if _mod.upper() == "TEXT":
+                    loss = loss + self.mlm_weight * _loss
+                    logging_output[f"loss_mlm_{_mod.upper()}"] = self.mlm_weight * _loss
+                elif _mod.upper() == "AUDIO":
+                    loss = loss + self.best_rq_weight * _loss
+                    logging_output[f"loss_best_rq_{_mod.upper()}"] = self.best_rq_weight * _loss
 
         logging_output["loss"] = loss.data # update loss
 

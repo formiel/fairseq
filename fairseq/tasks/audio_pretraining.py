@@ -98,6 +98,8 @@ class AudioPretrainingConfig(FairseqDataclass):
     subsample: float = 1
     seed: int = II("common.seed")
 
+    use_mel_spec_targets: bool = False
+
 
 @register_task("audio_pretraining", dataclass=AudioPretrainingConfig)
 class AudioPretrainingTask(FairseqTask):
@@ -160,6 +162,7 @@ class AudioPretrainingTask(FairseqTask):
                     num_buckets=self.cfg.num_batch_buckets or int(self.cfg.tpu),
                     text_compression_level=text_compression_level,
                     compute_mask=compute_mask,
+                    use_mel_spec_targets=task_cfg.get("use_mel_spec_targets", False),
                     **mask_args,
                 )
             else:
