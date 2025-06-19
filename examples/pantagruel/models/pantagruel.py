@@ -1487,6 +1487,14 @@ class PantagruelMultiModel(BaseFairseqModel):
             self.shared_decoder = None
         if self.ctc_module is not None:
             self.ctc_module = None
+        if self.mlm_multimodal_encoder is not None:
+            logger.info("removing mlm_multimodal_encoder")
+            self.mlm_multimodal_encoder.prediction_heads = None
+            self.mlm_multimodal_encoder.random_projection_quantizer = None
+            for name, module in list(self.mlm_multimodal_encoder.input_projs.named_modules()):
+                logger.info(f"name: {name}, module: {module}")
+                if modality.upper() not in name:
+                    self.mlm_multimodal_encoder.input_projs.AUDIO = None
 
         modality = modality.upper() if modality is not None else None
         for k in list(self.modality_encoders.keys()):
@@ -1494,10 +1502,12 @@ class PantagruelMultiModel(BaseFairseqModel):
                 self.modality_encoders[k].decoder = None
 
         if modality:
-            self.keep_modules_by_name(modality)
+            self.keep_modules_by_name(modality, self.modality_encoders)
 
-    def keep_modules_by_name(self, kept_modality):
-        modalities_to_remove = [mod for mod in list(self.modality_encoders.keys()) if mod != kept_modality.upper()]
+    def keep_modules_by_name(self, kept_modality, modules_to_process):
+        modalities_to_remove = [
+            mod for mod in list(modules_to_process.keys()) if mod != kept_modality.upper()
+        ]
         logger.info(f"modalities_to_remove: {modalities_to_remove}")
 
         for _mod_to_remove in modalities_to_remove:

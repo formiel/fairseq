@@ -75,7 +75,7 @@ class MLMMultimodalEncoder(nn.Module):
         # masked_padding_mask (padding_mask): {mod: B x T} or None, where T is the length of visible tokens
 
         # restore inputs to the original length
-        restored_x, masks = self._restore_inputs(x, mask_info=mask_info)
+        restored_x, masks = self._restore_inputs(x, mask_info=mask_info, target=target)
         
         # concat the inputs from all modalities so that the output become M x (T_all_mod1 + T_all_mod2) x D
         sorted_mods = sorted(restored_x.keys())
@@ -88,35 +88,38 @@ class MLMMultimodalEncoder(nn.Module):
 
         # create the combined padding mask
         combined_padding_mask = {}
-        if not all([_pm is None for _pm in padding_mask.values()]):
-            for _mod, _pm in padding_mask.items():
-                _pm_full = torch.zeros(
-                    M, restored_x[_mod].size(1), dtype=torch.bool, device=x_concat.device
-                )
-                if _pm is not None:
-                    # _pm: padding mask for x[_mod], shape BxT where T is the length of visible tokens
-                    # restored_x[_mod] has the length of all tokens T_all for _mod 
-                    # -> use values from _pm where ids_keep is True
-                    # -> for the rest of the tokens, set padding value to True if source[_mod] == self.padding_idx
-                    _pm_full[torch.arange(M).unsqueeze(1), mask_info[_mod].ids_keep[..., 0]] = _pm
-                    if isinstance(source, torch.Tensor):
-                        _source = source.repeat_interleave(
-                            clone_batch, dim=0
-                        )
-                    else:
-                        # source is a dict with modality names as keys
-                        _source = source[_mod]["source"]
-                        _source = _source.repeat_interleave(
-                            clone_batch, dim=0
-                        )
-                    _mask = mask_info[_mod].mask.to(torch.bool)
-                    _pm_full[_mask] = (_source[_mask] == self.padding_idx)
-                combined_padding_mask[_mod] = _pm_full
-            # Concatenate padding masks for all modalities
-            combined_padding_mask = [combined_padding_mask[key] for key in sorted_mods]
-            combined_padding_mask = torch.cat(combined_padding_mask, dim=1)
+        if len(sorted_mods) == 1:
+            combined_padding_mask = padding_mask[sorted_mods[0]]
         else:
-            combined_padding_mask = None
+            if not all([_pm is None for _pm in padding_mask.values()]):
+                for _mod, _pm in padding_mask.items():
+                    _pm_full = torch.zeros(
+                        M, restored_x[_mod].size(1), dtype=torch.bool, device=x_concat.device
+                    )
+                    if _pm is not None:
+                        # _pm: padding mask for x[_mod], shape BxT where T is the length of visible tokens
+                        # restored_x[_mod] has the length of all tokens T_all for _mod 
+                        # -> use values from _pm where ids_keep is True
+                        # -> for the rest of the tokens, set padding value to True if source[_mod] == self.padding_idx
+                        _pm_full[torch.arange(M).unsqueeze(1), mask_info[_mod].ids_keep[..., 0]] = _pm
+                        if isinstance(source, torch.Tensor):
+                            _source = source.repeat_interleave(
+                                clone_batch, dim=0
+                            )
+                        else:
+                            # source is a dict with modality names as keys
+                            _source = source[_mod]["source"]
+                            _source = _source.repeat_interleave(
+                                clone_batch, dim=0
+                            )
+                        _mask = mask_info[_mod].mask.to(torch.bool)
+                        _pm_full[_mask] = (_source[_mask] == self.padding_idx)
+                    combined_padding_mask[_mod] = _pm_full
+                # Concatenate padding masks for all modalities
+                combined_padding_mask = [combined_padding_mask[key] for key in sorted_mods]
+                combined_padding_mask = torch.cat(combined_padding_mask, dim=1)
+            else:
+                combined_padding_mask = None
 
         # forward to the transformer encoder (both masked and unmasked tokens)
         for layer in self.layers:
@@ -178,9 +181,9 @@ class MLMMultimodalEncoder(nn.Module):
             "labels": labels if labels is not None else None,  # {mod: M x T_masked}
         }
 
-    def _restore_inputs(self, x, mask_info=None):
+    def _restore_inputs(self, x, mask_info=None, target=None):
         restored_x = {}
-        masks = {} if mask_info is not None else None
+        masks = {} if mask_info is not None and target is not None else None
         for _mod, _x in x.items():
             # forward the input through the input projection layer
             _x = self.input_projs[_mod.upper()](_x)  # [M, T, D]

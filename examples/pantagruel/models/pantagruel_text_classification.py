@@ -100,7 +100,7 @@ class PantagruelTextClassificationModel(BaseFairseqModel):
                 k.startswith("shared_decoder") or
                 k.startswith("_ema") or
                 "decoder" in k or
-                (kept_modality not in k and "blocks" not in k)
+                (kept_modality not in k and "blocks" not in k and "mlm_multimodal_encoder" not in k)
             ):
                 logger.info(f"Deleting {k} from checkpoint")
                 del state["model"][k]
@@ -156,6 +156,7 @@ class PantagruelTextClassificationModel(BaseFairseqModel):
     ):
         encoder_out = self.model(
             source,
+            target=None,
             id=id,
             mode=Modality.TEXT,
             padding_mask=padding_mask,
