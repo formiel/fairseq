@@ -26,7 +26,7 @@ class RandomProjectionQuantizer(nn.Module):
         nn.init.xavier_uniform_(self.random_projection.weight)
 
         self.code_book = nn.Parameter(
-            F.normalize(torch.rand(config.codebook_vocab, config.codebook_dim))
+            torch.randn(config.codebook_vocab, config.codebook_dim)
         )
 
         self.random_projection.weight.requires_grad = False
@@ -38,7 +38,7 @@ class RandomProjectionQuantizer(nn.Module):
         Compute codebook indexes.
         input_values: T x M x C
         """
-        targets = F.normalize(self.random_projection(input_values)) # T x M x C -> T x M x D
+        targets = self.random_projection(input_values) # T x M x C -> T x M x D
         vector_distances = vector_norm(targets.unsqueeze(1) - self.code_book.unsqueeze(1), dim=-1)
         labels = torch.argmin(vector_distances, dim=1) # T x B
 

@@ -70,7 +70,7 @@ class PantagruelModalitySpecificEncoder(ModalitySpecificEncoder):
         context_encoder: nn.Module,
         decoder: nn.Module,
         get_alibi_bias: Optional[Callable[[int, int, str, str], torch.Tensor]],
-        token_type_embeddings: Optional[nn.Module],
+        token_type_embeddings: Optional[nn.Parameter] = None,
     ):
         super().__init__(modality_cfg, embed_dim, local_encoder, project_features, fixed_positional_encoder, relative_positional_encoder, context_encoder, decoder, get_alibi_bias)
 
@@ -85,12 +85,13 @@ class PantagruelModalitySpecificEncoder(ModalitySpecificEncoder):
         clone_batch: int = 1,
         mask_seeds: Optional[torch.Tensor] = None,
         precomputed_mask=None,
-        token_type_ids=None,
+        # token_type_ids=None,
     ):
         x = self.local_features(features) # B x L x D
-        if self.token_type_embeddings is not None and token_type_ids is not None:
+        if self.token_type_embeddings is not None:
             # self.token_type_embeddings(token_type_ids): 1 x D
-            x = x + self.token_type_embeddings(token_type_ids)
+            # x = x + self.token_type_embeddings(token_type_ids)
+            x = x + self.token_type_embeddings
         return self.contextualized_features(
             x,
             padding_mask,

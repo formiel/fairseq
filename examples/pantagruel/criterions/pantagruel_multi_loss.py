@@ -197,7 +197,7 @@ class PantagruelMultiCriterion(FairseqCriterion):
                 loss = loss + self.siglip_weight * siglip_loss
                 logging_output["loss_siglip_ALIGNED"] = self.siglip_weight * siglip_loss
 
-        if (self.mlm_weight > 0 or self.best_rq_weight > 0) and net_output["mlm_enc_outs"]:
+        if (self.mlm_weight > 0 or self.best_rq_weight > 0) and net_output["mlm_enc_outs"] is not None:
             mlm_enc_outs = net_output["mlm_enc_outs"]
             # {"x": {mod: M x T_masked x D_out}, "labels": {mod: M x T_masked x D_out}}
             for _mod, logits in mlm_enc_outs["x"].items():

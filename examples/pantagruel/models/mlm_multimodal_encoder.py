@@ -26,8 +26,11 @@ class MLMMultimodalEncoder(nn.Module):
         rpq_config=None,
         modalities=None,
         embedding_weights=None,
+        downsampling_audio_ratio=None,
     ):
         super().__init__()
+
+        self.downsampling_audio_ratio = downsampling_audio_ratio
 
         self.input_projs = nn.ModuleDict(
             {mod.name: nn.Linear(embed_dim, embed_dim) 
@@ -66,55 +69,33 @@ class MLMMultimodalEncoder(nn.Module):
 
         self.random_projection_quantizer = RandomProjectionQuantizer(rpq_config)
 
-    def forward(self, x, source, target=None, mask_info=None, padding_mask=None, clone_batch=1):
-        # inputs: x: {mod: M x T x C (M = B*clone_batch)}, where x contains only visible (unmasked) tokens
-        # encoder_mask (mask_info): {mod: MaskInfo(x_unmasked, mask, ids_restore, ids_keep)}, in which
-        # - mask: the length of all (masked + visible) tokens, 
-        # - ids_restore has the length of all tokens
-        # - ids_keep contains ids of visible tokens
-        # masked_padding_mask (padding_mask): {mod: B x T} or None, where T is the length of visible tokens
-
-        # restore inputs to the original length
-        restored_x, masks = self._restore_inputs(x, mask_info=mask_info, target=target)
-        
-        # concat the inputs from all modalities so that the output become M x (T_all_mod1 + T_all_mod2) x D
-        sorted_mods = sorted(restored_x.keys())
-        x_concat = [restored_x[key] for key in sorted_mods]
+    def forward(self, x, source, target=None, masks=None, padding_mask=None):
+        # concat the inputs from all modalities so that the output become B x (T1 + T2) x D
+        sorted_mods = sorted(x.keys())
+        x_concat = [x[key] for key in sorted_mods]
         x_concat = torch.cat(x_concat, dim=1)
-        mask_concat = [masks[key] for key in sorted_mods] if masks is not None else None # [M, T_concat]
+
+        mask_concat = [masks[key] for key in sorted_mods] if masks is not None else None
         if mask_concat is not None:
-            mask_concat = torch.cat(mask_concat, dim=1)
+            mask_concat = torch.cat(mask_concat, dim=1) # [B, T_concat]
         M, T_concat, D = x_concat.size()
 
-        # create the combined padding mask
+        # create the combined padding mask for all tokens (masked + unmasked)
         combined_padding_mask = {}
         if len(sorted_mods) == 1:
-            combined_padding_mask = padding_mask[sorted_mods[0]]
+            combined_padding_mask = (
+                padding_mask[sorted_mods[0]] if isinstance(padding_mask, dict) 
+                else padding_mask if isinstance(padding_mask, torch.Tensor) 
+                else None
+            )
         else:
             if not all([_pm is None for _pm in padding_mask.values()]):
                 for _mod, _pm in padding_mask.items():
-                    _pm_full = torch.zeros(
-                        M, restored_x[_mod].size(1), dtype=torch.bool, device=x_concat.device
-                    )
-                    if _pm is not None:
-                        # _pm: padding mask for x[_mod], shape BxT where T is the length of visible tokens
-                        # restored_x[_mod] has the length of all tokens T_all for _mod 
-                        # -> use values from _pm where ids_keep is True
-                        # -> for the rest of the tokens, set padding value to True if source[_mod] == self.padding_idx
-                        _pm_full[torch.arange(M).unsqueeze(1), mask_info[_mod].ids_keep[..., 0]] = _pm
-                        if isinstance(source, torch.Tensor):
-                            _source = source.repeat_interleave(
-                                clone_batch, dim=0
-                            )
-                        else:
-                            # source is a dict with modality names as keys
-                            _source = source[_mod]["source"]
-                            _source = _source.repeat_interleave(
-                                clone_batch, dim=0
-                            )
-                        _mask = mask_info[_mod].mask.to(torch.bool)
-                        _pm_full[_mask] = (_source[_mask] == self.padding_idx)
-                    combined_padding_mask[_mod] = _pm_full
+                    if _pm is None:
+                        _pm = torch.zeros(
+                            M, x[_mod].size(1), dtype=torch.bool, device=x_concat.device
+                        )
+                    combined_padding_mask[_mod] = _pm
                 # Concatenate padding masks for all modalities
                 combined_padding_mask = [combined_padding_mask[key] for key in sorted_mods]
                 combined_padding_mask = torch.cat(combined_padding_mask, dim=1)
@@ -126,12 +107,26 @@ class MLMMultimodalEncoder(nn.Module):
             x_concat = layer(x_concat, src_key_padding_mask=combined_padding_mask) # [M, T_concat, D]
         
         # project masked tokens or all tokens if no masking
-        ids_masked = None
+        ids_masked_mod, ids_masked_concat = None, None
         if mask_concat is not None:
-            min_num_masked = mask_concat.sum(dim=-1).min()
-            ids_unmasked_masked = mask_concat.argsort(dim=-1)
-            ids_masked = ids_unmasked_masked[:, -min_num_masked:]
-            x_concat = x_concat[torch.arange(M).unsqueeze(1), ids_masked, :]
+            # get the indices of masked tokens for each modality
+            ids_masked_mod_list, ids_masked_concat_list = [], []
+            offset_for_mod_len = 0
+            num_masked_by_mod = {}
+            for i, _mod in enumerate(sorted_mods):
+                min_num_masked = masks[_mod].sum(dim=-1).min()
+                ids_unmasked_masked = masks[_mod].argsort(dim=-1)
+                ids_masked_mod = ids_unmasked_masked[:, -min_num_masked:] # ids of masked tokens in each modality
+                ids_masked_concat = ids_masked_mod + offset_for_mod_len  # ids of masked tokens in the concatenated sequence
+                ids_masked_mod_list.append(ids_masked_mod)
+                ids_masked_concat_list.append(ids_masked_concat)
+                offset_for_mod_len += x[_mod].size(1)
+                num_masked_by_mod[_mod] = min_num_masked.item()  # number of masked tokens for each modality
+            
+            ids_masked_concat = torch.cat(ids_masked_concat_list, dim=1)
+            ids_masked_mod = ids_masked_mod_list
+            # select only masked tokens
+            x_concat = x_concat[torch.arange(M).unsqueeze(1), ids_masked_concat, :]  # [M, T_concat_(masked), D]
 
         x_concat = self.norm(x_concat)
         x_concat = self.act(x_concat) # [M, T_concat_(masked), D]
@@ -139,93 +134,62 @@ class MLMMultimodalEncoder(nn.Module):
         # project the output to the prediction heads
         x_out = {}
         start_idx = 0
-        num_masked_by_mod = torch.tensor(
-            [restored_x[_mod].size(1) - x[_mod].size(1) for _mod in sorted_mods],
-            device=x_concat.device
-        )
         for i, _mod in enumerate(sorted_mods):
             if self.prediction_heads is not None and _mod.upper() in self.prediction_heads:
                 x_out[_mod] = self.prediction_heads[_mod.upper()](
-                    x_concat[:, start_idx:start_idx + num_masked_by_mod[i], :]
+                    x_concat[:, start_idx:start_idx + num_masked_by_mod[_mod], :]
                 ) # [M, T_masked, V]
-                start_idx += num_masked_by_mod[i]
+                start_idx += num_masked_by_mod[_mod]
             else:
-                x_out[_mod] = x_concat[:, start_idx:start_idx + restored_x[_mod].size(1), :]  # [M, T_all, D]
-                start_idx += restored_x[_mod].size(1)
+                x_out[_mod] = x_concat[:, start_idx:start_idx + x[_mod].size(1), :]  # [M, T_all, D]
+                start_idx += x[_mod].size(1)
 
         # get targets for each modality
         labels = None
-        if target is not None and ids_masked is not None:
+        if target is not None and ids_masked_concat is not None:
             labels = {}
-            start_idx = 0
+            # start_idx = 0
             for i, _mod in enumerate(sorted_mods):
                 if _mod.upper() == "TEXT":
                     _label = self.get_label_text(
-                        target if isinstance(target, torch.Tensor) else target[_mod]["target"],
-                        ids_masked=ids_masked[:, start_idx:start_idx + num_masked_by_mod[i]],
-                        clone_batch=clone_batch,
+                        target if isinstance(target, torch.Tensor) else target[_mod],
+                        ids_masked=ids_masked_mod[i],
                     )
                 elif _mod.upper() == "AUDIO":
                     _label = self.get_label_audio(
-                        target if isinstance(target, torch.Tensor) else target[_mod]["target"],
-                        restored_x[_mod].size(1),  # T_cnn
-                        ids_masked=ids_masked[:, start_idx:start_idx + num_masked_by_mod[i]],
-                        clone_batch=clone_batch,
+                        target if isinstance(target, torch.Tensor) else target[_mod],
+                        x[_mod].size(1),  # T_cnn
+                        ids_masked=ids_masked_mod[i],
                     )
-                start_idx += num_masked_by_mod[i]
+                # start_idx += num_masked_by_mod[i]
                 labels[_mod] = _label
-                # logger.info(f"[{_mod.upper()}]: pred: {x_out[_mod].size()} labels: {labels[_mod].size()}")
             
         return {
             "x": x_out,  # {mod: M x T_masked x D_out}
             "labels": labels if labels is not None else None,  # {mod: M x T_masked}
         }
 
-    def _restore_inputs(self, x, mask_info=None, target=None):
-        restored_x = {}
-        masks = {} if mask_info is not None and target is not None else None
-        for _mod, _x in x.items():
-            # forward the input through the input projection layer
-            _x = self.input_projs[_mod.upper()](_x)  # [M, T, D]
-            if masks is not None:
-                # get the ids of visible tokens and the lengths
-                ids_keep = mask_info[_mod].ids_keep[..., 0]  # [M, T]
-                M, T_all, D = mask_info[_mod].ids_restore.shape
-
-                _x_full = self.mask_emb.expand(M, T_all, D).clone()
-                _x_full[torch.arange(M).unsqueeze(1), ids_keep, :] = _x
-                restored_x[_mod] = _x_full
-                masks[_mod] = mask_info[_mod].mask
-            else:
-                restored_x[_mod] = _x
-
-        return restored_x, masks
-
     def get_label_text(
-        self, target, ids_masked=None, clone_batch=1
+        self, target, ids_masked=None,
     ):
         if ids_masked is not None:
-            target = target.repeat_interleave(clone_batch, dim=0)
             target = target[torch.arange(target.size(0)).unsqueeze(1), ids_masked]
         return target
 
     def get_label_audio(
-        self, target, T_cnn, ids_masked, clone_batch=1
+        self, target, T_cnn, ids_masked,
     ):
-        target = target.repeat_interleave(clone_batch, dim=0)  # [B, C, T] -> [B*clone_batch, C, T]
-        M, C, T_mel = target.size()  # [B*clone_batch, C, T_mel]
-        target = target.transpose(1, 2) # [B*clone_batch, T_mel, C]
-
+        M, C, T_mel = target.size()  # [B, C, T_mel]
+        target = target.transpose(1, 2) # [B, T_mel, C]
         ids_masked_spec = self.map_masked_indices_to_interp_window(
             ids_masked, T_cnn, T_mel
         )
-
         target = target[torch.arange(target.size(0)).unsqueeze(1), ids_masked_spec]
-        target = target.transpose(0, 1) # TxMxC
+        target = target.transpose(0, 1) # TxBxC
 
-        label = self.random_projection_quantizer(target) # T_masked x B*clone_batch
+        label = self.random_projection_quantizer(target) # T_masked x B
 
-        return label.transpose(0, 1)  # B*clone_batch x T_masked
+        return label.transpose(0, 1)  # B x T_masked
 
     def map_masked_indices_to_interp_window(self, ids_masked, T_cnn, T_mel):
         """
@@ -233,12 +197,22 @@ class MLMMultimodalEncoder(nn.Module):
         """
         # map CNN indices to interpolated positions
         t_interp = torch.round((ids_masked.float() / (T_cnn - 1)) * (T_mel - 1)).long() # MxT_masked
-        # M, _ = t_interp.size()
+        # M, T_masked = t_interp.size()
 
-        # not try using surrounding positions yet
         # # for each t', take a window around it (clamped to bounds)
         # t_minus = torch.clamp(t_interp - 1, min=0)
         # t_plus  = torch.clamp(t_interp + 1, max=T_mel - 1)
-        # expanded = torch.stack([t_minus, t_interp, t_plus], dim=-1)  # (B, T, 3)
-        # ids_masked_spec = expanded.view(M, -1)  # (B, T * 3)
+        # expanded = torch.stack([t_minus, t_interp, t_plus], dim=-1)  # (M, T_masked, 3)
+        # expanded = expanded.view(M, -1)  # (M, T_masked * 3)
+
+        # # Remove repeated values per row, keep order, cut to min length
+        # # Use torch.unique_consecutive for speed (works because repeated values are consecutive due to clamping)
+        # unique_rows = []
+        # min_len = expanded.size(1)
+        # for row in expanded:
+        #     uniq = torch.unique_consecutive(row)
+        #     min_len = min(min_len, uniq.size(0))
+        #     unique_rows.append(uniq)
+        # # Stack and cut to min_len
+        # ids_masked_spec = torch.stack([row[:min_len] for row in unique_rows], dim=0)  # (M, min_len)
         return t_interp

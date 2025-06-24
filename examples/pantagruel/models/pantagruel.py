@@ -25,13 +25,14 @@ from fairseq.modules import EMAModule, EMAModuleConfig
 from fairseq.file_io import PathManager
 
 from fairseq.dataclass import FairseqDataclass
+from fairseq.data.data_utils import compute_mask_indices
 from fairseq.models import BaseFairseqModel, register_model, FairseqDecoder
 
 from examples.pantagruel.data.modality import Modality
 from examples.data2vec.data.modality import Modality as Data2vecModality
 
 from examples.data2vec.models.modalities.base import (
-    MaskSeed,
+    MaskSeed, MaskInfo,
     get_annealed_rate,
     D2vModalityConfig,
 )
@@ -353,13 +354,15 @@ class PantagruelMultiModel(BaseFairseqModel):
                 freeze_backbone=getattr(cfg, "freeze_backbone", False),
             )
 
-        token_type_embeddings = None
         self.uni_modalities = [m for m in self.modalities if "_" not in m.name]
         logger.info(f"[Pretraining] self.uni_modalities: {self.uni_modalities}")
-        if cfg.use_token_type_embeddings:
-            token_type_embeddings = nn.Embedding(
-                len(self.uni_modalities), cfg.embed_dim
-            )
+        # token_type_embeddings = None
+        # if cfg.use_token_type_embeddings:
+        #     token_type_embeddings = nn.Embedding(
+        #         len(self.uni_modalities), cfg.embed_dim
+        #     )
+        def make_modality_embeddings(embed_dim):
+            return nn.Parameter(torch.randn(embed_dim, dtype=torch.float32))
 
         self.alibi_biases = {}
         self.modality_encoders = nn.ModuleDict()
@@ -376,7 +379,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                     cfg.layer_norm_first,
                     self.alibi_biases[mod.name],
                     task,
-                    token_type_embeddings,
+                    make_modality_embeddings(cfg.embed_dim) if cfg.use_token_type_embeddings else None,
                     use_mimi_for_audio=getattr(cfg, "use_mimi_for_audio", False),
                 )
                 self.modality_encoders[mod.name] = enc
@@ -445,7 +448,17 @@ class PantagruelMultiModel(BaseFairseqModel):
             )
 
         self.mlm_multimodal_encoder = None
+        self.downsampling_audio_ratio = None
         if self.enable_mlm_multimodal_encoder:
+            total_stride = 1
+            cnn_config = eval(cfg.modalities.audio.feature_encoder_spec)
+            for _, _, stride in cnn_config:
+                total_stride *= stride
+            self.downsampling_audio_ratio = total_stride
+            logger.info(
+                f"Downsampling_audio_ratio: {self.downsampling_audio_ratio}"
+            )
+
             logger.info("Initializing MLMMultimodalEncoder...")
             self.mlm_multimodal_encoder = MLMMultimodalEncoder(
                 task,
@@ -454,6 +467,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                 cfg.random_projection_quantizer_config,
                 self.modalities,
                 embedding_weights=self.modality_encoders["TEXT"].local_encoder.embed_tokens.weight if cfg.mlm_multimodal_encoder_config.tie_weights_embeddings else None,
+                downsampling_audio_ratio=self.downsampling_audio_ratio,
             )
 
         # init using pretrained models
@@ -924,9 +938,9 @@ class PantagruelMultiModel(BaseFairseqModel):
         extractor, remaining_extractor_names = self._get_feature_extractor(mode)
         device = source.device if isinstance(source, torch.Tensor) else source["audio"]["source"].device
 
-        token_type_ids = {}
-        for it, im in enumerate(self.uni_modalities):
-            token_type_ids[im.name.lower()] = torch.ones((1), dtype=torch.int64, device=device) * it
+        # token_type_ids = {}
+        # for it, im in enumerate(self.uni_modalities):
+        #     token_type_ids[im.name.lower()] = torch.ones((1), dtype=torch.int64, device=device) * it
 
         mask_seeds = None
         if id is not None:
@@ -938,7 +952,6 @@ class PantagruelMultiModel(BaseFairseqModel):
                 "local_features": {},
                 "encoder_mask": {},
                 "alibi_bias": {}, "alibi_scale": {},
-                "encoder_mask": {},
                 "padding_mask": {}
             }
         current_modes = [mode.lower()] if "_" not in mode else list(source.keys())
@@ -960,7 +973,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                     precomputed_mask if isinstance(source, torch.Tensor)
                     else source[_mod]["precomputed_mask"]
                 ),
-                token_type_ids=token_type_ids[_mod],
+                # token_type_ids=token_type_ids[_mod],
             ) # BxLxD
             for k, v in extractor_out.items():
                 extractor_out[k][_mod] = _extractor_out_mod[k]
@@ -988,7 +1001,8 @@ class PantagruelMultiModel(BaseFairseqModel):
             for name in remaining_extractor_names:
                 dummy = dummy_source_audio if name == "AUDIO" else dummy_source_text
                 dummy_outs = self.modality_encoders[name](
-                    dummy, None, False, False, token_type_ids=token_type_ids[name.lower()]
+                    dummy, None, False, False, 
+                    # token_type_ids=token_type_ids[name.lower()]
                 )
                 _x_dummy = dummy_outs["x"].repeat_interleave(B * self.cfg.clone_batch,0) #1xTxC -> M x T x C
                 x_dummies.append(_x_dummy)
@@ -1057,14 +1071,58 @@ class PantagruelMultiModel(BaseFairseqModel):
         # forward to mlm_multimodal_encoder
         mlm_enc_outs = None
         x_features = {k: v.clone() for k, v in x.items()}
+        mlm_encoder_maskinfo = {}
+        padding_mask_mods = {}
+        if not features_only:
+            for _mod in current_modes:
+                if _mod.upper() == "TEXT":
+                    # mask source
+                    _source_masked, _mask_info = self.do_masking(
+                        (source if isinstance(source, torch.Tensor) 
+                        else source[_mod]["source"]),
+                        (padding_mask if isinstance(source, torch.Tensor) 
+                        else source[_mod]["padding_mask"]),
+                        _mod.lower(),
+                    )
+                    # forward all (masked+unmasked) tokens
+                    _extractor_out_mod = self.modality_encoders[_mod.upper()](
+                        _source_masked,
+                        (
+                            padding_mask if isinstance(source, torch.Tensor) 
+                            else source[_mod]["padding_mask"]
+                        ),
+                        False,
+                        False,
+                    )
+                    mlm_encoder_maskinfo[_mod] = _mask_info.mask
+                    padding_mask_mods[_mod] = (
+                        padding_mask if isinstance(source, torch.Tensor) 
+                        else source[_mod]["padding_mask"]
+                    )
+                elif _mod.upper() == "AUDIO":
+                    _extractor = self.modality_encoders[_mod.upper()]
+                    _extractor_out_mod = _extractor.contextualized_features(
+                        extractor_out["local_features"][_mod],
+                        (padding_mask if isinstance(source, torch.Tensor) 
+                        else source[_mod]["padding_mask"]),
+                        mask,
+                        remove_masked=False,
+                    )
+                    mlm_encoder_maskinfo[_mod] = _extractor_out_mod["encoder_mask"].mask
+                    padding_mask_mods[_mod] = _extractor_out_mod["padding_mask"]
+
+                x_features[_mod] = _extractor_out_mod["x"]
+
         if self.mlm_multimodal_encoder is not None:
             mlm_enc_outs = self.mlm_multimodal_encoder(
                 x_features, 
                 source, 
                 target,
-                mask_info=encoder_mask,
-                padding_mask=masked_padding_mask,
-                clone_batch=self.cfg.clone_batch if not features_only else 1,
+                masks=(
+                    mlm_encoder_maskinfo if mlm_encoder_maskinfo and not features_only 
+                    else None
+                ),
+                padding_mask=padding_mask_mods,
             )
             for _mod in current_modes:
                 x_features[_mod] = mlm_enc_outs["x"][_mod]
@@ -1337,6 +1395,49 @@ class PantagruelMultiModel(BaseFairseqModel):
             result["ema_decay"] = self.ema.get_decay() * 1000
 
         return result
+
+    def do_masking(
+        self, x_mod, padding_mask, mod
+    ):
+        B, T = x_mod.shape
+        mod_cfg = getattr(self.cfg.modalities, mod)
+        mask = compute_mask_indices(
+                        (B, T),
+                        padding_mask,
+                        mod_cfg.mask_prob,
+                        1,
+                        min_masks=1,
+                        require_same_masks=True,
+                        mask_dropout=mod_cfg.mask_dropout,
+                        add_masks=mod_cfg.add_masks,
+                    )
+        mask = torch.from_numpy(mask).to(device=x_mod.device)
+        mask_info = self.make_maskinfo(x_mod, mask)
+        # apply mask
+        mask_value = self.mask_idx if mod.upper()=="TEXT" else 0.0
+        x_mod = x_mod.masked_fill(mask, mask_value)
+
+        return x_mod, mask_info
+
+    def make_maskinfo(self, x, mask):
+        B, T = x.shape
+
+        mask = mask.to(torch.uint8)
+        ids_shuffle = mask.argsort(dim=1)
+        ids_restore = ids_shuffle.argsort(dim=1)
+
+        len_keep = T - mask[0].sum()
+        ids_keep = ids_shuffle[:, :len_keep]
+
+        x_unmasked = torch.gather(x, dim=1, index=ids_keep)
+
+        mask_info = MaskInfo(
+            x_unmasked=x_unmasked,
+            mask=mask,
+            ids_restore=ids_restore,
+            ids_keep=ids_keep,
+        )
+        return mask_info
     
     def forward_decoder(
         self,

@@ -14,6 +14,8 @@ import time
 
 import torch
 import torch.nn.functional as F
+import torchaudio.transforms as T
+from torch.nn.utils.rnn import pad_sequence
 
 try:
     from transformers import AutoTokenizer
@@ -80,6 +82,7 @@ class TextDataConfig(FairseqDataclass):
         default=1,
         metadata={"help": "repeat each mask index multiple times."}
     )
+    use_raw_tokens_targets: bool = False
 
 
 @dataclass
@@ -109,6 +112,7 @@ class AudioDataConfig(FairseqDataclass):
         default="",
         metadata={"help": "musan dir for audio augmentation. None means no augmentation applied"}
     )
+    use_mel_spec_targets: bool = False
 
 
 @dataclass
@@ -193,7 +197,7 @@ class AlignedSpeechTextDataset(FairseqDataset):
             f"padded_audio={self.cfg.audio.enable_padding}, "
             f"max_sample_size={self.cfg.audio.max_sample_size}, "
             f"min_sample_size={self.cfg.audio.min_sample_size}, "
-            f"normalized_audio={self.cfg.audio.normalize}, "
+            f"normalized_audio={self.cfg.audio.normalize})"
             # f"audio_transform={self.audio_transform})"
         )
 
@@ -361,6 +365,39 @@ class AlignedSpeechTextDataset(FairseqDataset):
             text=text_item,
             speaker_id=speaker_id,
         )
+
+    def compute_mel_spectrogram(
+            self,
+            wav,
+            curr_sample_rate=16000,
+            n_fft=400,
+            n_mel=80,
+        ):
+        """
+        Processes a single waveform through spectrogram, mel scaling, and normalization.
+
+        Args:
+            wav (np.ndarray): Input waveform.
+            curr_sample_rate (int): Sample rate of the input waveform.
+            input_freq (int): Expected input frequency for the model.
+            resample_freq (int): Target resample frequency.
+            n_fft (int): FFT size.
+            n_mel (int): Number of mel bins.
+
+        Returns:
+            torch.Tensor: Mel-scaled, augmented spectrogram.
+        """
+        # Convert to torch tensor
+        waveform = torch.tensor(wav).unsqueeze(0)  # (time,) -> [1, time]
+
+        # Compute power spectrogram
+        spec = T.Spectrogram(n_fft=n_fft, power=2, normalized=True)(waveform) # [1, n_fft // 2 + 1, time]
+
+        # Convert to mel scale
+        mel = T.MelScale(n_mels=n_mel, sample_rate=curr_sample_rate, n_stft=n_fft // 2 + 1)(spec)
+        mel = mel.squeeze(0)  # [1, n_mel, time] -> [n_mel, time]
+
+        return mel
     
     def collater(
         self, samples: List[AlignedSpeechTextDatasetItem]) -> Dict:
@@ -388,6 +425,7 @@ class AlignedSpeechTextDataset(FairseqDataset):
             torch.BoolTensor(collated_sources.shape).fill_(False) 
             if self.cfg.audio.enable_padding else None
         )
+        collated_melspec_targets = [None] * len(audios)
         for i, (source, size) in enumerate(zip(audios, sizes)):
             diff = size - target_size
             if diff == 0:
@@ -401,6 +439,13 @@ class AlignedSpeechTextDataset(FairseqDataset):
                 padding_mask[i, diff:] = True
             else:
                 collated_sources[i] = self.crop_to_max_size(source, target_size)
+            if self.cfg.audio.use_mel_spec_targets:
+                collated_melspec_targets[i] = self.compute_mel_spectrogram(
+                    collated_sources[i].numpy(),
+                )
+        # create tensor for mel spectrogram targets
+        if self.cfg.audio.use_mel_spec_targets:
+            collated_melspec_targets = pad_sequence(collated_melspec_targets, batch_first=True)
 
         audio_input = {"source": collated_sources, 
                         "src_lengths": torch.tensor(sizes, dtype=torch.long)
@@ -478,6 +523,12 @@ class AlignedSpeechTextDataset(FairseqDataset):
                 "text": text_input,
             },
         }
+        if self.cfg.audio.use_mel_spec_targets and self.cfg.text.use_raw_tokens_targets:
+            net_input["target"] = {
+                "audio": collated_melspec_targets,
+                "text": tokens.clone(),
+            }
+
         out = {
             "id": ids,
             "net_input": net_input,

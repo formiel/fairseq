@@ -43,6 +43,7 @@ task:
     min_sample_size: 32000
     normalize: true
     precompute_mask_config: {}
+    use_mel_spec_targets: true
   text:
     data: ???
     sample_break_mode: none
@@ -60,9 +61,11 @@ task:
       normalize: true
       precompute_mask_config: {"mask_prob": 0.5}
       musan_dir: "/lustre/fsn1/projects/rech/zbk/commun/Data/speech_augmentation"
+      use_mel_spec_targets: true
     text:
       mask_prob: 0.5
       mask_multiple_length: 1
+      use_raw_tokens_targets: true
 
 dataset:
   num_workers: 6
@@ -94,9 +97,9 @@ criterion:
   - masked_pct
   - loss_
   - sample_size_
-  # siglip_weight: 1.0
-  # ctc_weight: 1.0
-  # ot_weight: 2.0
+  siglip_weight: 1.0
+  ctc_weight: 1.0
+  ot_weight: 1.0
   d2v_weight: 1.0
   mlm_weight: 1.0
   best_rq_weight: 1.0
@@ -130,16 +133,16 @@ model:
   # skip_mode: 'TEXT'
   dummy_factor: 0.0
 
-  # use_map_head_for_speech: true
-  # num_map_heads: 4
-  # use_linear_head_for_text: true
-  # num_freeze_sigloss_updates: 720000
+  use_map_head_for_speech: true
+  num_map_heads: 4
+  use_linear_head_for_text: true
+  num_freeze_sigloss_updates: 0
 
-  # use_ctc_module: true
-  # num_freeze_ctc_updates: 720000
+  use_ctc_module: true
+  num_freeze_ctc_updates: 0
 
-  # extract_encoder_outs: true
-  # num_freeze_ot_updates: 720000
+  extract_encoder_outs: true
+  num_freeze_ot_updates: 0
 
   # compute_cross_preds_for_text: true
 
@@ -147,7 +150,7 @@ model:
   enable_mlm_multimodal_encoder: true
   mlm_multimodal_encoder_config:
     num_heads: 8
-    num_layers: 6
+    num_layers: 4
   random_projection_quantizer_config:
     input_feature_dim: 80
     codebook_dim: 8192
@@ -157,7 +160,7 @@ model:
   loss_beta: 0
   loss_scale: null
 
-  depth: 6
+  depth: 8
   embed_dim: 768
   clone_batch: 8
 
@@ -166,7 +169,7 @@ model:
   ema_anneal_end_step: 300000
   ema_encoder_only: false # speech: false, text: true
 
-  average_top_k_layers: "{'audio': 6, 'text': 6}"
+  average_top_k_layers: "{'audio': 8, 'text': 8}"
   instance_norm_target_layer: true
   layer_norm_target_layer: false
   layer_norm_targets: false
