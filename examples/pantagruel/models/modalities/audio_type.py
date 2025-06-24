@@ -5,16 +5,21 @@
 
 from dataclasses import dataclass
 from typing import Callable, Dict, Optional
+import logging
 
 import torch
 import torch.nn as nn
 
 from fairseq.tasks import FairseqTask
+from fairseq.data.data_utils import compute_mask_indices
 from .base_encoder import PantagruelModalitySpecificEncoder
 
 from examples.data2vec.models.modalities.audio import (
     D2vAudioConfig,
     AudioEncoder,
+)
+from examples.data2vec.models.modalities.base import (
+    MaskSeed, random_masking
 )
 
 from examples.pantagruel.data.modality import Modality
@@ -125,3 +130,62 @@ class AudioTypeEncoder(PantagruelModalitySpecificEncoder):
                 mod.reset_parameters()
         if self.decoder is not None:
             self.decoder.reset_parameters()
+
+    def compute_mask(
+        self,
+        x,
+        padding_mask,
+        mask_seed: Optional[MaskSeed],
+        apply,
+        precomputed_mask,
+    ):
+        if precomputed_mask is not None:
+            mask = precomputed_mask
+            mask_info = self.make_maskinfo(x, mask)
+        else:
+            B, T, C = x.shape
+            cfg = self.modality_cfg
+
+            mask_prob = cfg.mask_prob
+
+            if (
+                cfg.mask_prob_min is not None
+                and cfg.mask_prob_min >= 0
+                and cfg.mask_prob_min < mask_prob
+            ):
+                mask_prob = np.random.uniform(cfg.mask_prob_min, mask_prob)
+
+            if mask_prob > 0:
+                if cfg.mask_length == 1:
+                    mask_info = random_masking(x, mask_prob, mask_seed)
+                else:
+                    if self.modality_cfg.inverse_mask:
+                        mask_prob = 1 - mask_prob
+
+                    try:
+                        mask = compute_mask_indices(
+                            (B, T),
+                            padding_mask,
+                            mask_prob,
+                            cfg.mask_length,
+                            min_masks=1,
+                            require_same_masks=True,
+                            mask_dropout=cfg.mask_dropout,
+                            add_masks=cfg.add_masks,
+                            seed=mask_seed.seed if mask_seed is not None else None,
+                            epoch=mask_seed.update if mask_seed is not None else None,
+                            indices=mask_seed.ids if mask_seed is not None else None,
+                        )
+                        mask = torch.from_numpy(mask).to(device=x.device)
+                        if self.modality_cfg.inverse_mask:
+                            mask = 1 - mask
+                        mask_info = self.make_maskinfo(x, mask)
+                    except:
+                        mask_info = random_masking(x, mask_prob, mask_seed)
+            else:
+                mask_info = None
+
+        if apply:
+            x = self.apply_mask(x, mask_info)
+
+        return x, mask_info
