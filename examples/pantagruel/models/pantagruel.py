@@ -1112,6 +1112,15 @@ class PantagruelMultiModel(BaseFairseqModel):
                     padding_mask_mods[_mod] = _extractor_out_mod["padding_mask"]
 
                 x_features[_mod] = _extractor_out_mod["x"]
+        else:
+            for _mod in current_modes:
+                if _mod.upper() == "TEXT":
+                    padding_mask_mods[_mod] = (
+                        padding_mask if isinstance(source, torch.Tensor) 
+                        else source[_mod]["padding_mask"]
+                    )
+                elif _mod.upper() == "AUDIO":
+                    padding_mask_mods[_mod] = extractor_out["padding_mask"][_mod]
 
         if self.mlm_multimodal_encoder is not None:
             mlm_enc_outs = self.mlm_multimodal_encoder(
