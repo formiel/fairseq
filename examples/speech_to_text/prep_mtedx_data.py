@@ -127,7 +127,7 @@ def process(args):
             dataset = mTEDx(root.as_posix(), lang, split)
             if args.use_audio_input:
                 print("Converting audios...")
-                for waveform, sample_rate, _, _, _, utt_id in tqdm(dataset):
+                for waveform, sample_rate, _, _, _, _, utt_id in tqdm(dataset):
                     tgt_sample_rate = 16_000
                     _wavform, _ = convert_waveform(
                         waveform, sample_rate, to_mono=True,
@@ -135,7 +135,7 @@ def process(args):
                     )
                     sf.write(
                         (audio_root / f"{utt_id}.flac").as_posix(),
-                        _wavform.numpy(), tgt_sample_rate
+                        _wavform.squeeze().cpu().numpy(), tgt_sample_rate
                     )
             else:
                 print("Extracting log mel filter bank features...")
