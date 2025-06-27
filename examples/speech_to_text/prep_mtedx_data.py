@@ -148,7 +148,10 @@ def process(args):
         print("ZIPing audios/features...")
         create_zip(audio_root, zip_path)
         print("Fetching ZIP manifest...")
-        audio_paths, audio_lengths = get_zip_manifest(zip_path)
+        audio_paths, audio_lengths = get_zip_manifest(
+            zip_path, is_audio=args.use_audio_input
+        )
+
         # Generate TSV manifest
         print("Generating manifest...")
         train_text = []
@@ -168,7 +171,11 @@ def process(args):
             if is_train_split:
                 train_text.extend(manifest["tgt_text"])
             df = pd.DataFrame.from_dict(manifest)
-            df = filter_manifest_df(df, is_train_split=is_train_split)
+            df = filter_manifest_df(
+                df, is_train_split=is_train_split, 
+                min_n_frames=args.min_n_frames, 
+                max_n_frames=args.max_n_frames
+            )
             save_df_to_tsv(df, cur_root / f"{split}_{args.task}.tsv")
         # Generate vocab
         v_size_str = "" if args.vocab_type == "char" else str(args.vocab_size)
@@ -259,6 +266,14 @@ def main():
     parser.add_argument("--task", type=str, choices=["asr", "st"])
     parser.add_argument("--joint", action="store_true", help="")
     parser.add_argument("--use-audio-input", action="store_true")
+    parser.add_argument(
+        "--min-n-frames", type=int, default=5,
+        help="minimum number of frames for audio features"
+    )
+    parser.add_argument(
+        "--max-n-frames", type=int, default=3000,
+        help="maximum number of frames for audio features"
+    )
     args = parser.parse_args()
 
     if args.joint:
