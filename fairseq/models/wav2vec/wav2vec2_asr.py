@@ -608,6 +608,15 @@ class Wav2VecEncoder(FairseqEncoder):
                         "modality_encoders.AUDIO"
                     ):
                         del state["model"][k]
+                    else:
+                        if "token_type_embeddings.weight" in k: # backward compatibility
+                            # to support old checkpoints of pantagruel multi
+                            new_k = k.replace("token_type_embeddings.weight", "token_type_embeddings")
+                            logger.info(f"Renaming {k} to {new_k}")
+                            # need to fix the dimension
+                            # TODO: check the index automatically
+                            state["model"][new_k] = state["model"][k][0]
+                            del state["model"][k]
 
             # for modality experts in PantagurelMulti
             for k in list(state["model"].keys()):

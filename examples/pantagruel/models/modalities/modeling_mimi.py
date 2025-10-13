@@ -22,21 +22,26 @@ import torch
 import torch.utils.checkpoint
 from torch import nn
 
-from transformers.activations import ACT2FN
-from transformers.cache_utils import Cache, DynamicCache, SlidingWindowCache, StaticCache
-from transformers.modeling_attn_mask_utils import AttentionMaskConverter
-from transformers.modeling_flash_attention_utils import flash_attn_supports_top_left_mask, is_flash_attn_available
-from transformers.modeling_outputs import BaseModelOutputWithPast
-from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
-from transformers.modeling_utils import PreTrainedModel
-from transformers.utils import (
-    ModelOutput,
-    add_start_docstrings,
-    add_start_docstrings_to_model_forward,
-    is_torch_flex_attn_available,
-    logging,
-    replace_return_docstrings,
-)
+try:
+    from transformers.activations import ACT2FN
+    from transformers.cache_utils import Cache, DynamicCache, SlidingWindowCache, StaticCache
+    from transformers.modeling_attn_mask_utils import AttentionMaskConverter
+    from transformers.modeling_flash_attention_utils import flash_attn_supports_top_left_mask, is_flash_attn_available
+    from transformers.modeling_outputs import BaseModelOutputWithPast
+    from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
+    from transformers.modeling_utils import PreTrainedModel
+    from transformers.utils import (
+        ModelOutput,
+        add_start_docstrings,
+        add_start_docstrings_to_model_forward,
+        is_torch_flex_attn_available,
+        logging,
+        replace_return_docstrings,
+    )
+except ImportError:
+    raise ImportError(
+        "Please install transformers versions that are later than 4.44.0 for using Mimi encoder."
+    )
 from .configuration_mimi import MimiConfig
 
 

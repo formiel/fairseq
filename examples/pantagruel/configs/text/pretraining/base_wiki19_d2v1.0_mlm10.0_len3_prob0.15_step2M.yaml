@@ -1,4 +1,3 @@
-# @package _group_
 hydra:
   run:
     dir: /lustre/fsn1/projects/rech/oou/ucy22cr/pantagruel/tmp/hydra/outputs/${hydra.job.name}/${hydra.job.num}
@@ -14,6 +13,7 @@ common:
   fp16_no_flatten_grads: true
   # user_dir: ${env:PWD}/examples/data2vec
   time_limit: ???
+  min_loss_scale: 1e-6
 
 checkpoint:
   # save_interval: 1
@@ -42,6 +42,9 @@ task:
   skip_masking: True
   d2v2_multi: True
   mask_idx_in_vocab: True
+  pantagruel_mlm: True
+  mask_multiple_length: 1
+  mask_prob: 0.15
 
 criterion:
   _name: model
@@ -81,7 +84,7 @@ optimizer:
         weight_decay: 0.01
       lr_scheduler:
         _name: cosine
-        warmup_updates: 8000
+        warmup_updates: 4000
 
 lr_scheduler: pass_through
 
@@ -90,6 +93,9 @@ model:
 
   loss_beta: 0
   loss_scale: 1
+
+  d2v_loss: 1.0
+  mlm_loss: 10.0
 
   # std_coeff: 0.1
   # cov_coeff: 0.1

@@ -9,7 +9,7 @@ hydra:
 common:
   fp16: true
   log_format: json
-  log_interval: 500
+  log_interval: 1000
   tensorboard_logdir: ???
   # min_loss_scale: 1e-6
   fp16_no_flatten_grads: true
@@ -20,8 +20,8 @@ common:
   user_dir: ???
 
 checkpoint:
-  save_interval: 5
-  # save_interval_updates: 40000
+  # save_interval: 5
+  save_interval_updates: 60000
   # keep_interval_updates: 1
   # no_epoch_checkpoints: true
   # keep_best_checkpoints: 10
@@ -86,7 +86,7 @@ criterion:
 
 optimization:
   clip_norm: 1
-  lr: [0.0003]
+  lr: [0.00015]
   max_update: 1200000
   update_freq: [1]
   # max_epoch: 10
@@ -96,7 +96,7 @@ optimizer:
   dynamic_groups: true
   groups:
     default:
-      lr_float: 0.0003
+      lr_float: 0.00015
       optimizer:
         _name: adam
         adam_betas: [0.9, 0.98]
@@ -116,16 +116,18 @@ model:
   loss_beta: 0
   loss_scale: null
 
-  depth: 12
-  embed_dim: 768
-  clone_batch: 8
+  depth: 16
+  embed_dim: 1024
+  num_heads: 16
+
+  clone_batch: 12
 
   ema_decay: 0.9999
   ema_end_decay: 0.99999
-  ema_anneal_end_step: 300000
+  ema_anneal_end_step: 120000
   ema_encoder_only: false # speech: false, text: true
 
-  average_top_k_layers: "{'audio': 12, 'text': 12}"
+  average_top_k_layers: "{'audio': 16, 'text': 12}"
   instance_norm_target_layer: true
   layer_norm_target_layer: false
   layer_norm_targets: false
@@ -153,9 +155,9 @@ model:
       conv_pos_depth: 5
       conv_pos_width: 95
       conv_pos_groups: 16
-      prenet_depth: 6
-      mask_prob: 0.5
-      mask_prob_adjust: 0.05
+      prenet_depth: 8
+      mask_prob: 0.55
+      mask_prob_adjust: 0.1
       inverse_mask: false
       mask_length: 5
       mask_noise_std: 0.01
@@ -170,7 +172,7 @@ model:
       local_grad_mult: 2.5
       decoder:
         input_dropout: 0.1
-        decoder_dim: 384
+        decoder_dim: 768
         decoder_groups: 16
         decoder_kernel: 7
         decoder_layers: 4

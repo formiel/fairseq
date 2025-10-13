@@ -17,10 +17,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributed as dist
 
+from fairseq import modules
 from fairseq.modules import EMAModule, EMAModuleConfig
 
 from fairseq.dataclass import FairseqDataclass
 from fairseq.models import BaseFairseqModel, register_model
+from fairseq.models.roberta.model import RobertaLMHead
 
 from examples.data2vec.data.modality import Modality
 
@@ -143,6 +145,7 @@ class Data2VecMultiConfig(FairseqDataclass):
     cls_loss: float = 0
     recon_loss: float = 0
     d2v_loss: float = 1
+    mlm_loss: float = 0
 
     std_coeff: float = 0.0
     cov_coeff: float = 0.0
@@ -188,6 +191,8 @@ class Data2VecMultiModel(BaseFairseqModel):
         self.cfg = cfg
         self.modalities = modalities
         self.task = task
+
+        self.padding_idx = None
 
         make_layer_norm = partial(
             nn.LayerNorm, eps=cfg.norm_eps, elementwise_affine=cfg.norm_affine
@@ -263,6 +268,16 @@ class Data2VecMultiModel(BaseFairseqModel):
             self.recon_proj = None
             if cfg.recon_loss > 0:
                 self.recon_proj = nn.Linear(cfg.embed_dim, cfg.embed_dim)
+            self.mlm_head = None
+            if cfg.mlm_loss > 0:
+                # text modality
+                self.padding_idx = task.dictionary.index("<pad>")
+                assert self.padding_idx != task.dictionary.unk(), dictionary.symbols
+                logger.info(f"padding idx: {self.padding_idx}")
+                logger.info(f"vocab size: {len(task.dictionary)}")
+                self.mlm_head = RobertaLMHead(
+                    cfg.embed_dim, len(task.dictionary), "gelu"
+                )
 
         for pn, p in self.named_parameters():
             if len(p.shape) == 1 or pn.endswith(".bias") or "alibi_scale" in pn:
@@ -406,6 +421,8 @@ class Data2VecMultiModel(BaseFairseqModel):
         force_remove_masked=False,
         remove_extra_tokens=True,
         precomputed_mask=None,
+        source_mlm=None,
+        target_mlm=None,
     ):
         if mode is None:
             assert self.cfg.supported_modality is not None
@@ -646,6 +663,28 @@ class Data2VecMultiModel(BaseFairseqModel):
             result["losses"]["recon"] = (
                 self.d2v_loss(recon, target.float()) * self.cfg.recon_loss
             )
+
+        if self.cfg.mlm_loss > 0 and not features_only:
+            # logger.info(f"using mlm loss: {source_mlm.eq(4).sum()/source_mlm.numel()} masked tokens")
+            x_mlm = feature_extractor(
+                source_mlm,
+                None, False, False, 1, None, None
+            )["x"]
+            masked_tokens = target_mlm.ne(self.padding_idx)
+            masked_tokens = torch.where(
+                masked_tokens.any(),
+                masked_tokens,
+                masked_tokens.new([True]),
+            )
+            mlm_logits = self.mlm_head(x_mlm, masked_tokens=masked_tokens)
+            mlm_targets = target_mlm[masked_tokens]
+            mlm_loss = modules.cross_entropy(
+                mlm_logits.view(-1, mlm_logits.size(-1)),
+                mlm_targets.view(-1),
+                reduction="sum",
+                ignore_index=self.padding_idx,
+            )
+            result["losses"]["mlm"] = mlm_loss * self.cfg.mlm_loss
 
         if self.cfg.d2v_loss > 0:
             for i, x in enumerate(xs):
