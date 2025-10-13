@@ -285,9 +285,19 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
 
         enc: Optional[Tensor] = None
         padding_mask: Optional[Tensor] = None
-        if encoder_out is not None and len(encoder_out["encoder_out"]) > 0:
+        if (
+            encoder_out is not None and 
+            not isinstance(encoder_out["encoder_out"], Tensor) and
+            len(encoder_out["encoder_out"]) > 0
+        ):
             enc = encoder_out["encoder_out"][0]
-        if encoder_out is not None and len(encoder_out["encoder_padding_mask"]) > 0:
+        else:
+            enc = encoder_out["encoder_out"]
+        if (
+            encoder_out is not None 
+            and hasattr(encoder_out, "encoder_padding_mask") 
+            and len(encoder_out["encoder_padding_mask"]) > 0
+        ):
             padding_mask = encoder_out["encoder_padding_mask"][0]
 
         # embed positions

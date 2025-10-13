@@ -1,13 +1,14 @@
 import logging
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Dict, List, Optional, Tuple, Any
 
 from omegaconf import II, MISSING
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import Tensor
 
 from fairseq import checkpoint_utils, tasks
 
@@ -16,10 +17,11 @@ from fairseq.models import (
     BaseFairseqModel, register_model, FairseqEncoderDecoderModel
 )
 from fairseq.models.wav2vec.wav2vec2_asr import (
-    Wav2Vec2Seq2SeqConfig, Wav2VecEncoder, TransformerDecoder
+    Wav2Vec2Seq2SeqConfig, Wav2VecEncoder
 )
 from fairseq.models.transformer import Embedding
 from fairseq.tasks import FairseqTask
+from fairseq.models.speech_to_text.s2t_transformer import TransformerDecoderScriptable
 
 from examples.data2vec.data.modality import Modality
 
@@ -29,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Data2vec2STConfig(Wav2Vec2Seq2SeqConfig):
-    toto: int = 1
+    seed: int = 1
 
 
 @register_model("data2vec2_st", dataclass=Data2vec2STConfig)
@@ -61,7 +63,7 @@ class Data2vec2STModel(FairseqEncoderDecoderModel):
 
     @classmethod
     def build_decoder(cls, cfg: Data2vec2STConfig, tgt_dict, embed_tokens):
-        return TransformerDecoder(cfg, tgt_dict, embed_tokens)
+        return TransformerDecoderScriptable(cfg, tgt_dict, embed_tokens)
 
     def forward(self, **kwargs):
         encoder_out = self.encoder(**kwargs)
@@ -72,4 +74,27 @@ class Data2vec2STModel(FairseqEncoderDecoderModel):
         super().upgrade_state_dict_named(state_dict, name)
         return state_dict
 
-    
+    def get_normalized_probs(
+        self,
+        net_output: Tuple[Tensor, Optional[Dict[str, List[Optional[Tensor]]]]],
+        log_probs: bool,
+        sample: Optional[Dict[str, Tensor]] = None,
+    ):
+        # net_output['encoder_out'] is a (B, T, D) tensor
+        lprobs = self.get_normalized_probs_scriptable(net_output, log_probs, sample)
+        lprobs.batch_first = True
+        return lprobs
+
+    def forward(self, src_tokens, src_lengths, prev_output_tokens):
+        """
+        The forward method inherited from the base class has a **kwargs
+        argument in its input, which is not supported in torchscript. This
+        method overwrites the forward method definition without **kwargs.
+        """
+        encoder_out = self.encoder(
+            source=src_tokens, padding_mask=None, features_only=True
+        )
+        decoder_out = self.decoder(
+            prev_output_tokens=prev_output_tokens, encoder_out=encoder_out
+        )
+        return decoder_out

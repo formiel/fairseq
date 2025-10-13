@@ -22,22 +22,17 @@ checkpoint:
 task:
   _name: data2vec2_st_finetuning
   data: ???
-  min_sample_size: 5000
-  s2t_yaml_config: ???
+  config_yaml: ???
   normalize: true
-  labels: spm_unigram1000
-  # eval_bleu: true
-  # eval_bleu_detok: moses
-  # eval_bleu_detok_args: '{"bpe": "sentencepiece", "sentencepiece_model": "/linkhome/rech/genlig01/ucy22cr/pantagruel/Data/mTEDx/fr-en/spm_unigram1000_st.model"}'
-  # eval_bleu_args: '{"beam": 5, "max_len_a": 1.2, "max_len_b": 10}'
-  # eval_bleu_print_samples: true
+  max_sample_size: 1000000
+  min_sample_size: 3200
 
 dataset:
   num_workers: 6
   max_tokens: 640000
   skip_invalid_size_inputs_valid_test: true
-  valid_subset: valid
-  train_subset: train
+  valid_subset: valid_st
+  train_subset: train_st
 
 criterion:
   _name: label_smoothed_cross_entropy
