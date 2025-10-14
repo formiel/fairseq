@@ -679,6 +679,10 @@ class Wav2VecEncoder(FairseqEncoder):
         }
 
     def forward_torchscript(self, net_input):
+        if self.is_d2v_multi:
+            return self.forward(
+                net_input["src_tokens"], padding_mask=None
+            )
         if torch.jit.is_scripting():
             return self.forward(net_input["source"], net_input["padding_mask"])
         else:

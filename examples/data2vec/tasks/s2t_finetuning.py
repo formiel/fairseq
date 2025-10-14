@@ -60,20 +60,22 @@ class S2TFinetuningTask(FairseqTask):
     cfg: SpeechToTextFinetuningConfig
 
     def __init__(
-        self, cfg: SpeechToTextFinetuningConfig, tgt_dict,
+        self, cfg: SpeechToTextFinetuningConfig, data_cfg, tgt_dict,
     ):
         super().__init__(cfg)
 
         self.cfg = cfg
-        self.data_cfg = S2TDataConfig(Path(cfg.data) / cfg.config_yaml)
+        self.data_cfg = data_cfg
         self.tgt_dict = tgt_dict
 
     @classmethod
     def setup_task(cls, cfg: SpeechToTextFinetuningConfig, **kwargs):
+        config_yaml = (
+            cfg.config_yaml if getattr(cfg, "config_yaml", None) else "config_st.yaml"
+        )
+        data_cfg = S2TDataConfig(Path(cfg.data) / config_yaml)
 
-        data_cfg = S2TDataConfig(Path(cfg.data) / cfg.config_yaml)
         dict_path = Path(cfg.data) / data_cfg.vocab_filename
-
         if not dict_path.is_file():
             raise FileNotFoundError(f"Dict not found: {dict_path.as_posix()}")
         tgt_dict = Dictionary.load(dict_path.as_posix())
@@ -81,12 +83,12 @@ class S2TFinetuningTask(FairseqTask):
             f"dictionary size ({data_cfg.vocab_filename}): " f"{len(tgt_dict):,}"
         )
 
-        return cls(cfg, tgt_dict)
+        return cls(cfg, data_cfg, tgt_dict)
 
     def load_dataset(self, split, epoch=1, combine=False, **kwargs):
         is_train_split = split.startswith("train")
-        pre_tokenizer = self.build_tokenizer()
-        bpe_tokenizer = self.build_bpe()
+        pre_tokenizer = self.build_tokenizer(self.cfg)
+        bpe_tokenizer = self.build_bpe(self.cfg)
 
         self.datasets[split] = SpeechToTextDatasetCreator.from_tsv(
             root=self.cfg.data,
@@ -100,11 +102,11 @@ class S2TFinetuningTask(FairseqTask):
             seed=self.cfg.seed
         )
 
-    def build_tokenizer(self):
+    def build_tokenizer(self, cfg):
         logger.info(f"pre-tokenizer: {self.data_cfg.pre_tokenizer}")
         return encoders.build_tokenizer(Namespace(**self.data_cfg.pre_tokenizer))
 
-    def build_bpe(self):
+    def build_bpe(self, cfg):
         logger.info(f"tokenizer: {self.data_cfg.bpe_tokenizer}")
         return encoders.build_bpe(Namespace(**self.data_cfg.bpe_tokenizer))
 
@@ -139,3 +141,15 @@ class S2TFinetuningTask(FairseqTask):
             seq_gen_cls=None,
             extra_gen_cls_kwargs=extra_gen_cls_kwargs,
         )
+
+    def inference_step(
+        self, generator, models, sample, prefix_tokens=None, constraints=None
+    ):
+        with torch.no_grad():
+            return generator.generate(
+                models,
+                sample,
+                prefix_tokens=prefix_tokens,
+                constraints=constraints,
+                bos_token=self.tgt_dict.bos_index,
+            )
