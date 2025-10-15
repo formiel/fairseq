@@ -1,0 +1,73 @@
+# @package _group_
+hydra:
+  run:
+    dir: /lustre/fsn1/projects/rech/oou/ucy22cr/pantagruel/tmp/hydra/outputs/${hydra.job.name}/${hydra.job.num}
+  sweep:
+    dir: /lustre/fsn1/projects/rech/oou/ucy22cr/pantagruel/tmp/hydra/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
+
+common:
+  fp16: true
+  log_format: json
+  log_interval: 100
+  tensorboard_logdir: tb
+  user_dir: ???
+
+checkpoint:
+  # no_epoch_checkpoints: true
+  # best_checkpoint_metric: em_error
+  save_interval: 10
+  # best_checkpoint_metric: bleu
+
+task:
+  _name: data2vec2_st_finetuning
+  data: ???
+  config_yaml: ???
+  normalize: true
+  max_sample_size: 1000000
+  min_sample_size: 3200
+
+dataset:
+  num_workers: 6
+  max_tokens: 640000
+  skip_invalid_size_inputs_valid_test: true
+  valid_subset: valid_st
+  train_subset: train_st
+
+criterion:
+  _name: label_smoothed_cross_entropy
+
+optimization:
+  max_update: 480000
+  lr: [0.0001]
+  sentence_avg: true
+  update_freq: [1]
+
+optimizer:
+  _name: adam
+  adam_betas: (0.9,0.98)
+  adam_eps: 1e-08
+
+lr_scheduler:
+  _name: tri_stage
+  phase_ratio: [0.1, 0.4, 0.5]
+  final_lr_scale: 0.05
+
+model:
+  _name: data2vec2_st
+  w2v_path: ???
+  autoregressive: true
+  apply_mask: true
+  mask_prob: 0.5
+  mask_channel_prob: 0.5
+  mask_channel_length: 64
+  mask_length: 5
+  layerdrop: 0.0
+  activation_dropout: 0.0
+  feature_grad_mult: 0.0
+  freeze_finetune_updates: 10000
+  decoder_embed_dim: 512
+  decoder_ffn_embed_dim: 2048
+  decoder_layers: 6
+  decoder_attention_heads: 8
+  decoder_normalize_before: true
