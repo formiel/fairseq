@@ -62,7 +62,7 @@ dataset:
   # batch_size_valid: 6
   # ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
-  disable_validation: true
+  # disable_validation: true
 
 optimization:
   clip_norm: 1
