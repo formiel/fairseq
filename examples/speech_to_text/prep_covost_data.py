@@ -12,6 +12,7 @@ from tempfile import NamedTemporaryFile
 from typing import Optional, Tuple
 
 import pandas as pd
+import soundfile as sf
 import torchaudio
 from examples.speech_to_text.data_utils import (
     create_zip,
@@ -23,6 +24,7 @@ from examples.speech_to_text.data_utils import (
     load_df_from_tsv,
     save_df_to_tsv,
 )
+from fairseq.data.audio.audio_utils import get_waveform, convert_waveform
 from torch import Tensor
 from torch.utils.data import Dataset
 from torchaudio.datasets.utils import download_url, extract_archive
@@ -143,12 +145,18 @@ class CoVoST(Dataset):
         covost_tsv = load_df_from_tsv(
             self.root / Path(covost_url).name.replace(".tar.gz", "")
         )
+        # Extract filename only (no parent folder e.g. 00/filename.mp3)
+        cv_tsv["filename"] = cv_tsv["path"].apply(lambda x: x.split("/")[-1])
+        covost_tsv["filename"] = covost_tsv["path"]
+
         df = pd.merge(
-            left=cv_tsv[["path", "sentence", "client_id"]],
-            right=covost_tsv[["path", "translation", "split"]],
+            left=cv_tsv[["filename", "path", "sentence", "client_id"]],
+            right=covost_tsv[["filename", "translation", "split"]],
             how="inner",
-            on="path",
+            on="filename",
         )
+        df["path"] = df["path"].apply(lambda x: x.replace("mp3", "wav"))
+
         if split == "train":
             df = df[(df["split"] == split) | (df["split"] == f"{split}_covost")]
         else:
@@ -158,7 +166,7 @@ class CoVoST(Dataset):
         self.data = []
         for e in data:
             try:
-                path = self.root / "clips" / e["path"]
+                path = self.root / "clips_wav" / e["path"]
                 _ = torchaudio.info(path.as_posix())
                 self.data.append(e)
             except RuntimeError:
@@ -177,12 +185,12 @@ class CoVoST(Dataset):
             sample_id)``
         """
         data = self.data[n]
-        path = self.root / "clips" / data["path"]
+        path = self.root / "clips_wav" / data["path"]
         waveform, sample_rate = torchaudio.load(path)
         sentence = data["sentence"]
         translation = None if self.no_translation else data["translation"]
         speaker_id = data["client_id"]
-        _id = data["path"].replace(".mp3", "")
+        _id = data["filename"].replace(".mp3", "")
         return waveform, sample_rate, sentence, translation, speaker_id, _id
 
     def __len__(self) -> int:
@@ -194,22 +202,38 @@ def process(args):
     if not root.is_dir():
         raise NotADirectoryError(f"{root} does not exist")
     # Extract features
-    feature_root = root / "fbank80"
+    feature_root = root / ("flac" if args.use_audio_input else "fbank80")
     feature_root.mkdir(exist_ok=True)
     for split in CoVoST.SPLITS:
         print(f"Fetching split {split}...")
         dataset = CoVoST(root, split, args.src_lang, args.tgt_lang)
-        print("Extracting log mel filter bank features...")
-        for waveform, sample_rate, _, _, _, utt_id in tqdm(dataset):
-            extract_fbank_features(
-                waveform, sample_rate, feature_root / f"{utt_id}.npy"
-            )
+        print(f"dataset: {len(dataset)}")
+        if args.use_audio_input:
+            print("Converting audios...")
+            for waveform, sample_rate, _, _, _, utt_id in tqdm(dataset):
+                tgt_sample_rate = 16_000
+                _wavform, _ = convert_waveform(
+                        waveform, sample_rate, to_mono=True,
+                        to_sample_rate=tgt_sample_rate
+                )
+                sf.write(
+                    (feature_root / f"{utt_id}.flac").as_posix(),
+                    _wavform.squeeze().cpu().numpy(), tgt_sample_rate
+                )
+        else:
+            print("Extracting log mel filter bank features...")
+            for waveform, sample_rate, _, _, _, utt_id in tqdm(dataset):
+                extract_fbank_features(
+                    waveform, sample_rate, feature_root / f"{utt_id}.npy"
+                )
     # Pack features into ZIP
-    zip_path = root / "fbank80.zip"
-    print("ZIPing features...")
+    zip_path = root / f"{feature_root.name}.zip"
+    print("ZIPing audios/features...")
     create_zip(feature_root, zip_path)
     print("Fetching ZIP manifest...")
-    audio_paths, audio_lengths = get_zip_manifest(zip_path)
+    audio_paths, audio_lengths = get_zip_manifest(
+        zip_path, is_audio=args.use_audio_input
+    )
     # Generate TSV manifest
     print("Generating manifest...")
     train_text = []
@@ -229,7 +253,11 @@ def process(args):
         if is_train_split:
             train_text.extend(manifest["tgt_text"])
         df = pd.DataFrame.from_dict(manifest)
-        df = filter_manifest_df(df, is_train_split=is_train_split)
+        df = filter_manifest_df(
+            df, is_train_split=is_train_split,
+            min_n_frames=args.min_n_frames,
+            max_n_frames=args.max_n_frames,
+        )
         save_df_to_tsv(df, root / f"{split}_{task}.tsv")
     # Generate vocab
     vocab_size_str = "" if args.vocab_type == "char" else str(args.vocab_size)
@@ -244,12 +272,21 @@ def process(args):
             args.vocab_size
         )
     # Generate config YAML
-    gen_config_yaml(
-        root,
-        spm_filename=spm_filename_prefix + ".model",
-        yaml_filename=f"config_{task}.yaml",
-        specaugment_policy="lb",
-    )
+    if args.use_audio_input:
+        gen_config_yaml(
+            root,
+            spm_filename=spm_filename_prefix + ".model",
+            yaml_filename=f"config_{task}.yaml",
+            specaugment_policy=None,
+            extra={"use_audio_input": True}
+        )
+    else:
+        gen_config_yaml(
+            root,
+            spm_filename=spm_filename_prefix + ".model",
+            yaml_filename=f"config_{task}.yaml",
+            specaugment_policy="lb",
+        )
     # Clean up
     shutil.rmtree(feature_root)
 
@@ -270,6 +307,15 @@ def main():
     parser.add_argument("--vocab-size", default=1000, type=int)
     parser.add_argument("--src-lang", "-s", required=True, type=str)
     parser.add_argument("--tgt-lang", "-t", type=str)
+    parser.add_argument("--use-audio-input", action="store_true")
+    parser.add_argument(
+        "--min-n-frames", type=int, default=5,
+        help="minimum number of frames for audio features"
+    )
+    parser.add_argument(
+        "--max-n-frames", type=int, default=3000,
+        help="maximum number of frames for audio features"
+    )
     args = parser.parse_args()
 
     process(args)
