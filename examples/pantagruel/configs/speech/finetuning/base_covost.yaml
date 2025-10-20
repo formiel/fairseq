@@ -31,8 +31,8 @@ dataset:
   num_workers: 6
   max_tokens: 640000
   skip_invalid_size_inputs_valid_test: true
-  valid_subset: valid_st
-  train_subset: train_st
+  valid_subset: valid_st_fr_en
+  train_subset: train_st_fr_en
 
 criterion:
   _name: label_smoothed_cross_entropy
