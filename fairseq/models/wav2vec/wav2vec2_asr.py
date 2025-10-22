@@ -21,6 +21,7 @@ from omegaconf import II, MISSING, open_dict
 from fairseq import checkpoint_utils, tasks, utils
 from fairseq.dataclass import FairseqDataclass
 from fairseq.dataclass.utils import convert_namespace_to_omegaconf
+from fairseq.modules import GradMultiply
 from fairseq.models import (
     BaseFairseqModel,
     FairseqEncoder,
@@ -136,6 +137,9 @@ class Wav2Vec2AsrConfig(FairseqDataclass):
     )
     feature_grad_mult: float = field(
         default=0.0, metadata={"help": "reset feature grad mult in wav2vec 2.0 to this"}
+    )
+    local_grad_mult: float = field(
+        default=1.0, metadata={"help": "reset feature grad mult in wav2vec 2.0 to this"}
     )
     layerdrop: float = field(
         default=0.0, metadata={"help": "probability of dropping a layer in wav2vec 2.0"}
@@ -398,7 +402,7 @@ class Wav2VecEncoder(FairseqEncoder):
             "drop_path": getattr(cfg, "drop_path", 0),
             "mask_dropout": getattr(cfg, "mask_dropout", 0),
             "zero_mask": getattr(cfg, "zero_mask", False),
-            "local_grad_mult": cfg.feature_grad_mult,
+            "local_grad_mult": cfg.local_grad_mult,
             "layerdrop": cfg.layerdrop,
             "prenet_layerdrop": cfg.layerdrop,
             "prenet_dropout": cfg.dropout,
@@ -407,6 +411,8 @@ class Wav2VecEncoder(FairseqEncoder):
             "inverse_mask": False,
             "learned_alibi_scale": getattr(cfg, "update_alibi", True),
         }
+        self.feature_grad_mult = cfg.feature_grad_mult
+        self.use_mimi_for_audio = False
 
         if cfg.w2v_args is None:
             state = checkpoint_utils.load_checkpoint_to_cpu(cfg.w2v_path, arg_overrides)
@@ -459,7 +465,7 @@ class Wav2VecEncoder(FairseqEncoder):
             task = tasks.setup_task(w2v_args.task, from_checkpoint=True)
             model = task.build_model(w2v_args.model, from_checkpoint=True)
             model.remove_pretraining_modules()
-            d = w2v_args.model.encoder_embed_dim
+            d = getattr(w2v_args.model, "encoder_embed_dim", 768)
         else:
             assert cfg.normalize
             if hasattr(w2v_args.model, "freeze_backbone"):
@@ -481,7 +487,6 @@ class Wav2VecEncoder(FairseqEncoder):
             task = tasks.setup_task(w2v_args.task, from_checkpoint=True)
             model = task.build_model(w2v_args.model, from_checkpoint=True)
 
-            self.use_mimi_for_audio = False
             if hasattr(w2v_args.task, "audio"):
                 w2v_args.task.audio.data = cfg.data
             else:
@@ -656,6 +661,8 @@ class Wav2VecEncoder(FairseqEncoder):
             res = self.w2v_model.extract_features(**w2v_args)
 
             x = res["x"]
+            if ft and self.feature_grad_mult > 0:
+                x = GradMultiply.apply(x, self.feature_grad_mult)
             padding_mask = (
                 res["padding_mask"] if isinstance(x, torch.Tensor) 
                 else res["padding_mask"]["audio"]

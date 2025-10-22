@@ -16,7 +16,7 @@ common:
 checkpoint:
   # no_epoch_checkpoints: true
   # best_checkpoint_metric: em_error
-  save_interval: 10
+  save_interval: 5
   # best_checkpoint_metric: bleu
 
 task:
@@ -29,7 +29,8 @@ task:
 
 dataset:
   num_workers: 6
-  max_tokens: 640000
+  max_tokens: 800000
+  batch_size: 4
   skip_invalid_size_inputs_valid_test: true
   valid_subset: valid_st
   train_subset: train_st
@@ -57,15 +58,16 @@ model:
   _name: data2vec2_st
   w2v_path: ???
   autoregressive: true
-  apply_mask: true
+  apply_mask: false
   mask_prob: 0.0
   mask_channel_prob: 0.0
   # mask_channel_length: 64
   # mask_length: 5
   layerdrop: 0.0
   activation_dropout: 0.1
-  feature_grad_mult: 0.0
-  freeze_finetune_updates: 10000
+  feature_grad_mult: 0.1
+  local_grad_mult: 1.0
+  freeze_finetune_updates: 0
   decoder_embed_dim: 512
   decoder_ffn_embed_dim: 2048
   decoder_layers: 6
