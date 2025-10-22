@@ -65,11 +65,6 @@ class Data2vec2STModel(FairseqEncoderDecoderModel):
     def build_decoder(cls, cfg: Data2vec2STConfig, tgt_dict, embed_tokens):
         return TransformerDecoderScriptable(cfg, tgt_dict, embed_tokens)
 
-    def forward(self, **kwargs):
-        encoder_out = self.encoder(**kwargs)
-        decoder_out = self.decoder(encoder_out=encoder_out, **kwargs)
-        return decoder_out
-
     def upgrade_state_dict_named(self, state_dict, name):
         super().upgrade_state_dict_named(state_dict, name)
         return state_dict

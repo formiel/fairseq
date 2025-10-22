@@ -16,7 +16,7 @@ common:
 checkpoint:
   # no_epoch_checkpoints: true
   # best_checkpoint_metric: em_error
-  save_interval: 10
+  save_interval: 1
   # best_checkpoint_metric: bleu
 
 task:
