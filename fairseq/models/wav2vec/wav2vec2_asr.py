@@ -465,7 +465,7 @@ class Wav2VecEncoder(FairseqEncoder):
             task = tasks.setup_task(w2v_args.task, from_checkpoint=True)
             model = task.build_model(w2v_args.model, from_checkpoint=True)
             model.remove_pretraining_modules()
-            d = getattr(w2v_args.model, "encoder_embed_dim", 768)
+            d = w2v_args.model.embed_dim
         else:
             assert cfg.normalize
             if hasattr(w2v_args.model, "freeze_backbone"):

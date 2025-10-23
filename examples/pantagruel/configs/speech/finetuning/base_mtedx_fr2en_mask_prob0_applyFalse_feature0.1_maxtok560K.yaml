@@ -29,8 +29,8 @@ task:
 
 dataset:
   num_workers: 6
-  max_tokens: 800000
-  batch_size: 4
+  max_tokens: 560000
+  batch_size: 8
   skip_invalid_size_inputs_valid_test: true
   valid_subset: valid_st
   train_subset: train_st
