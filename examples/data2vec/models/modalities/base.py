@@ -445,11 +445,11 @@ class ModalitySpecificEncoder(nn.Module):
         B, T, C = x.shape
 
         if mask_info is not None:
-            mask = mask_info.mask
+            mask = mask_info.mask.to(torch.bool)
             if cfg.encoder_zero_mask:
                 x = x * (1 - mask.type_as(x).unsqueeze(-1))
             else:
-                num_masks = mask.sum().item()
+                num_masks = int(mask.sum().item())
                 masks = x.new_empty(num_masks, x.size(-1)).normal_(
                     0, cfg.mask_noise_std
                 )
