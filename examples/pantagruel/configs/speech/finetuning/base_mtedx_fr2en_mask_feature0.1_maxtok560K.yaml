@@ -29,8 +29,8 @@ task:
 
 dataset:
   num_workers: 6
-  max_tokens: 560000
-  batch_size: 8
+  max_tokens: 1600000
+  batch_size: 4
   skip_invalid_size_inputs_valid_test: true
   valid_subset: valid_st
   train_subset: train_st
@@ -39,7 +39,7 @@ criterion:
   _name: label_smoothed_cross_entropy
 
 optimization:
-  max_update: 618400
+  max_update: 754800
   lr: [0.0001]
   sentence_avg: true
   update_freq: [1]
