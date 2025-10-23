@@ -1,4 +1,10 @@
 # @package _group_
+hydra:
+  run:
+    dir: /lustre/fsn1/projects/rech/oou/ucy22cr/pantagruel/tmp/hydra/outputs/${hydra.job.name}/${hydra.job.num}
+  sweep:
+    dir: /lustre/fsn1/projects/rech/oou/ucy22cr/pantagruel/tmp/hydra/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
 
 common:
   fp16: true
@@ -36,6 +42,7 @@ dataset:
   batch_size: 32
   required_batch_size_multiple: 1
   max_tokens: 4400
+  valid_subset: valid,test
 
 optimizer:
   _name: adam
