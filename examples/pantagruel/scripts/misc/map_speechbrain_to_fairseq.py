@@ -1,3 +1,4 @@
+import argparse
 import torch
 
 
@@ -67,9 +68,30 @@ def save_fairseq_checkpoint(fs_model, save_path, args, optimizer_history):
 
 
 def main():
-    ROOT_DIR = "/linkhome/rech/genlig01/ucy22cr/pantagruel/LeBenchmark"
-    sp_path = f"{ROOT_DIR}/wav2vec2-FR-14K-large/wav2vec2.ckpt"
-    fs_path = f"{ROOT_DIR}/wav2vec2-FR-7K-large/checkpoint_best.pt"
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--speechbrain-checkpoint",
+        type=str,
+        required=True,
+        help="Path to the SpeechBrain checkpoint file.",
+    )
+    parser.add_argument(
+        "--fairseq-checkpoint",
+        type=str,
+        required=True,
+        help="Path to the fairseq checkpoint file.",
+    )
+    parser.add_argument(
+        "--output-checkpoint",
+        type=str,
+        required=True,
+        help="Path to save the converted fairseq checkpoint.",
+    )
+    args = parser.parse_args()
+
+    sp_path = args.speechbrain_checkpoint
+    fs_path = args.fairseq_checkpoint
+    save_path = args.output_checkpoint
 
     sp_state = torch.load(sp_path, map_location="cpu", weights_only=True)
     fs_state = torch.load(fs_path, map_location="cpu")
@@ -97,7 +119,7 @@ def main():
     print(f'pretrained_args: {pretrained_args}\n{type(pretrained_args)}')
     print(f'cfg: {cfg}\n{type(cfg)}')
 
-    save_path = f"{ROOT_DIR}/wav2vec2-FR-14K-large/fairseq_wav2vec2_from_sb.pt"
+    print(f'Saving converted checkpoint to {save_path}...')
     save_fairseq_checkpoint(
         fs_model, save_path, pretrained_args, fs_state["optimizer_history"]
     )
