@@ -375,7 +375,7 @@ class Wav2VecEncoder(FairseqEncoder):
         self.apply_mask = cfg.apply_mask
 
         arg_overrides = {
-            "dropout": cfg.dropout,
+            "dropout": getattr(cfg, "dropout", 0.0),
             "activation_dropout": cfg.activation_dropout,
             "dropout_input": cfg.dropout_input,
             "attention_dropout": cfg.attention_dropout,
@@ -398,15 +398,15 @@ class Wav2VecEncoder(FairseqEncoder):
             "offload_activations": cfg.offload_activations,
             "min_params_to_wrap": cfg.min_params_to_wrap,
             # d2v multi args
-            "encoder_dropout": cfg.dropout,
+            "encoder_dropout": getattr(cfg, "dropout", 0.0),
             "drop_path": getattr(cfg, "drop_path", 0),
             "mask_dropout": getattr(cfg, "mask_dropout", 0),
             "zero_mask": getattr(cfg, "zero_mask", False),
-            "local_grad_mult": cfg.local_grad_mult,
-            "layerdrop": cfg.layerdrop,
-            "prenet_layerdrop": cfg.layerdrop,
-            "prenet_dropout": cfg.dropout,
-            "post_mlp_drop": cfg.dropout,
+            "local_grad_mult": getattr(cfg, "local_grad_mult", 1.0),
+            "layerdrop": getattr(cfg, "layerdrop", 0.0),
+            "prenet_layerdrop": getattr(cfg, "layerdrop", 0.0),
+            "prenet_dropout": getattr(cfg, "dropout", 0.0),
+            "post_mlp_drop": getattr(cfg, "dropout", 0.0),
             "encoder_zero_mask": getattr(cfg, "zero_mask", False),
             "inverse_mask": False,
             "learned_alibi_scale": getattr(cfg, "update_alibi", True),
@@ -465,7 +465,7 @@ class Wav2VecEncoder(FairseqEncoder):
             task = tasks.setup_task(w2v_args.task, from_checkpoint=True)
             model = task.build_model(w2v_args.model, from_checkpoint=True)
             model.remove_pretraining_modules()
-            d = w2v_args.model.embed_dim
+            d = w2v_args.model.encoder_embed_dim
         else:
             assert cfg.normalize
             if hasattr(w2v_args.model, "freeze_backbone"):
