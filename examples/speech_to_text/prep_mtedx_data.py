@@ -26,6 +26,7 @@ from examples.speech_to_text.data_utils import (
     save_df_to_tsv,
 )
 import torch
+import torchaudio.transforms as transforms
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
@@ -114,13 +115,20 @@ class mTEDx(Dataset):
 
 def process(args):
     root = Path(args.data_root).absolute()
+    speed_perturb = None
+    if float(args.speed_pertubation_rate) != 1.0:
+        print('Performing speed pertubation...')
+        speed_perturb = transforms.SpeedPerturbation(16000, [float(args.speed_pertubation_rate)])
     for lang in mTEDx.LANGPAIRS:
         cur_root = root / f"{lang}"
         if not cur_root.is_dir():
             print(f"{cur_root.as_posix()} does not exist. Skipped.")
             continue
         # Extract features
-        audio_root = cur_root / ("flac" if args.use_audio_input else "fbank80")
+        sp_input_suffix = "" if float(args.speed_pertubation_rate) == 1.0 else f"_sp{args.speed_pertubation_rate}"
+        audio_root = cur_root / (
+            f"flac{sp_input_suffix}" if args.use_audio_input else f"fbank80{sp_input_suffix}"
+        )
         audio_root.mkdir(exist_ok=True)
         for split in mTEDx.SPLITS:
             print(f"Fetching split {split}...")
@@ -133,6 +141,8 @@ def process(args):
                         waveform, sample_rate, to_mono=True,
                         to_sample_rate=tgt_sample_rate
                     )
+                    if float(args.speed_pertubation_rate )!= 1.0:
+                        _wavform = speed_perturb(_wavform)[0]
                     sf.write(
                         (audio_root / f"{utt_id}.flac").as_posix(),
                         _wavform.squeeze().cpu().numpy(), tgt_sample_rate
@@ -145,15 +155,15 @@ def process(args):
                     )
         # Pack features into ZIP
         zip_path = cur_root / f"{audio_root.name}.zip"
-        print("ZIPing audios/features...")
+        print(f"ZIPing audios/features {zip_path}...")
         create_zip(audio_root, zip_path)
-        print("Fetching ZIP manifest...")
+        print(f"Fetching ZIP manifest {zip_path}...")
         audio_paths, audio_lengths = get_zip_manifest(
             zip_path, is_audio=args.use_audio_input
         )
 
         # Generate TSV manifest
-        print("Generating manifest...")
+        print(f"Generating manifest from {zip_path}...")
         train_text = []
         for split in mTEDx.SPLITS:
             is_train_split = split.startswith("train")
@@ -176,7 +186,7 @@ def process(args):
                 min_n_frames=args.min_n_frames, 
                 max_n_frames=args.max_n_frames
             )
-            save_df_to_tsv(df, cur_root / f"{split}_{args.task}.tsv")
+            save_df_to_tsv(df, cur_root / f"{split}_{args.task}{sp_input_suffix}.tsv")
         # Generate vocab
         v_size_str = "" if args.vocab_type == "char" else str(args.vocab_size)
         spm_filename_prefix = f"spm_{args.vocab_type}{v_size_str}_{args.task}"
@@ -273,6 +283,10 @@ def main():
     parser.add_argument(
         "--max-n-frames", type=int, default=3000,
         help="maximum number of frames for audio features"
+    )
+    parser.add_argument(
+        "--speed-pertubation-rate", type=float, default=1.0,
+        help="speed pertubation "
     )
     args = parser.parse_args()
 
