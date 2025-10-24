@@ -661,7 +661,7 @@ class Wav2VecEncoder(FairseqEncoder):
             res = self.w2v_model.extract_features(**w2v_args)
 
             x = res["x"]
-            if ft and self.feature_grad_mult > 0:
+            if ft and self.feature_grad_mult != 1:
                 x = GradMultiply.apply(x, self.feature_grad_mult)
             padding_mask = (
                 res["padding_mask"] if isinstance(x, torch.Tensor) 
