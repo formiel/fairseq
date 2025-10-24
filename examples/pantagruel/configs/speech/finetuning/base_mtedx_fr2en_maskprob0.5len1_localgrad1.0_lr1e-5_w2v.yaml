@@ -23,7 +23,7 @@ task:
   _name: data2vec2_st_finetuning
   data: ???
   config_yaml: ???
-  normalize: true
+  normalize: false
   max_sample_size: 1000000
   min_sample_size: 3200
 
@@ -40,7 +40,7 @@ criterion:
 
 optimization:
   max_update: 754800
-  lr: [0.0001]
+  lr: [0.00001]
   sentence_avg: true
   update_freq: [1]
 
@@ -58,15 +58,15 @@ model:
   _name: data2vec2_st
   w2v_path: ???
   autoregressive: true
-  apply_mask: true
-  mask_prob: 0.5
+  apply_mask: false
+  mask_prob: 0.0
   mask_channel_prob: 0.0
   mask_channel_length: 10
   mask_length: 1
   layerdrop: 0.0
   activation_dropout: 0.1
   feature_grad_mult: 1.0
-  local_grad_mult: 0.0
+  local_grad_mult: 1.0
   freeze_finetune_updates: 0
   decoder_embed_dim: 512
   decoder_ffn_embed_dim: 2048
