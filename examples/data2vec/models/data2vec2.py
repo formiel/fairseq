@@ -152,6 +152,8 @@ class Data2VecMultiConfig(FairseqDataclass):
 
     decoder_group: bool = False
 
+    num_steps_start_d2v: int = 0
+
 
 @register_model("data2vec_multi", dataclass=Data2VecMultiConfig)
 class Data2VecMultiModel(BaseFairseqModel):
@@ -272,9 +274,8 @@ class Data2VecMultiModel(BaseFairseqModel):
             if cfg.mlm_loss > 0:
                 # text modality
                 self.padding_idx = task.dictionary.index("<pad>")
-                assert self.padding_idx != task.dictionary.unk(), dictionary.symbols
-                logger.info(f"padding idx: {self.padding_idx}")
-                logger.info(f"vocab size: {len(task.dictionary)}")
+                assert self.padding_idx != task.dictionary.unk()
+                logger.info(f"padding idx: {self.padding_idx}, vocab size: {len(task.dictionary)}")
                 self.mlm_head = RobertaLMHead(
                     cfg.embed_dim, len(task.dictionary), "gelu"
                 )
@@ -421,7 +422,6 @@ class Data2VecMultiModel(BaseFairseqModel):
         force_remove_masked=False,
         remove_extra_tokens=True,
         precomputed_mask=None,
-        source_mlm=None,
         target_mlm=None,
     ):
         if mode is None:
@@ -500,8 +500,9 @@ class Data2VecMultiModel(BaseFairseqModel):
 
         xs = []
 
+        x_full = None
         if self.shared_decoder is not None:
-            dx = self.forward_decoder(
+            dx, _ = self.forward_decoder(
                 x,
                 feature_extractor,
                 self.shared_decoder,
@@ -509,7 +510,7 @@ class Data2VecMultiModel(BaseFairseqModel):
             )
             xs.append(dx)
         if feature_extractor.decoder is not None:
-            dx = self.forward_decoder(
+            dx, x_full = self.forward_decoder(
                 x,
                 feature_extractor,
                 feature_extractor.decoder,
@@ -665,19 +666,11 @@ class Data2VecMultiModel(BaseFairseqModel):
             )
 
         if self.cfg.mlm_loss > 0 and not features_only:
-            # logger.info(f"using mlm loss: {source_mlm.eq(4).sum()/source_mlm.numel()} masked tokens")
-            x_mlm = feature_extractor(
-                source_mlm,
-                None, False, False, 1, None, None
-            )["x"]
-            masked_tokens = target_mlm.ne(self.padding_idx)
-            masked_tokens = torch.where(
-                masked_tokens.any(),
-                masked_tokens,
-                masked_tokens.new([True]),
-            )
-            mlm_logits = self.mlm_head(x_mlm, masked_tokens=masked_tokens)
-            mlm_targets = target_mlm[masked_tokens]
+            target_mlm = target_mlm.repeat_interleave(self.cfg.clone_batch, 0)
+            valid_mask = masked_b & (target_mlm.ne(self.padding_idx))
+            mlm_logits = self.mlm_head(x_full, masked_tokens=valid_mask)
+            mlm_targets = target_mlm[valid_mask]
+
             mlm_loss = modules.cross_entropy(
                 mlm_logits.view(-1, mlm_logits.size(-1)),
                 mlm_targets.view(-1),
@@ -686,7 +679,7 @@ class Data2VecMultiModel(BaseFairseqModel):
             )
             result["losses"]["mlm"] = mlm_loss * self.cfg.mlm_loss
 
-        if self.cfg.d2v_loss > 0:
+        if self.cfg.d2v_loss > 0 and self.num_updates >= self.cfg.num_steps_start_d2v:
             for i, x in enumerate(xs):
                 reg_loss = self.d2v_loss(x, y)
                 n = f"{mode}_regression_{i}" if len(xs) > 1 else f"{mode}_regression"
@@ -694,7 +687,6 @@ class Data2VecMultiModel(BaseFairseqModel):
                 if getattr(self.cfg, "std_coeff", 0.0) > 0.0 or getattr(self.cfg, "cov_coeff", 0.0) > 0.0:
                     var_cov_loss = self.var_cov_loss(x, y)
                     result["losses"][n] += var_cov_loss
-                    # logging.info(f"var_cov_loss: {var_cov_loss}")
 
         suffix = "" if len(self.modalities) == 1 else f"_{mode}"
         with torch.no_grad():
@@ -741,10 +733,10 @@ class Data2VecMultiModel(BaseFairseqModel):
         decoder,
         mask_info,
     ):
-        x = feature_extractor.decoder_input(x, mask_info)
-        x = decoder(*x)
+        x_full = feature_extractor.decoder_input(x, mask_info)
+        x = decoder(*x_full)
 
-        return x
+        return x, x_full[0]
 
     def d2v_loss(self, x, y):
         x = x.view(-1, x.size(-1)).float()

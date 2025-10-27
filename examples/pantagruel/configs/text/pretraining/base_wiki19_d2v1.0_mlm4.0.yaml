@@ -42,9 +42,7 @@ task:
   skip_masking: True
   d2v2_multi: True
   mask_idx_in_vocab: True
-  pantagruel_mlm: True
-  mask_multiple_length: 1
-  mask_prob: 0.15
+  pantagruel_multi: True
 
 criterion:
   _name: model
@@ -67,7 +65,7 @@ dataset:
 optimization:
   clip_norm: 1
   lr: [0.0002]
-  max_update: 1000000
+  max_update: 500000
   update_freq: [1]
   # max_epoch: 5
 
@@ -95,7 +93,7 @@ model:
   loss_scale: 1
 
   d2v_loss: 1.0
-  mlm_loss: 10.0
+  mlm_loss: 4.0
 
   # std_coeff: 0.1
   # cov_coeff: 0.1

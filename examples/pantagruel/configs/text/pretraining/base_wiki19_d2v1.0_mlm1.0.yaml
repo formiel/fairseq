@@ -1,9 +1,8 @@
-# @package _group_
 hydra:
   run:
-    dir: /lustre/fsn1/projects/rech/zbk/umz16dj/tmp/hydra/outputs/${hydra.job.name}/${hydra.job.num}
+    dir: /lustre/fsn1/projects/rech/oou/ucy22cr/pantagruel/tmp/hydra/outputs/${hydra.job.name}/${hydra.job.num}
   sweep:
-    dir: /lustre/fsn1/projects/rech/zbk/umz16dj/tmp/hydra/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: /lustre/fsn1/projects/rech/oou/ucy22cr/pantagruel/tmp/hydra/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
     subdir: ${hydra.job.num}
 
 common:
@@ -14,6 +13,7 @@ common:
   fp16_no_flatten_grads: true
   # user_dir: ${env:PWD}/examples/data2vec
   time_limit: ???
+  min_loss_scale: 1e-6
 
 checkpoint:
   # save_interval: 1
@@ -42,6 +42,7 @@ task:
   skip_masking: True
   d2v2_multi: True
   mask_idx_in_vocab: True
+  pantagruel_multi: True
 
 criterion:
   _name: model
@@ -91,6 +92,9 @@ model:
   loss_beta: 0
   loss_scale: 1
 
+  d2v_loss: 1.0
+  mlm_loss: 1.0
+
   # std_coeff: 0.1
   # cov_coeff: 0.1
 
@@ -118,7 +122,7 @@ model:
   modalities:
     text:
       mask_prob: 0.6
-      mask_length: 2
+      mask_length: 3
       mask_noise_std: 0.01
       prenet_depth: 0
       decoder:

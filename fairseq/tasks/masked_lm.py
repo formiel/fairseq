@@ -131,10 +131,6 @@ class MaskedLMConfig(FairseqDataclass):
         default=False,
         metadata={"help": "prepare dataset for pantagruel training with multimodal encoder"},
     )
-    pantagruel_mlm: bool = field(
-        default=False,
-        metadata={"help": "prepare dataset for training textual pantagruel with mlm head"},
-    )
 
 
 @register_task("masked_lm", dataclass=MaskedLMConfig)
@@ -179,7 +175,6 @@ class MaskedLMTask(FairseqTask):
         assert len(paths) > 0
         data_path = paths[(epoch - 1) % len(paths)]
         split_path = os.path.join(data_path, split)
-        logger.info(f"split_path: {split_path}")
 
         dataset = data_utils.load_indexed_dataset(
             split_path,
@@ -254,35 +249,12 @@ class MaskedLMTask(FairseqTask):
         )
 
         if self.cfg.d2v2_multi:
-            if not getattr(self.cfg, "pantagruel_mlm", False):
-                dataset = self._d2v2_multi_dataset(
-                    src_dataset, 
-                    target_dataset=target_dataset if getattr(self.cfg, "pantagruel_multi", False) else None,
-                )
-            else:
-                src_dataset_mlm, tgt_dataset_mlm = MaskTokensDataset.apply_mask(
-                    dataset,
-                    self.source_dictionary,
-                    pad_idx=self.source_dictionary.pad(),
-                    mask_idx=self.mask_idx,
-                    seed=self.cfg.seed,
-                    mask_prob=self.cfg.mask_prob,
-                    leave_unmasked_prob=self.cfg.leave_unmasked_prob,
-                    random_token_prob=self.cfg.random_token_prob,
-                    freq_weighted_replacement=self.cfg.freq_weighted_replacement,
-                    mask_whole_words=mask_whole_words,
-                    mask_multiple_length=self.cfg.mask_multiple_length,
-                    mask_stdev=self.cfg.mask_stdev,
-                    skip_masking=False, # apply masking at source for mlm head
-                )
-                dataset = self._pantagruel_d2v2_mlm_dataset(
-                    src_dataset_d2v=src_dataset,
-                    src_dataset_mlm=src_dataset_mlm,
-                    target_dataset_mlm=RightPadDataset(
-                        tgt_dataset_mlm,
-                        pad_idx=self.source_dictionary.pad(),
-                    ),
-                )
+            dataset = self._d2v2_multi_dataset(
+                src_dataset, 
+                target_dataset=(
+                    target_dataset if getattr(self.cfg, "pantagruel_multi", False) else None
+                ),
+            )
         else:
             dataset = self._regular_dataset(src_dataset, target_dataset)
 
@@ -324,9 +296,9 @@ class MaskedLMTask(FairseqTask):
             "id": IdDataset(),
             "padding_mask": RightPaddingMaskDataset(src_dataset),
         }
-        if target_dataset is not None:
-            logger.info("Using target dataset for data2vec_multi")
-            input_dict["target"] = target_dataset
+        if getattr(self.cfg, "pantagruel_multi", False) and target_dataset is not None:
+            logger.info("Using target dataset for unimodal pantagruel")
+            input_dict["target_mlm"] = target_dataset
 
         dataset = NestedDictionaryDataset(
             {
@@ -336,35 +308,6 @@ class MaskedLMTask(FairseqTask):
                 "ntokens": NumelDataset(src_dataset, reduce=True),
             },
             sizes=[src_dataset.sizes],
-        )
-        return dataset
-
-    def _pantagruel_d2v2_mlm_dataset(
-        self, src_dataset_d2v, src_dataset_mlm, target_dataset_mlm,
-    ):
-        input_dict = {
-            "source": RightPadDataset(
-                src_dataset_d2v,
-                pad_idx=self.source_dictionary.pad(),
-            ),
-            "id": IdDataset(),
-            "padding_mask": RightPaddingMaskDataset(src_dataset_d2v),
-            # for mlm head
-            "source_mlm": RightPadDataset(
-                src_dataset_mlm,
-                pad_idx=self.source_dictionary.pad(),
-            ),
-            "target_mlm": target_dataset_mlm,
-        }
-
-        dataset = NestedDictionaryDataset(
-            {
-                "id": IdDataset(),
-                "net_input": input_dict,
-                "nsentences": NumSamplesDataset(),
-                "ntokens": NumelDataset(src_dataset_d2v, reduce=True),
-            },
-            sizes=[src_dataset_d2v.sizes],
         )
         return dataset
 
