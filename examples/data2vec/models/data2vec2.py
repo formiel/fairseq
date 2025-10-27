@@ -425,6 +425,11 @@ class Data2VecMultiModel(BaseFairseqModel):
                 pretrained_state_dict = state["model"]
                 model.load_state_dict(pretrained_state_dict, strict=True)
                 logger.info(f"loaded pretrained encoder from: {pretraining_path}")
+                ema_pretrained = {}
+                for k, v in pretrained_state_dict["_ema"].items():
+                    ema_pretrained[k.replace("blocks.", "")] = v
+                model.ema.model.load_state_dict(ema_pretrained, strict=True)
+                logger.info(f"loaded pretrained encoder to EMA: {pretraining_path}")
         return model
 
     def forward(
