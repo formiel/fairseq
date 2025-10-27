@@ -8,6 +8,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 from functools import partial
+from pathlib import Path
 import numpy as np
 
 from omegaconf import II
@@ -17,6 +18,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributed as dist
 
+from fairseq import checkpoint_utils
 from fairseq import modules
 from fairseq.modules import EMAModule, EMAModuleConfig
 
@@ -153,6 +155,7 @@ class Data2VecMultiConfig(FairseqDataclass):
     decoder_group: bool = False
 
     num_steps_start_d2v: int = 0
+    pretrained_model_path: str = "none"
 
 
 @register_model("data2vec_multi", dataclass=Data2VecMultiConfig)
@@ -408,7 +411,21 @@ class Data2VecMultiModel(BaseFairseqModel):
             )
         else:
             modalities = task.supported_modalities
-        return cls(cfg, modalities, task=task, skip_ema=cfg.skip_ema)
+        model = cls(cfg, modalities, task=task, skip_ema=cfg.skip_ema)
+
+        pretraining_path = getattr(cfg, "pretrained_model_path", None)
+        logger.info(f'pretraining_path: {pretraining_path}')
+        if pretraining_path is not None:
+            if not Path(pretraining_path).exists():
+                logger.warning(
+                    f"skipped pretraining because {pretraining_path} does not exist"
+                )
+            else:
+                state = torch.load(pretraining_path, map_location=torch.device("cpu"))
+                pretrained_state_dict = state["model"]
+                model.load_state_dict(pretrained_state_dict, strict=True)
+                logger.info(f"loaded pretrained encoder from: {pretraining_path}")
+        return model
 
     def forward(
         self,

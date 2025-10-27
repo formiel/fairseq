@@ -98,7 +98,7 @@ model:
   # std_coeff: 0.1
   # cov_coeff: 0.1
 
-  num_steps_start_d2v: 100000
+  pretrained_model_path: "/linkhome/rech/genlig01/ucy22cr/pantagruel/CamemBERT/camembert-base/model_mapped_to_data2vec_with_mlm.pt"
 
   depth: 12
   embed_dim: 768
