@@ -33,7 +33,7 @@ distributed_training:
 task:
   _name: masked_lm
   data: ???
-  sample_break_mode: none
+  sample_break_mode: complete
   tokens_per_sample: 512
   include_target_tokens: true
   random_token_prob: 0
