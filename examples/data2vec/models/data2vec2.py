@@ -141,6 +141,7 @@ class Data2VecMultiConfig(FairseqDataclass):
     mae_init: bool = False
 
     seed: int = II("common.seed")
+    max_update: int = II("optimization.max_update")
 
     skip_ema: bool = False
 
@@ -154,8 +155,13 @@ class Data2VecMultiConfig(FairseqDataclass):
 
     decoder_group: bool = False
 
-    num_steps_start_d2v: int = 0
     pretrained_model_path: str = "none"
+
+    mlm_d2v_warmup_ratio: float = 0.0
+    mlm_weight_warmup: float = 0
+    mlm_weight_final: float = 0
+    d2v_weight_warmup: float = 0
+    d2v_weight_final: float = 0
 
 
 @register_model("data2vec_multi", dataclass=Data2VecMultiConfig)
@@ -288,6 +294,11 @@ class Data2VecMultiModel(BaseFairseqModel):
                 p.optim_overrides = {"optimizer": {"weight_decay_scale": 0}}
             if cfg.decoder_group and "decoder" in pn:
                 p.param_group = "decoder"
+
+        self.mlm_d2v_warmup_updates = 0
+        if getattr(cfg, "mlm_d2v_warmup_ratio", 0.0) > 0.0:
+            self.mlm_d2v_warmup_updates = self.cfg.mlm_d2v_warmup_ratio * self.cfg.max_update
+        logger.info(f"mlm_d2v_warmup_updates: {self.mlm_d2v_warmup_updates}")
 
         self.num_updates = 0
 
@@ -699,13 +710,32 @@ class Data2VecMultiModel(BaseFairseqModel):
                 reduction="sum",
                 ignore_index=self.padding_idx,
             )
-            result["losses"]["mlm"] = mlm_loss * self.cfg.mlm_loss
+            if self.mlm_d2v_warmup_updates > 0:
+                mlm_weight = (
+                    self.cfg.mlm_loss * self.cfg.mlm_weight_warmup 
+                    if self.num_updates <= self.mlm_d2v_warmup_updates 
+                    else self.cfg.mlm_loss * self.cfg.mlm_weight_final
+                )
+            else:
+                mlm_weight = self.cfg.mlm_loss
+            # logger.info(f"mlm_weight:{mlm_weight}")
 
-        if self.cfg.d2v_loss > 0 and self.num_updates >= self.cfg.num_steps_start_d2v:
+            result["losses"]["mlm"] = mlm_loss * mlm_weight
+
+        if self.cfg.d2v_loss > 0:
+            if self.mlm_d2v_warmup_updates > 0:
+                d2v_weight = (
+                    self.cfg.d2v_loss * self.cfg.d2v_weight_warmup 
+                    if self.num_updates <= self.mlm_d2v_warmup_updates 
+                    else self.cfg.d2v_loss * self.cfg.d2v_weight_final
+                )
+            else:
+                d2v_weight = self.cfg.d2v_loss
+            # logger.info(f"d2v_weight:{d2v_weight}")
             for i, x in enumerate(xs):
                 reg_loss = self.d2v_loss(x, y)
                 n = f"{mode}_regression_{i}" if len(xs) > 1 else f"{mode}_regression"
-                result["losses"][n] = reg_loss * self.cfg.d2v_loss
+                result["losses"][n] = reg_loss * d2v_weight
                 if getattr(self.cfg, "std_coeff", 0.0) > 0.0 or getattr(self.cfg, "cov_coeff", 0.0) > 0.0:
                     var_cov_loss = self.var_cov_loss(x, y)
                     result["losses"][n] += var_cov_loss
