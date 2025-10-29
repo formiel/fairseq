@@ -95,6 +95,7 @@ model:
   d2v_loss: 1.0
   # mlm_loss: 1.0
   contrastive_loss: 1.0
+  use_linear_head_for_text: true
 
   # std_coeff: 0.1
   # cov_coeff: 0.1

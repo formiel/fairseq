@@ -3,8 +3,10 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+import contextlib
 import logging
 import math
+import copy
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 from functools import partial
@@ -52,6 +54,7 @@ from examples.data2vec.models.modalities.text import (
     D2vTextConfig,
     TextEncoder,
 )
+from examples.pantagruel.models.modules import MHAPooling
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +156,10 @@ class Data2VecMultiConfig(FairseqDataclass):
     mlm_num_layers: int = 12
 
     contrastive_loss: float = 0
+    num_freeze_contrastive_updates: int = 0
+    use_map_head_for_speech: Optional[bool] = False
+    num_map_heads: Optional[int] = 1
+    use_linear_head_for_text: Optional[bool]= False
 
     std_coeff: float = 0.0
     cov_coeff: float = 0.0
@@ -308,9 +315,19 @@ class Data2VecMultiModel(BaseFairseqModel):
 
         self.contr_loss_weight = getattr(cfg, "contrastive_loss", 0.0)
         self.contr_logit_scale, self.contr_logit_bias = 1.0, 1.0
+        self.num_freeze_contrastive_updates = getattr(cfg, "num_freeze_contrastive_updates", 0)
         if self.contr_loss_weight > 0.0:
             self.contr_logit_scale = nn.Parameter(torch.randn(1))
             self.contr_logit_bias = nn.Parameter(torch.randn(1))
+            self.aux_heads = nn.ModuleDict()
+            if getattr(cfg, "use_map_head_for_speech", False):
+                self.aux_heads["AUDIO"] = MHAPooling(
+                    cfg.embed_dim, getattr(cfg, "num_map_heads", 1)
+                )
+            if getattr(cfg, "use_linear_head_for_text", False):
+                self.aux_heads["TEXT"] = nn.Linear(
+                    cfg.embed_dim, cfg.embed_dim
+                )
 
         self.num_updates = 0
 
@@ -353,17 +370,31 @@ class Data2VecMultiModel(BaseFairseqModel):
     def make_target_model(self):
         logger.info("making target model")
 
-        model_copy = Data2VecMultiModel(
-            self.cfg, self.modalities, skip_ema=True, task=self.task
-        )
+        ema_cfg = copy.deepcopy(self.cfg)
+        if hasattr(ema_cfg, "use_map_head_for_speech"):
+            ema_cfg.use_map_head_for_speech = False
+        if hasattr(ema_cfg, "use_linear_head_for_text"):
+            ema_cfg.use_linear_head_for_text = False
 
-        if self.cfg.ema_encoder_only:
+        model_copy = Data2VecMultiModel(
+            ema_cfg, self.modalities, skip_ema=True, task=self.task
+        )
+        logger.info(f"model_copy: {model_copy}")
+
+        if ema_cfg.ema_encoder_only:
             model_copy = model_copy.blocks
             for p_s, p_t in zip(self.blocks.parameters(), model_copy.parameters()):
                 p_t.data.copy_(p_s.data)
         else:
-            for p_s, p_t in zip(self.parameters(), model_copy.parameters()):
-                p_t.data.copy_(p_s.data)
+            # for p_s, p_t in zip(self.parameters(), model_copy.parameters()):
+            #     p_t.data.copy_(p_s.data)
+            excluded_modules = ["aux_heads"]
+            for name, p_s in self.named_parameters():
+                if any(excluded in name for excluded in excluded_modules):
+                    continue
+                if name in dict(model_copy.named_parameters()):
+                    p_t = dict(model_copy.named_parameters())[name]
+                    p_t.data.copy_(p_s.data)
 
             for mod_enc in model_copy.modality_encoders.values():
                 mod_enc.decoder = None
@@ -738,11 +769,16 @@ class Data2VecMultiModel(BaseFairseqModel):
             result["losses"]["mlm"] = mlm_loss * mlm_weight
 
         if self.contr_loss_weight > 0.0:
-            cls_target = orig_targets.mean(dim=1)
-            if self.cfg.clone_batch > 1:
-                cls_target = cls_target.repeat_interleave(self.cfg.clone_batch, 0)
-            cls_pred = x[:,0] # TODO: write function for different type of input
-            result["losses"]["contrastive"] = self.contrastive_loss(cls_pred, cls_target)
+            ft = self.num_freeze_contrastive_updates <= self.num_updates
+            with torch.no_grad() if not ft else contextlib.ExitStack():
+                cls_target = orig_targets.mean(dim=1)
+                if self.cfg.clone_batch > 1:
+                    cls_target = cls_target.repeat_interleave(self.cfg.clone_batch, 0)
+                # cls_pred = x[:,0]
+                cls_pred = self.get_sentence_level_pred(
+                    x, mode, padding_mask=padding_mask
+                )
+                result["losses"]["contrastive"] = self.contrastive_loss(cls_pred, cls_target)
 
         if self.cfg.d2v_loss > 0:
             if self.mlm_d2v_warmup_updates > 0:
@@ -811,6 +847,13 @@ class Data2VecMultiModel(BaseFairseqModel):
         x = decoder(*x_full)
 
         return x, x_full[0]
+
+    def get_sentence_level_pred(self, x, mode, padding_mask=None):
+        if mode == "TEXT":
+            x_pred = self.aux_heads["TEXT"](x[:, 0]) # CLS first representation
+        elif mode == "AUDIO":
+            x_pred = self.aux_heads["AUDIO"](x, padding_mask=padding_mask)
+        return x_pred
 
     def d2v_loss(self, x, y):
         x = x.view(-1, x.size(-1)).float()
