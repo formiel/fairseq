@@ -149,6 +149,7 @@ class Data2VecMultiConfig(FairseqDataclass):
     recon_loss: float = 0
     d2v_loss: float = 1
     mlm_loss: float = 0
+    mlm_num_layers: int = 12
 
     std_coeff: float = 0.0
     cov_coeff: float = 0.0
@@ -280,7 +281,9 @@ class Data2VecMultiModel(BaseFairseqModel):
             if cfg.recon_loss > 0:
                 self.recon_proj = nn.Linear(cfg.embed_dim, cfg.embed_dim)
             self.mlm_head = None
+            self.mlm_num_layers = 0
             if cfg.mlm_loss > 0:
+                self.mlm_num_layers = getattr(cfg, "mlm_num_layers", 12)
                 # text modality
                 self.padding_idx = task.dictionary.index("<pad>")
                 assert self.padding_idx != task.dictionary.unk()
@@ -490,6 +493,7 @@ class Data2VecMultiModel(BaseFairseqModel):
             x = self.dropout_input(x)
 
         layer_results = []
+        x_mlm = None
         for i, blk in enumerate(self.blocks):
             if (
                 not self.training
@@ -510,6 +514,8 @@ class Data2VecMultiModel(BaseFairseqModel):
                     padding_mask=masked_padding_mask,
                     alibi_bias=ab,
                 )
+                if i <= self.mlm_num_layers - 1:
+                    x_mlm = x.clone()
                 if features_only:
                     layer_results.append(lr)
 
@@ -551,6 +557,8 @@ class Data2VecMultiModel(BaseFairseqModel):
             )
             xs.append(dx)
             orig_x = x
+        if self.mlm_num_layers < self.cfg.depth:
+            x_full, _ = feature_extractor.decoder_input(x_mlm, encoder_mask)
 
         assert len(xs) > 0
 
@@ -677,7 +685,6 @@ class Data2VecMultiModel(BaseFairseqModel):
             )
 
         if self.cfg.recon_loss > 0:
-
             with torch.no_grad():
                 target = feature_extractor.patchify(source)
                 mean = target.mean(dim=-1, keepdim=True)
@@ -718,7 +725,6 @@ class Data2VecMultiModel(BaseFairseqModel):
                 )
             else:
                 mlm_weight = self.cfg.mlm_loss
-            # logger.info(f"mlm_weight:{mlm_weight}")
 
             result["losses"]["mlm"] = mlm_loss * mlm_weight
 
@@ -731,7 +737,7 @@ class Data2VecMultiModel(BaseFairseqModel):
                 )
             else:
                 d2v_weight = self.cfg.d2v_loss
-            # logger.info(f"d2v_weight:{d2v_weight}")
+
             for i, x in enumerate(xs):
                 reg_loss = self.d2v_loss(x, y)
                 n = f"{mode}_regression_{i}" if len(xs) > 1 else f"{mode}_regression"
