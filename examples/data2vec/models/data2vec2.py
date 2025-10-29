@@ -557,7 +557,7 @@ class Data2VecMultiModel(BaseFairseqModel):
             )
             xs.append(dx)
             orig_x = x
-        if self.mlm_num_layers < self.cfg.depth:
+        if self.cfg.mlm_loss > 0 and self.mlm_num_layers < self.cfg.depth:
             x_full, _ = feature_extractor.decoder_input(x_mlm, encoder_mask)
 
         assert len(xs) > 0
