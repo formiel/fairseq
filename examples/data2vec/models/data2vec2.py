@@ -148,8 +148,11 @@ class Data2VecMultiConfig(FairseqDataclass):
     cls_loss: float = 0
     recon_loss: float = 0
     d2v_loss: float = 1
+
     mlm_loss: float = 0
     mlm_num_layers: int = 12
+
+    contrastive_loss: float = 0
 
     std_coeff: float = 0.0
     cov_coeff: float = 0.0
@@ -302,6 +305,12 @@ class Data2VecMultiModel(BaseFairseqModel):
         if getattr(cfg, "mlm_d2v_warmup_ratio", 0.0) > 0.0:
             self.mlm_d2v_warmup_updates = self.cfg.mlm_d2v_warmup_ratio * self.cfg.max_update
         logger.info(f"mlm_d2v_warmup_updates: {self.mlm_d2v_warmup_updates}")
+
+        self.contr_loss_weight = getattr(cfg, "contrastive_loss", 0.0)
+        self.contr_logit_scale, self.contr_logit_bias = 1.0, 1.0
+        if self.contr_loss_weight > 0.0:
+            self.contr_logit_scale = nn.Parameter(torch.randn(1))
+            self.contr_logit_bias = nn.Parameter(torch.randn(1))
 
         self.num_updates = 0
 
@@ -728,6 +737,13 @@ class Data2VecMultiModel(BaseFairseqModel):
 
             result["losses"]["mlm"] = mlm_loss * mlm_weight
 
+        if self.contr_loss_weight > 0.0:
+            cls_target = orig_targets.mean(dim=1)
+            if self.cfg.clone_batch > 1:
+                cls_target = cls_target.repeat_interleave(self.cfg.clone_batch, 0)
+            cls_pred = x[:,0] # TODO: write function for different type of input
+            result["losses"]["contrastive"] = self.contrastive_loss(cls_pred, cls_target)
+
         if self.cfg.d2v_loss > 0:
             if self.mlm_d2v_warmup_updates > 0:
                 d2v_weight = (
@@ -813,6 +829,81 @@ class Data2VecMultiModel(BaseFairseqModel):
         reg_loss = loss * scale
 
         return reg_loss
+
+    def contrastive_loss(self, pred, target):
+        x_pred = F.normalize(pred, p=2, dim=-1)
+        y_target = F.normalize(target, p=2, dim=-1)
+
+        def block_diagonal_ones_vec(n, block_size, device):
+            # Number of blocks
+            num_blocks = n // block_size
+            # Create a single block of ones
+            block = torch.ones(block_size, block_size)
+            # Repeat blocks along diagonal using kron (Kronecker product)
+            A = torch.kron(torch.eye(num_blocks), block)
+            return A.to(device=device)
+
+        def get_labels(on_same_device):
+            M = x_pred.size()[0]
+            per_gpu_bsz = M // self.cfg.clone_batch # M = bsz * clone
+            if on_same_device:
+                # if clone_batch = 1
+                # eye = torch.eye(per_gpu_bsz, device=x_pred.device)
+                # labels = 2 * eye - torch.ones(per_gpu_bsz, device=x_pred.device)
+                eye = block_diagonal_ones_vec(M, self.cfg.clone_batch, x_pred.device)
+                labels = 2 * eye - torch.ones(M, device=x_pred.device) # 1 for pos, -1 for neg
+            else:
+                labels = -1
+            return labels
+        
+        def compute_device_loss(zs, zt, on_same_device, temperature=0.1):
+            logits = torch.mm(zs.float(), zt.T) / temperature # (B, D) @ (D, B) -> (B, B)
+            logits = torch.clamp(logits, min=-50, max=50)
+            logits = logits * self.contr_logit_scale.exp() + self.contr_logit_bias
+
+            labels = get_labels(on_same_device=on_same_device)
+            loss = F.logsigmoid(labels * logits)
+            return -loss.sum()
+
+        def gather_tensors_with_padding(tensor, world_size):
+            """Gather tensors of different batch sizes across ranks."""
+            local_bsz = tensor.shape[0]
+
+            # gather the batch size across all devices
+            local_shape = torch.tensor([local_bsz], device=tensor.device)
+            gathered_shapes = [torch.zeros_like(local_shape) for _ in range(world_size)]
+            dist.all_gather(gathered_shapes, local_shape)
+
+            gathered_shapes = torch.stack(gathered_shapes).cpu()
+            max_size = gathered_shapes.max().item()
+
+            # pad tensor to the max size
+            padded_tensor = torch.zeros((max_size, *tensor.shape[1:]), dtype=tensor.dtype, device=tensor.device)
+            padded_tensor[:local_bsz] = tensor
+
+            # gather padded tensors
+            gathered_tensors = [torch.zeros_like(padded_tensor) for _ in range(world_size)]
+            dist.all_gather(gathered_tensors, padded_tensor)
+
+            # remove padding after gathering
+            gathered_tensors = [g[:s.item()] for g, s in zip(gathered_tensors, gathered_shapes)]
+
+            return gathered_tensors
+
+        # Gather text embeddings from all devices
+        world_size = dist.get_world_size()
+        y_target_gathered = gather_tensors_with_padding(y_target, world_size)
+        rank = dist.get_rank()
+
+        loss_total = 0
+        for i in range(world_size):
+            per_device_loss = compute_device_loss(
+                x_pred, y_target_gathered[i],
+                on_same_device=(i==rank)
+            )
+            loss_total += per_device_loss
+
+        return loss_total
 
     # see https://github.com/facebookresearch/vicreg/blob/main/main_vicreg.py
     def var_cov_loss(self, x, y):

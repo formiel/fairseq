@@ -223,10 +223,6 @@ class PantagruelMultiCriterion(FairseqCriterion):
 
     def compute_siglip_loss(self, aux_heads_out):
         # aux_heads_out: {"audio": BxD, "text": BxD}
-        z_speech = aux_heads_out["audio"]
-        z_text = aux_heads_out["text"]
-        z_speech = F.normalize(z_speech, p=2, dim=-1)
-        z_text = F.normalize(z_text, p=2, dim=-1)
 
         # # using open_clip implementation
         # loss = self.siglip_loss(
