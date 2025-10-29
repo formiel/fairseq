@@ -13,7 +13,6 @@ common:
   fp16_no_flatten_grads: true
   # user_dir: ${env:PWD}/examples/data2vec
   time_limit: ???
-  min_loss_scale: 1e-6
 
 checkpoint:
   # save_interval: 1
@@ -42,7 +41,6 @@ task:
   skip_masking: True
   d2v2_multi: True
   mask_idx_in_vocab: True
-  pantagruel_multi: True
 
 criterion:
   _name: model
@@ -56,7 +54,7 @@ criterion:
 
 dataset:
   num_workers: 3
-  batch_size: 64
+  batch_size: 4
   # batch_size_valid: 6
   # ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
@@ -103,7 +101,7 @@ model:
   clone_batch: 8
 
   ema_decay: 0.9999
-  ema_end_decay: 1.0
+  ema_end_decay: 0.99999
   ema_anneal_end_step: 100000
   ema_encoder_only: true
 
@@ -121,7 +119,7 @@ model:
 
   modalities:
     text:
-      mask_prob: 0.42
+      mask_prob: 0.48
       mask_length: 1
       mask_noise_std: 0.01
       prenet_depth: 0
