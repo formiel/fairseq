@@ -55,8 +55,8 @@ criterion:
     - masked_pct
 
 dataset:
-  num_workers: 6
-  batch_size: 32
+  num_workers: 3
+  batch_size: 64
   # batch_size_valid: 6
   # ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
