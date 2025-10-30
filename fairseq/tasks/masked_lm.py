@@ -131,6 +131,10 @@ class MaskedLMConfig(FairseqDataclass):
         default=False,
         metadata={"help": "prepare dataset for pantagruel training with multimodal encoder"},
     )
+    bos_token_prepended: bool = field(
+        default=False,
+        metadata={"help": "whether the bos token is prepended in the dataset"},
+    )
 
 
 @register_task("masked_lm", dataclass=MaskedLMConfig)
@@ -204,10 +208,15 @@ class MaskedLMTask(FairseqTask):
             eos=self.source_dictionary.eos(),
             break_mode=self.cfg.sample_break_mode,
         )
+        for i in range(3):
+            logger.info(f"First 3 samples in the {split} dataset after TokenBlockDataset:")
+            logger.info(f"Sample {i}: {dataset[i]}")
         logger.info("loaded {} blocks from: {}".format(len(dataset), split_path))
 
         # prepend beginning-of-sentence token (<s>, equiv. to [CLS] in BERT)
-        return PrependTokenDataset(dataset, self.source_dictionary.bos())
+        if not self.cfg.bos_token_prepended:
+            return PrependTokenDataset(dataset, self.source_dictionary.bos())
+        return PrependTokenDataset(dataset, None)
 
     def load_dataset(self, split, epoch=1, combine=False, **kwargs):
         """Load a given dataset split.

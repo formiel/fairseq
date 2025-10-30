@@ -32,7 +32,7 @@ distributed_training:
 task:
   _name: masked_lm
   data: ???
-  sample_break_mode: none
+  sample_break_mode: complete
   tokens_per_sample: 512
   include_target_tokens: true
   random_token_prob: 0
@@ -41,6 +41,7 @@ task:
   skip_masking: True
   d2v2_multi: True
   mask_idx_in_vocab: True
+  bos_token_prepended: True
 
 criterion:
   _name: model
