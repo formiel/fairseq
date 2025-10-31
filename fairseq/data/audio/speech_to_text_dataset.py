@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 def _collate_frames(
-    frames: List[torch.Tensor], is_audio_input: bool = False
+    frames: List[torch.Tensor], is_audio_input: bool = False, return_max_len=False
 ) -> torch.Tensor:
     """
     Convert a list of 2D frames into a padded 3D tensor
@@ -50,6 +50,8 @@ def _collate_frames(
         out = frames[0].new_zeros((len(frames), max_len, frames[0].size(1)))
     for i, v in enumerate(frames):
         out[i, : v.size(0)] = v
+    if return_max_len:
+        return out, max_len
     return out
 
 
@@ -303,12 +305,22 @@ class SpeechToTextDataset(FairseqDataset):
             NOAug = self.dataset_transforms.get_transform(NoisyOverlapAugment)
             sources = NOAug(sources)
 
-        frames = _collate_frames(sources, self.cfg.use_audio_input)
+        frames, max_len = _collate_frames(
+            sources, self.cfg.use_audio_input, return_max_len=True
+        )
         # sort samples by descending number of frames
         n_frames = torch.tensor([x.size(0) for x in sources], dtype=torch.long)
         n_frames, order = n_frames.sort(descending=True)
         indices = indices.index_select(0, order)
         frames = frames.index_select(0, order)
+
+        # padding
+        padding_mask = torch.BoolTensor(frames.shape).fill_(False)
+        for i, sz in enumerate(n_frames):
+            diff = sz - max_len
+            assert diff <=0
+            if diff < 0:
+                padding_mask[i, diff:] = True
 
         target, target_lengths = None, None
         prev_output_tokens = None
@@ -347,6 +359,7 @@ class SpeechToTextDataset(FairseqDataset):
             "src_tokens": frames,
             "src_lengths": n_frames,
             "prev_output_tokens": prev_output_tokens,
+            "padding_mask": padding_mask,
         }
         out = {
             "id": indices,

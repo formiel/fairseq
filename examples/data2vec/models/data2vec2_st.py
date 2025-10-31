@@ -80,14 +80,16 @@ class Data2vec2STModel(FairseqEncoderDecoderModel):
         lprobs.batch_first = True
         return lprobs
 
-    def forward(self, src_tokens, src_lengths, prev_output_tokens):
+    def forward(
+        self, src_tokens, src_lengths, prev_output_tokens, padding_mask=None
+    ):
         """
         The forward method inherited from the base class has a **kwargs
         argument in its input, which is not supported in torchscript. This
         method overwrites the forward method definition without **kwargs.
         """
         encoder_out = self.encoder(
-            source=src_tokens, padding_mask=None, features_only=True
+            source=src_tokens, padding_mask=padding_mask, features_only=True
         )
         decoder_out = self.decoder(
             prev_output_tokens=prev_output_tokens, encoder_out=encoder_out

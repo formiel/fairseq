@@ -24,8 +24,8 @@ task:
   data: ???
   config_yaml: ???
   normalize: true
-  max_sample_size: 1000000
-  min_sample_size: 4800
+  # max_sample_size: 1000000
+  # min_sample_size: 16000
 
 dataset:
   num_workers: 6
@@ -64,7 +64,7 @@ model:
   mask_prob: 0.05
   mask_channel_prob: 0.0
   mask_channel_length: 0
-  mask_length: 10
+  mask_length: 5
   layerdrop: 0.05
   activation_dropout: 0.1
   feature_grad_mult: 0.1
