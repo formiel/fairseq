@@ -24,8 +24,8 @@ task:
   data: ???
   config_yaml: ???
   normalize: false
-  max_sample_size: 1000000
-  min_sample_size: 3200
+  # max_sample_size: 1000000
+  # min_sample_size: 3200
 
 dataset:
   num_workers: 6

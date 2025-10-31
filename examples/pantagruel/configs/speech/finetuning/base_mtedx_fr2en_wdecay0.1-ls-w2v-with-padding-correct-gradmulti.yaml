@@ -63,8 +63,8 @@ model:
   apply_mask: false
   mask_prob: 0.0
   mask_channel_prob: 0.0
-  mask_channel_length: 64
-  mask_length: 1
+  mask_channel_length: 0
+  mask_length: 0
   layerdrop: 0.05
   activation_dropout: 0.1
   feature_grad_mult: 0.1
