@@ -305,6 +305,10 @@ def add_preprocess_args(parser):
                        help="number of parallel workers")
     group.add_argument("--dict-only", action='store_true',
                        help="if true, only builds a dictionary and then exits")
+    group.add_argument("--skip-append-eos", action='store_true', 
+                        help="if true, do not append an EOS token to the end of each sentence")
+    group.add_argument("--already-numberized", action='store_true', 
+                        help="if true, input files are already numberized")
     # fmt: on
     return parser
 

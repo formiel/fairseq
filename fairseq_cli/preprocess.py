@@ -107,11 +107,12 @@ def _make_binary_dataset(
     args: Namespace,
 ):
     logger.info("[{}] Dictionary: {} types".format(lang, len(vocab)))
+    logger.info(f"append_eos: {not args.skip_append_eos}")
 
     binarizer = VocabularyDatasetBinarizer(
         vocab,
-        append_eos=False,
-        already_numberized=True,
+        append_eos=not args.skip_append_eos,
+        already_numberized=args.already_numberized,
     )
 
     input_file = "{}{}".format(input_prefix, ("." + lang) if lang is not None else "")
