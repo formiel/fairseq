@@ -42,6 +42,7 @@ task:
   d2v2_multi: True
   mask_idx_in_vocab: True
   bos_token_prepended: True
+  pantagruel_multi: True
 
 criterion:
   _name: model
@@ -65,7 +66,7 @@ dataset:
 optimization:
   clip_norm: 1
   lr: [0.0007] # 5e-4 x sqrt(2) (trained on 8 GPUs with 5e-5)
-  max_update: 250000
+  max_update: 500000
   update_freq: [1]
   # max_epoch: 5
 
@@ -82,7 +83,7 @@ optimizer:
         weight_decay: 0.01
       lr_scheduler:
         _name: cosine
-        warmup_updates: 8000 # larger warmup (from 4k) as LR increases
+        warmup_updates: 16000 # larger warmup (from 4k) as LR increases
 
 lr_scheduler: pass_through
 
@@ -93,7 +94,8 @@ model:
   loss_scale: 1
 
   d2v_loss: 1.0
-  # mlm_loss: 2.0
+  mlm_loss: 1.0
+  mlm_num_layers: 6
 
   # std_coeff: 0.1
   # cov_coeff: 0.1
@@ -103,7 +105,7 @@ model:
   clone_batch: 8
 
   ema_decay: 0.9995
-  ema_end_decay: 0.999995
+  ema_end_decay: 0.9999
   ema_anneal_end_step: 200000
   ema_encoder_only: true
 
