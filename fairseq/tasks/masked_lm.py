@@ -200,10 +200,15 @@ class MaskedLMTask(FairseqTask):
         )
 
         # create continuous blocks of tokens
+        tokens_per_sample = (
+                self.cfg.tokens_per_sample - 1 if not self.cfg.bos_token_prepended 
+                else self.cfg.tokens_per_sample
+            )
+        logger.info(f"tokens_per_sample={tokens_per_sample}")
         dataset = TokenBlockDataset(
             dataset,
             dataset.sizes,
-            self.cfg.tokens_per_sample - 1,  # one less for <s>
+            tokens_per_sample,  # one less for <s>
             pad=self.source_dictionary.pad(),
             eos=self.source_dictionary.eos(),
             break_mode=self.cfg.sample_break_mode,
