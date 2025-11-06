@@ -165,6 +165,7 @@ class Data2VecMultiConfig(FairseqDataclass):
     cov_coeff: float = 0.0
 
     decoder_group: bool = False
+    mlm_group: bool = False
 
     pretrained_model_path: str = "none"
 
@@ -301,6 +302,9 @@ class Data2VecMultiModel(BaseFairseqModel):
                 self.mlm_head = RobertaLMHead(
                     cfg.embed_dim, len(task.dictionary), "gelu"
                 )
+                if getattr(cfg, "mlm_group", False):
+                    for p in self.mlm_head.parameters():
+                        p.param_group = "mlm_head"
 
         for pn, p in self.named_parameters():
             if len(p.shape) == 1 or pn.endswith(".bias") or "alibi_scale" in pn:
