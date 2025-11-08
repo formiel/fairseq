@@ -169,11 +169,8 @@ class Data2VecMultiConfig(FairseqDataclass):
 
     pretrained_model_path: str = "none"
 
-    mlm_d2v_warmup_ratio: float = 0.0
-    mlm_weight_warmup: float = 0
-    mlm_weight_final: float = 0
-    d2v_weight_warmup: float = 0
-    d2v_weight_final: float = 0
+    mlm_decay_steps: int = 0
+    mlm_start_ratio: float = 0
 
 
 @register_model("data2vec_multi", dataclass=Data2VecMultiConfig)
@@ -312,10 +309,9 @@ class Data2VecMultiModel(BaseFairseqModel):
             if cfg.decoder_group and "decoder" in pn:
                 p.param_group = "decoder"
 
-        self.mlm_d2v_warmup_updates = 0
-        if getattr(cfg, "mlm_d2v_warmup_ratio", 0.0) > 0.0:
-            self.mlm_d2v_warmup_updates = self.cfg.mlm_d2v_warmup_ratio * self.cfg.max_update
-        logger.info(f"mlm_d2v_warmup_updates: {self.mlm_d2v_warmup_updates}")
+        self.mlm_decay_steps = getattr(cfg, "mlm_decay_steps", 0)
+        self.mlm_start_ratio = getattr(cfg, "mlm_start_ratio", 0.0)
+        logger.info(f"mlm_decay_steps={self.mlm_decay_steps}, mlm_start_ratio={self.mlm_start_ratio}")
 
         self.contr_loss_weight = getattr(cfg, "contrastive_loss", 0.0)
         self.contr_logit_scale, self.contr_logit_bias = 1.0, 1.0
@@ -761,11 +757,12 @@ class Data2VecMultiModel(BaseFairseqModel):
                 reduction="sum",
                 ignore_index=self.padding_idx,
             )
-            if self.mlm_d2v_warmup_updates > 0:
-                mlm_weight = (
-                    self.cfg.mlm_loss * self.cfg.mlm_weight_warmup 
-                    if self.num_updates <= self.mlm_d2v_warmup_updates 
-                    else self.cfg.mlm_loss * self.cfg.mlm_weight_final
+            if self.mlm_decay_steps > 0:
+                mlm_weight = max(
+                    self.cfg.mlm_loss, # lambda_min
+                    self.mlm_start_ratio - (self.mlm_start_ratio - self.cfg.mlm_loss) * (
+                        self.num_updates / self.mlm_decay_steps
+                    )
                 )
             else:
                 mlm_weight = self.cfg.mlm_loss
@@ -785,19 +782,10 @@ class Data2VecMultiModel(BaseFairseqModel):
                 result["losses"]["contrastive"] = self.contrastive_loss(cls_pred, cls_target)
 
         if self.cfg.d2v_loss > 0:
-            if self.mlm_d2v_warmup_updates > 0:
-                d2v_weight = (
-                    self.cfg.d2v_loss * self.cfg.d2v_weight_warmup 
-                    if self.num_updates <= self.mlm_d2v_warmup_updates 
-                    else self.cfg.d2v_loss * self.cfg.d2v_weight_final
-                )
-            else:
-                d2v_weight = self.cfg.d2v_loss
-
             for i, x in enumerate(xs):
                 reg_loss = self.d2v_loss(x, y)
                 n = f"{mode}_regression_{i}" if len(xs) > 1 else f"{mode}_regression"
-                result["losses"][n] = reg_loss * d2v_weight
+                result["losses"][n] = reg_loss * self.cfg.d2v_loss
                 if getattr(self.cfg, "std_coeff", 0.0) > 0.0 or getattr(self.cfg, "cov_coeff", 0.0) > 0.0:
                     var_cov_loss = self.var_cov_loss(x, y)
                     result["losses"][n] += var_cov_loss
