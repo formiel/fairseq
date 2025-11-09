@@ -477,8 +477,9 @@ class Data2VecMultiModel(BaseFairseqModel):
             else:
                 state = torch.load(pretraining_path, map_location=torch.device("cpu"))
                 pretrained_state_dict = state["model"]
-                model.load_state_dict(pretrained_state_dict, strict=True)
-                logger.info(f"loaded pretrained encoder from: {pretraining_path}")
+                strict = True if getattr(cfg, "mlm_num_layers", 12) == cfg.depth else False
+                model.load_state_dict(pretrained_state_dict, strict=strict)
+                logger.info(f"loaded pretrained encoder from: {pretraining_path} with strict={strict}")
                 ema_pretrained = {}
                 for k, v in pretrained_state_dict["_ema"].items():
                     ema_pretrained[k.replace("blocks.", "")] = v
