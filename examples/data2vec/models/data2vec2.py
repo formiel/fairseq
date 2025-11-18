@@ -154,6 +154,7 @@ class Data2VecMultiConfig(FairseqDataclass):
 
     mlm_loss: float = 0
     mlm_num_layers: int = 12
+    mlm_impl: str = "none"
 
     contrastive_loss: float = 0
     num_freeze_contrastive_updates: int = 0
@@ -598,8 +599,18 @@ class Data2VecMultiModel(BaseFairseqModel):
             )
             xs.append(dx)
             orig_x = x
-        if self.cfg.mlm_loss > 0 and self.mlm_num_layers < self.cfg.depth:
-            x_full, _ = feature_extractor.decoder_input(x_mlm, encoder_mask)
+
+        x_masked_for_mlm = None
+        if self.cfg.mlm_loss > 0:
+            if self.mlm_num_layers < self.cfg.depth:
+                x_masked_for_mlm, _ = self.forward_decoder(
+                    x_mlm,
+                    feature_extractor,
+                    feature_extractor.decoder,
+                    encoder_mask,
+                )
+            else:
+                x_masked_for_mlm = dx.clone()
 
         assert len(xs) > 0
 
@@ -749,7 +760,9 @@ class Data2VecMultiModel(BaseFairseqModel):
         if self.cfg.mlm_loss > 0 and not features_only:
             target_mlm = target_mlm.repeat_interleave(self.cfg.clone_batch, 0)
             valid_mask = masked_b & (target_mlm.ne(self.padding_idx))
-            mlm_logits = self.mlm_head(x_full, masked_tokens=valid_mask)
+            x_masked_for_mlm = x_masked_for_mlm[valid_mask]
+            # mlm_logits = self.mlm_head(x_full, masked_tokens=valid_mask)
+            mlm_logits = self.mlm_head(x_masked_for_mlm, masked_tokens=None)
             mlm_targets = target_mlm[valid_mask]
 
             mlm_loss = modules.cross_entropy(

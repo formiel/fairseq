@@ -65,8 +65,8 @@ dataset:
 
 optimization:
   clip_norm: 1
-  lr: [0.00065]
-  max_update: 500000
+  lr: [0.0005]
+  max_update: 125000
   update_freq: [1]
   # max_epoch: 5
 
@@ -75,7 +75,7 @@ optimizer:
   dynamic_groups: true
   groups:
     default:
-      lr_float: 0.00065
+      lr_float: 0.0005
       optimizer:
         _name: adam
         adam_betas: [0.9,0.98]
@@ -83,17 +83,7 @@ optimizer:
         weight_decay: 0.01
       lr_scheduler:
         _name: cosine
-        warmup_updates: 14000
-    mlm_head:
-      lr_float: 0.0001
-      optimizer:
-        _name: adam
-        adam_betas: [0.9,0.98]
-        adam_eps: 1e-06
-        weight_decay: 0.01
-      lr_scheduler:
-        _name: cosine
-        warmup_updates: 14000
+        warmup_updates: 4000
 
 lr_scheduler: pass_through
 
@@ -104,11 +94,8 @@ model:
   loss_scale: 1
 
   d2v_loss: 1.0
-  mlm_loss: 0.05
-  mlm_num_layers: 6
-  mlm_decay_steps: 500000
-  mlm_start_ratio: 1.0
-  mlm_group: true
+  mlm_loss: 1.0
+  mlm_num_layers: 12
 
   # std_coeff: 0.1
   # cov_coeff: 0.1
@@ -118,8 +105,8 @@ model:
   clone_batch: 8
 
   ema_decay: 0.9995
-  ema_end_decay: 0.99995
-  ema_anneal_end_step: 400000
+  ema_end_decay: 0.9999
+  ema_anneal_end_step: 50000
   ema_encoder_only: true
 
   average_top_k_layers: 12

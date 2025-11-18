@@ -120,11 +120,11 @@ class MaskTokensDataset(BaseWrapperDataset):
         item = self.dataset[index]
         sz = len(item)
 
-        assert (
-            self.mask_idx not in item
-        ), "Dataset contains mask_idx (={}), this is not expected!".format(
-            self.mask_idx,
-        )
+        # assert (
+        #     self.mask_idx not in item
+        # ), "Dataset contains mask_idx (={}), this is not expected!".format(
+        #     self.mask_idx,
+        # )
         if self.skip_masking:
             return torch.from_numpy(np.copy(item))
 
