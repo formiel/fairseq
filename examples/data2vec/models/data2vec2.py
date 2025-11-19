@@ -154,7 +154,7 @@ class Data2VecMultiConfig(FairseqDataclass):
 
     mlm_loss: float = 0
     mlm_num_layers: int = 12
-    mlm_impl: str = "none"
+    mlm_impl: Optional[str] = None
 
     contrastive_loss: float = 0
     num_freeze_contrastive_updates: int = 0
@@ -168,7 +168,7 @@ class Data2VecMultiConfig(FairseqDataclass):
     decoder_group: bool = False
     mlm_group: bool = False
 
-    pretrained_model_path: str = "none"
+    pretrained_model_path: Optional[str] = None
 
     mlm_decay_steps: int = 0
     mlm_start_ratio: float = 0
@@ -291,6 +291,8 @@ class Data2VecMultiModel(BaseFairseqModel):
                 self.recon_proj = nn.Linear(cfg.embed_dim, cfg.embed_dim)
             self.mlm_head = None
             self.mlm_num_layers = 0
+            self.mlm_impl = "use_decoder_output" if not getattr(cfg, "mlm_impl", None) else "original_bert" # use forward to decoder as default implementation for backward compatibility
+            logger.info(f"self.mlm_impl: {self.mlm_impl}")
             if cfg.mlm_loss > 0:
                 self.mlm_num_layers = getattr(cfg, "mlm_num_layers", 12)
                 # text modality
@@ -500,6 +502,7 @@ class Data2VecMultiModel(BaseFairseqModel):
         force_remove_masked=False,
         remove_extra_tokens=True,
         precomputed_mask=None,
+        source_mlm=None,
         target_mlm=None,
     ):
         if mode is None:
@@ -556,7 +559,7 @@ class Data2VecMultiModel(BaseFairseqModel):
                     padding_mask=masked_padding_mask,
                     alibi_bias=ab,
                 )
-                if i <= self.mlm_num_layers - 1:
+                if self.mlm_impl == "use_decoder_output" and i <= self.mlm_num_layers - 1:
                     x_mlm = x.clone()
                 if features_only:
                     layer_results.append(lr)
@@ -581,9 +584,8 @@ class Data2VecMultiModel(BaseFairseqModel):
 
         xs = []
 
-        x_full = None
         if self.shared_decoder is not None:
-            dx, _ = self.forward_decoder(
+            dx = self.forward_decoder(
                 x,
                 feature_extractor,
                 self.shared_decoder,
@@ -591,7 +593,7 @@ class Data2VecMultiModel(BaseFairseqModel):
             )
             xs.append(dx)
         if feature_extractor.decoder is not None:
-            dx, x_full = self.forward_decoder(
+            dx = self.forward_decoder(
                 x,
                 feature_extractor,
                 feature_extractor.decoder,
@@ -601,9 +603,9 @@ class Data2VecMultiModel(BaseFairseqModel):
             orig_x = x
 
         x_masked_for_mlm = None
-        if self.cfg.mlm_loss > 0:
+        if self.cfg.mlm_loss > 0 and self.mlm_impl == "use_decoder_output":
             if self.mlm_num_layers < self.cfg.depth:
-                x_masked_for_mlm, _ = self.forward_decoder(
+                x_masked_for_mlm = self.forward_decoder(
                     x_mlm,
                     feature_extractor,
                     feature_extractor.decoder,
@@ -758,12 +760,56 @@ class Data2VecMultiModel(BaseFairseqModel):
             )
 
         if self.cfg.mlm_loss > 0 and not features_only:
-            target_mlm = target_mlm.repeat_interleave(self.cfg.clone_batch, 0)
-            valid_mask = masked_b & (target_mlm.ne(self.padding_idx))
-            x_masked_for_mlm = x_masked_for_mlm[valid_mask]
-            # mlm_logits = self.mlm_head(x_full, masked_tokens=valid_mask)
-            mlm_logits = self.mlm_head(x_masked_for_mlm, masked_tokens=None)
-            mlm_targets = target_mlm[valid_mask]
+            # target_mlm is different for different implementation (depend on the skip_masking param in masked_lm task)
+            # For use_decoder_output -> target_mlm is the original target sequence, 
+            # used to eliminate the padded positions only. Masking is based on data2vec masking configuration
+            # For original_bert -> target_mlm is tensor of padding_idx (not masked) and 1 (masked positions), masking strategy is ind
+            if self.mlm_impl == "use_decoder_output":
+                target_mlm = target_mlm.repeat_interleave(self.cfg.clone_batch, 0)
+                valid_mask = masked_b & (target_mlm.ne(self.padding_idx))
+                x_masked_for_mlm = x_masked_for_mlm[valid_mask]
+                # mlm_logits = self.mlm_head(x_full, masked_tokens=valid_mask)
+                mlm_logits = self.mlm_head(x_masked_for_mlm, masked_tokens=None)
+                mlm_targets = target_mlm[valid_mask]
+            elif self.mlm_impl == "original_bert":
+                # do another forward like original BERT implementation
+                mlm_extractor_out = feature_extractor(
+                    source_mlm, None, False, False, 1, None, None
+                )
+                x_mlm = mlm_extractor_out["x"]
+                encoder_mask_mlm = mlm_extractor_out["encoder_mask"]
+                masked_padding_mask_mlm = mlm_extractor_out["padding_mask"]
+                masked_alibi_bias_mlm = mlm_extractor_out.get("alibi_bias", None)
+                alibi_scale_mlm = mlm_extractor_out.get("alibi_scale", None)
+                for i, blk in enumerate(self.blocks):
+                    if i <= self.mlm_num_layers - 1:
+                        if (
+                            not self.training
+                            or self.cfg.layerdrop == 0
+                            or (np.random.random() > self.cfg.layerdrop)
+                        ):
+                            ab = masked_alibi_bias_mlm
+                            if ab is not None and alibi_scale_mlm is not None:
+                                scale = (
+                                    alibi_scale_mlm[i]
+                                    if alibi_scale_mlm.size(0) > 1
+                                    else alibi_scale_mlm.squeeze(0)
+                                )
+                                ab = ab * scale.type_as(ab)
+
+                            x_mlm, _ = blk(
+                                x_mlm,
+                                padding_mask=masked_padding_mask_mlm,
+                                alibi_bias=ab,
+                            )
+
+                masked_tokens = target_mlm.ne(self.padding_idx)
+                # logger.info(f"masking percent: {int(masked_tokens.sum().item())} / {int(target_mlm.numel())}")
+                masked_tokens = torch.where(
+                    masked_tokens.any(), masked_tokens, masked_tokens.new([True])
+                )
+                mlm_logits = self.mlm_head(x_mlm, masked_tokens=masked_tokens)
+                mlm_targets = target_mlm[masked_tokens]
 
             mlm_loss = modules.cross_entropy(
                 mlm_logits.view(-1, mlm_logits.size(-1)),
@@ -849,10 +895,10 @@ class Data2VecMultiModel(BaseFairseqModel):
         decoder,
         mask_info,
     ):
-        x_full = feature_extractor.decoder_input(x, mask_info)
-        x = decoder(*x_full)
+        x = feature_extractor.decoder_input(x, mask_info) # full x
+        x = decoder(*x)
 
-        return x, x_full[0]
+        return x
 
     def get_sentence_level_pred(self, x, mode, padding_mask=None):
         if mode == "TEXT":

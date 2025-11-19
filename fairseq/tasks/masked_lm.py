@@ -135,6 +135,10 @@ class MaskedLMConfig(FairseqDataclass):
         default=False,
         metadata={"help": "whether the bos token is prepended in the dataset"},
     )
+    panta_text_mlm_org_impl: bool = field(
+        default=False,
+        metadata={"help": "prepare dataset for training textual pantagruel with mlm head"},
+    )
 
 
 @register_task("masked_lm", dataclass=MaskedLMConfig)
@@ -263,12 +267,38 @@ class MaskedLMTask(FairseqTask):
         )
 
         if self.cfg.d2v2_multi:
-            dataset = self._d2v2_multi_dataset(
-                src_dataset, 
-                target_dataset=(
-                    target_dataset if getattr(self.cfg, "pantagruel_multi", False) else None
-                ),
-            )
+            if not getattr(self.cfg, "panta_text_mlm_org_impl", False):
+                dataset = self._d2v2_multi_dataset(
+                    src_dataset, 
+                    target_dataset=(
+                        target_dataset if getattr(self.cfg, "pantagruel_multi", False) else None
+                    ),
+                )
+            else:
+                src_dataset_mlm, tgt_dataset_mlm = MaskTokensDataset.apply_mask(
+                    dataset,
+                    self.source_dictionary,
+                    pad_idx=self.source_dictionary.pad(),
+                    mask_idx=self.mask_idx,
+                    seed=self.cfg.seed,
+                    mask_prob=self.cfg.mask_prob,
+                    leave_unmasked_prob=self.cfg.leave_unmasked_prob,
+                    random_token_prob=self.cfg.random_token_prob,
+                    freq_weighted_replacement=self.cfg.freq_weighted_replacement,
+                    mask_whole_words=mask_whole_words,
+                    mask_multiple_length=self.cfg.mask_multiple_length,
+                    mask_stdev=self.cfg.mask_stdev,
+                    skip_masking=False, # apply masking at source for mlm head
+                )
+                dataset = self._pantagruel_mlm_org_impl_dataset(
+                    src_dataset_d2v=src_dataset,
+                    src_dataset_mlm=src_dataset_mlm,
+                    target_dataset_mlm=RightPadDataset(
+                        tgt_dataset_mlm,
+                        pad_idx=self.source_dictionary.pad(),
+                    ),
+                )
+
         else:
             dataset = self._regular_dataset(src_dataset, target_dataset)
 
@@ -325,19 +355,53 @@ class MaskedLMTask(FairseqTask):
         )
         return dataset
 
+    def _pantagruel_mlm_org_impl_dataset(
+        self, src_dataset_d2v, src_dataset_mlm, target_dataset_mlm,
+    ):
+        input_dict = {
+            "source": RightPadDataset(
+                src_dataset_d2v,
+                pad_idx=self.source_dictionary.pad(),
+            ),
+            "id": IdDataset(),
+            "padding_mask": RightPaddingMaskDataset(src_dataset_d2v),
+            # for mlm head
+            "source_mlm": RightPadDataset(
+                src_dataset_mlm,
+                pad_idx=self.source_dictionary.pad(),
+            ),
+            "target_mlm": target_dataset_mlm,
+        }
+        dataset = NestedDictionaryDataset(
+                {
+                    "id": IdDataset(),
+                    "net_input": input_dict,
+                    "nsentences": NumSamplesDataset(),
+                    "ntokens": NumelDataset(src_dataset_d2v, reduce=True),
+                },
+                sizes=[src_dataset_d2v.sizes],
+                )
+        return dataset
+
     def build_dataset_for_inference(self, src_tokens, src_lengths, sort=True):
+        tokens_per_sample = (
+                self.cfg.tokens_per_sample - 1 if not self.cfg.bos_token_prepended 
+                else self.cfg.tokens_per_sample
+            )
+        logger.info(f"tokens_per_sample={tokens_per_sample}")
         src_dataset = RightPadDataset(
             TokenBlockDataset(
                 src_tokens,
                 src_lengths,
-                self.cfg.tokens_per_sample - 1,  # one less for <s>
+                tokens_per_sample,  # one less for <s>
                 pad=self.source_dictionary.pad(),
                 eos=self.source_dictionary.eos(),
                 break_mode="eos",
             ),
             pad_idx=self.source_dictionary.pad(),
         )
-        src_dataset = PrependTokenDataset(src_dataset, self.source_dictionary.bos())
+        if not self.cfg.bos_token_prepended:
+            src_dataset = PrependTokenDataset(src_dataset, self.source_dictionary.bos())
         src_dataset = NestedDictionaryDataset(
             {
                 "id": IdDataset(),
