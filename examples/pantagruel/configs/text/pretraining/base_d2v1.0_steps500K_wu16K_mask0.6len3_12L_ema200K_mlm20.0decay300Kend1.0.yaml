@@ -129,6 +129,7 @@ model:
       mask_length: 3
       mask_noise_std: 0.01
       prenet_depth: 0
+      learned_pos: false
       decoder:
         input_dropout: 0.1
         decoder_dim: 768
