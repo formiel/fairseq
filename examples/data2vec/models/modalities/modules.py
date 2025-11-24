@@ -3,6 +3,9 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
+from functools import wraps
+from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -14,6 +17,8 @@ from fairseq.modules import (
     SamePad2d,
     TransposeLast,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -303,16 +308,24 @@ class AltBlock(nn.Module):
         )
         self.post_mlp_dropout = nn.Dropout(post_mlp_drop, inplace=False)
 
-    def forward(self, x, padding_mask=None, alibi_bias=None):
+    def forward(
+        self, x, padding_mask=None, alibi_bias=None, position_embeddings=None
+    ):
         if self.layer_norm_first:
-            x = x + self.drop_path(self.attn(self.norm1(x), padding_mask, alibi_bias))
+            x = x + self.drop_path(self.attn(
+                self.norm1(x), padding_mask, alibi_bias, 
+                position_embeddings=position_embeddings
+            ))
             r = x = self.mlp(self.norm2(x))
             t = x
             x = r + self.drop_path(self.post_mlp_dropout(x))
             if not self.ffn_targets:
                 t = x
         else:
-            x = x + self.drop_path(self.attn(x, padding_mask, alibi_bias))
+            x = x + self.drop_path(self.attn(
+                x, padding_mask, alibi_bias, 
+                position_embeddings=position_embeddings
+            ))
             r = x = self.norm1(x)
             x = self.mlp(x)
             t = x
@@ -353,7 +366,9 @@ class AltAttention(nn.Module):
                 torch.log(10 * torch.ones((num_heads, 1, 1))), requires_grad=True
             )
 
-    def forward(self, x, padding_mask=None, alibi_bias=None, fast=True):
+    def forward(
+        self, x, padding_mask=None, alibi_bias=None, position_embeddings=None, fast=True
+    ):
         B, N, C = x.shape
         qkv = (
             self.qkv(x)
@@ -367,6 +382,10 @@ class AltAttention(nn.Module):
         )  # make torchscript happy (cannot use tensor as tuple)
 
         dtype = q.dtype
+
+        if position_embeddings is not None:
+            cos, sin = position_embeddings # (M, unmasked_L, head_dim)
+            q, k = apply_rotary_pos_emb(q, k, cos, sin) # (M, heads, unmasked_L, head_dim)
 
         if not fast:
             if self.cosine_attention:
@@ -642,3 +661,174 @@ class EncDecTransformerDecoder(nn.Module):
 
         x = self.proj(x)
         return x
+
+
+def dynamic_rope_update(rope_forward):
+    """
+    Decorator function to update the RoPE parameters in the forward pass, if the model is using a dynamic RoPE
+    (i.e. a RoPE implementation that may recompute its frequencies in the forward pass).
+
+    Args:
+        rope_forward (Callable):
+            The forward pass of the RoPE implementation.
+
+    Returns:
+        The decorated forward pass.
+    """
+
+    def longrope_frequency_update(self, position_ids, device):
+        """Longrope uses long factor if sequence is larger than original pretraining length, short otherwise."""
+        seq_len = torch.max(position_ids) + 1
+        if hasattr(self.config, "original_max_position_embeddings"):
+            original_max_position_embeddings = self.config.original_max_position_embeddings
+        else:
+            original_max_position_embeddings = self.config.max_position_embeddings
+        if seq_len > original_max_position_embeddings:
+            if not hasattr(self, "long_inv_freq"):
+                self.long_inv_freq, _ = self.rope_init_fn(
+                    self.config, device, seq_len=original_max_position_embeddings + 1
+                )
+            self.register_buffer("inv_freq", self.long_inv_freq, persistent=False)
+        else:
+            # This .to() is needed if the model has been moved to a device after being initialized (because
+            # the buffer is automatically moved, but not the original copy)
+            self.original_inv_freq = self.original_inv_freq.to(device)
+            self.register_buffer("inv_freq", self.original_inv_freq, persistent=False)
+
+    def dynamic_frequency_update(self, position_ids, device):
+        """
+        dynamic RoPE layers should recompute `inv_freq` in the following situations:
+        1 - growing beyond the cached sequence length (allow scaling)
+        2 - the current sequence length is in the original scale (avoid losing precision with small sequences)
+        """
+        seq_len = torch.max(position_ids) + 1
+        if seq_len > self.max_seq_len_cached:  # growth
+            inv_freq, self.attention_scaling = self.rope_init_fn(self.config, device, seq_len=seq_len)
+            self.register_buffer("inv_freq", inv_freq, persistent=False)  # TODO joao: may break with compilation
+            self.max_seq_len_cached = seq_len
+
+        if seq_len < self.original_max_seq_len and self.max_seq_len_cached > self.original_max_seq_len:  # reset
+            # This .to() is needed if the model has been moved to a device after being initialized (because
+            # the buffer is automatically moved, but not the original copy)
+            self.original_inv_freq = self.original_inv_freq.to(device)
+            self.register_buffer("inv_freq", self.original_inv_freq, persistent=False)
+            self.max_seq_len_cached = self.original_max_seq_len
+
+    @wraps(rope_forward)
+    def wrapper(self, x, position_ids):
+        if "dynamic" in self.rope_type:
+            dynamic_frequency_update(self, position_ids, device=x.device)
+        elif self.rope_type == "longrope":
+            longrope_frequency_update(self, position_ids, device=x.device)
+        return rope_forward(self, x, position_ids)
+
+    return wrapper
+
+
+# modified from HuggingFace
+class LlamaRotaryEmbedding(nn.Module):
+    inv_freq: torch.Tensor  # fix linting for `register_buffer`
+
+    def __init__(self, config, device=None):
+        super().__init__()
+        self.rope_type = "default"
+        self.max_seq_len_cached = config.max_position_embeddings
+        self.original_max_seq_len = config.max_position_embeddings
+
+        self.config = config
+        self.rope_init_fn = _compute_default_rope_parameters
+
+        inv_freq, self.attention_scaling = self.rope_init_fn(self.config, device)
+        self.register_buffer("inv_freq", inv_freq, persistent=False)
+        self.original_inv_freq = self.inv_freq
+
+    @torch.no_grad()
+    @dynamic_rope_update  # power user: used with advanced RoPE types (e.g. dynamic rope)
+    def forward(self, x, position_ids):
+        inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1).to(x.device)
+        position_ids_expanded = position_ids[:, None, :].float()
+
+        device_type = x.device.type if isinstance(x.device.type, str) and x.device.type != "mps" else "cpu"
+        with torch.autocast(device_type=device_type, enabled=False):  # Force float32
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+            emb = torch.cat((freqs, freqs), dim=-1)
+            cos = emb.cos() * self.attention_scaling
+            sin = emb.sin() * self.attention_scaling
+
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
+
+
+def _compute_default_rope_parameters(
+    config,
+    device: Optional["torch.device"] = None,
+    seq_len: Optional[int] = None,
+) -> tuple["torch.Tensor", float]:
+    """
+    Computes the inverse frequencies according to the original RoPE implementation
+    Args:
+            The model configuration. This function assumes that the config will provide at least the following
+            properties:
+
+            *   rope_theta (`float`): The base wavelength from which the inverse frequencies will be derived.
+            *   hidden_size (`int`): The numerator when deriving a head_dim, if not provided directly.
+            *   num_attention_heads (`int`): The denominator when deriving a head_dim, if not provided directly.
+
+            Additionally, this function will make use of the following properties if they are found in the config:
+
+            *   head_dim (`int`, *optional*): The size of the key-value heads in the model. If None, this value will be
+                derived as hidden_size // num_attention_heads.
+            *   partial_rotary_factor (`float`, *optional*): If less than 1.0, inverse frequencies will be returned for
+                the first fraction of the head_dim. Defaults to 1.0.
+        device (`torch.device`):
+            The device to use for initialization of the inverse frequencies.
+        seq_len (`int`, *optional*):
+            The current sequence length. Unused for this type of RoPE.
+
+    Returns:
+        Tuple of (`torch.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
+        post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
+    """
+    base = config.rope_theta
+    partial_rotary_factor = getattr(config, "partial_rotary_factor", 1.0)
+    head_dim = getattr(config, "head_dim", None) or config.embed_dim // config.num_heads
+    dim = int(head_dim * partial_rotary_factor)
+
+    attention_factor = 1.0  # Unused in this type of RoPE
+
+    # Compute the inverse frequencies
+    inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.int64).to(device=device, dtype=torch.float) / dim))
+    return inv_freq, attention_factor
+
+
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
+    """Applies Rotary Position Embedding to the query and key tensors.
+
+    Args:
+        q (`torch.Tensor`): The query tensor.
+        k (`torch.Tensor`): The key tensor.
+        cos (`torch.Tensor`): The cosine part of the rotary embedding.
+        sin (`torch.Tensor`): The sine part of the rotary embedding.
+        position_ids (`torch.Tensor`, *optional*):
+            Deprecated and unused.
+        unsqueeze_dim (`int`, *optional*, defaults to 1):
+            The 'unsqueeze_dim' argument specifies the dimension along which to unsqueeze cos[position_ids] and
+            sin[position_ids] so that they can be properly broadcasted to the dimensions of q and k. For example, note
+            that cos[position_ids] and sin[position_ids] have the shape [batch_size, seq_len, head_dim]. Then, if q and
+            k have the shape [batch_size, heads, seq_len, head_dim], then setting unsqueeze_dim=1 makes
+            cos[position_ids] and sin[position_ids] broadcastable to the shapes of q and k. Similarly, if q and k have
+            the shape [batch_size, seq_len, heads, head_dim], then set unsqueeze_dim=2.
+    Returns:
+        `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
+    """
+    cos = cos.unsqueeze(unsqueeze_dim)
+    sin = sin.unsqueeze(unsqueeze_dim)
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed, k_embed
+
+
+def rotate_half(x):
+    """Rotates half the hidden dims of the input."""
+    x1 = x[..., : x.shape[-1] // 2]
+    x2 = x[..., x.shape[-1] // 2 :]
+    return torch.cat((-x2, x1), dim=-1)

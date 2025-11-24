@@ -29,6 +29,8 @@ class D2vTextConfig(D2vModalityConfig):
     layernorm_embedding: bool = True
     no_token_positional_embeddings: bool = False
 
+    use_rope: bool = False
+
 
 class TextEncoder(ModalitySpecificEncoder):
 
@@ -43,6 +45,7 @@ class TextEncoder(ModalitySpecificEncoder):
         layer_norm_first: bool,
         alibi_biases: Dict,
         task: Optional[FairseqTask],
+        rotary_emb: Optional[nn.Module],
     ):
         self.pad_idx = task.source_dictionary.pad()
         self.vocab_size = len(task.source_dictionary)
@@ -90,6 +93,7 @@ class TextEncoder(ModalitySpecificEncoder):
             context_encoder=context_encoder,
             decoder=decoder,
             get_alibi_bias=alibi_bias_fn,
+            rotary_emb=rotary_emb,
         )
 
     def reset_parameters(self):

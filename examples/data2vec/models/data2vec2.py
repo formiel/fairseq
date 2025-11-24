@@ -173,6 +173,10 @@ class Data2VecMultiConfig(FairseqDataclass):
     mlm_decay_steps: int = 0
     mlm_start_ratio: float = 0
 
+    rope_theta: float = 10000.0
+    partial_rotary_factor: float = 1.0
+    max_position_embeddings: int = 2048
+
 
 @register_model("data2vec_multi", dataclass=Data2VecMultiConfig)
 class Data2VecMultiModel(BaseFairseqModel):
@@ -185,6 +189,7 @@ class Data2VecMultiModel(BaseFairseqModel):
         layer_norm_first: bool,
         alibi_biases,
         task,
+        rotary_emb,
     ) -> ModalitySpecificEncoder:
         if cfg.type == Modality.AUDIO:
             enc_cls = AudioEncoder
@@ -205,6 +210,7 @@ class Data2VecMultiModel(BaseFairseqModel):
             layer_norm_first,
             alibi_biases,
             task,
+            rotary_emb,
         )
 
     def __init__(self, cfg: Data2VecMultiConfig, modalities, skip_ema=False, task=None):
@@ -237,8 +243,13 @@ class Data2VecMultiModel(BaseFairseqModel):
 
         self.alibi_biases = {}
         self.modality_encoders = nn.ModuleDict()
+        rotary_emb = None
         for mod in self.modalities:
             mod_cfg = getattr(cfg.modalities, mod.name.lower())
+            if mod.name.lower() == "text":
+                if getattr(mod_cfg, "use_rope", False):
+                    from examples.data2vec.models.modalities.modules import LlamaRotaryEmbedding
+                    rotary_emb = LlamaRotaryEmbedding(config=cfg)
             enc = self.make_modality_encoder(
                 mod_cfg,
                 cfg.embed_dim,
@@ -247,6 +258,7 @@ class Data2VecMultiModel(BaseFairseqModel):
                 cfg.layer_norm_first,
                 self.alibi_biases,
                 task,
+                rotary_emb,
             )
             self.modality_encoders[mod.name] = enc
 
@@ -533,6 +545,7 @@ class Data2VecMultiModel(BaseFairseqModel):
         masked_padding_mask = extractor_out["padding_mask"]
         masked_alibi_bias = extractor_out.get("alibi_bias", None)
         alibi_scale = extractor_out.get("alibi_scale", None)
+        position_embeddings = extractor_out.get("position_embeddings", None)
 
         if self.dropout_input is not None:
             x = self.dropout_input(x)
@@ -558,6 +571,7 @@ class Data2VecMultiModel(BaseFairseqModel):
                     x,
                     padding_mask=masked_padding_mask,
                     alibi_bias=ab,
+                    position_embeddings=position_embeddings,
                 )
                 if self.mlm_impl == "use_decoder_output" and i <= self.mlm_num_layers - 1:
                     x_mlm = x.clone()

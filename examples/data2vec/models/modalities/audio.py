@@ -60,6 +60,7 @@ class AudioEncoder(ModalitySpecificEncoder):
         layer_norm_first: bool,
         alibi_biases: Dict,
         task: Optional[FairseqTask],
+        rotary_emb: Optional[nn.Module],
     ):
 
         self.feature_enc_layers = eval(modality_cfg.feature_encoder_spec)
@@ -137,6 +138,7 @@ class AudioEncoder(ModalitySpecificEncoder):
             context_encoder=context_encoder,
             decoder=decoder,
             get_alibi_bias=alibi_bias_fn,
+            rotary_emb=rotary_emb,
         )
 
     def convert_padding_mask(self, x, padding_mask):

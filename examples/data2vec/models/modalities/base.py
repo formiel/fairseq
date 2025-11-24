@@ -84,6 +84,7 @@ class ModalitySpecificEncoder(nn.Module):
         context_encoder: nn.Module,
         decoder: nn.Module,
         get_alibi_bias: Optional[Callable[[int, int, str, str], torch.Tensor]],
+        rotary_emb: Optional[nn.Module],
     ):
         super().__init__()
 
@@ -93,6 +94,8 @@ class ModalitySpecificEncoder(nn.Module):
         self.fixed_positional_encoder = fixed_positional_encoder
         self.relative_positional_encoder = relative_positional_encoder
         self.context_encoder = context_encoder
+
+        self.rotary_emb = rotary_emb
 
         self.decoder = decoder
         self.get_alibi_bias = get_alibi_bias if modality_cfg.use_alibi_encoder else None
@@ -198,9 +201,14 @@ class ModalitySpecificEncoder(nn.Module):
         else:
             with torch.no_grad():
                 x = self.local_encoder(features)
+        
+        position_embeddings = None
+        if self.rotary_emb is not None:
+            position_ids = torch.arange(0, x.shape[1], device=x.device).unsqueeze(0)
+            position_embeddings = self.rotary_emb(x, position_ids)
 
         x = self.project_features(x)
-        return x
+        return x, position_embeddings
 
     def contextualized_features(
         self,
@@ -211,6 +219,7 @@ class ModalitySpecificEncoder(nn.Module):
         clone_batch: int = 1,
         mask_seeds: Optional[torch.Tensor] = None,
         precomputed_mask=None,
+        position_embeddings=None,
     ):
 
         if padding_mask is not None:
@@ -231,6 +240,10 @@ class ModalitySpecificEncoder(nn.Module):
         if mask:
             if clone_batch > 1:
                 x = x.repeat_interleave(clone_batch, 0)
+                cos, sin = None, None
+                if position_embeddings is not None:
+                    cos, sin = position_embeddings # 1, orig_L, head_dim
+
                 if mask_seeds is not None:
                     clone_hash = [
                         int(hash((mask_seeds.seed, ind)) % 1e10)
@@ -262,6 +275,18 @@ class ModalitySpecificEncoder(nn.Module):
         masked_padding_mask = padding_mask
         if mask and remove_masked:
             x = mask_info.x_unmasked
+            if cos is not None and sin is not None:
+                cos = torch.gather(
+                        cos.expand(orig_B * clone_batch, -1, -1),
+                        dim=1,
+                        index=mask_info.ids_keep[:, :, 0].unsqueeze(-1).expand(-1, -1, cos.size(-1)),
+                    )
+                sin = torch.gather(
+                        sin.expand(orig_B * clone_batch, -1, -1),
+                        dim=1,
+                        index=mask_info.ids_keep[:, :, 0].unsqueeze(-1).expand(-1, -1, cos.size(-1)),
+                    )
+                position_embeddings = (cos, sin)
             if x_pos is not None:
                 x = x + gather_unmasked(x_pos, mask_info)
 
@@ -327,6 +352,7 @@ class ModalitySpecificEncoder(nn.Module):
             if alibi_scale is not None and alibi_scale.size(0) > 1
             else alibi_scale,
             "encoder_mask": mask_info,
+            "position_embeddings": position_embeddings,
         }
 
     def forward(
@@ -339,7 +365,7 @@ class ModalitySpecificEncoder(nn.Module):
         mask_seeds: Optional[torch.Tensor] = None,
         precomputed_mask=None,
     ):
-        x = self.local_features(features)
+        x, position_embeddings = self.local_features(features)
         return self.contextualized_features(
             x,
             padding_mask,
@@ -348,6 +374,7 @@ class ModalitySpecificEncoder(nn.Module):
             clone_batch,
             mask_seeds,
             precomputed_mask,
+            position_embeddings,
         )
 
     def reset_parameters(self):
