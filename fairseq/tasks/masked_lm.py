@@ -139,6 +139,10 @@ class MaskedLMConfig(FairseqDataclass):
         default=False,
         metadata={"help": "prepare dataset for training textual pantagruel with mlm head"},
     )
+    document_sep_len: int = field(
+        default=1,
+        metadata={"help": "document separator size (required for 'complete_doc' break mode)"},
+    )
 
 
 @register_task("masked_lm", dataclass=MaskedLMConfig)
@@ -216,6 +220,7 @@ class MaskedLMTask(FairseqTask):
             pad=self.source_dictionary.pad(),
             eos=self.source_dictionary.eos(),
             break_mode=self.cfg.sample_break_mode,
+            document_sep_len=self.cfg.document_sep_len,
         )
         for i in range(3):
             logger.info(f"First 3 samples in the {split} dataset after TokenBlockDataset:")
