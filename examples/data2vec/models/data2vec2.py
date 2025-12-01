@@ -301,6 +301,7 @@ class Data2VecMultiModel(BaseFairseqModel):
             self.recon_proj = None
             if cfg.recon_loss > 0:
                 self.recon_proj = nn.Linear(cfg.embed_dim, cfg.embed_dim)
+
             self.mlm_head = None
             self.mlm_num_layers = 0
             self.mlm_impl = "use_decoder_output" if not getattr(cfg, "mlm_impl", None) else "original_bert" # use forward to decoder as default implementation for backward compatibility
@@ -394,7 +395,7 @@ class Data2VecMultiModel(BaseFairseqModel):
         model_copy = Data2VecMultiModel(
             ema_cfg, self.modalities, skip_ema=True, task=self.task
         )
-        logger.info(f"model_copy: {model_copy}")
+        logger.info(f"EMA model: {model_copy}")
 
         if ema_cfg.ema_encoder_only:
             model_copy = model_copy.blocks
@@ -419,6 +420,16 @@ class Data2VecMultiModel(BaseFairseqModel):
 
         model_copy.requires_grad_(False)
         return model_copy
+
+    def init_model_avg(self):
+        logger.info("create averaged model")
+
+        model_avg_cfg = copy.deepcopy(self.cfg)
+        model_avg = Data2VecMultiModel(
+            model_avg_cfg, self.modalities, skip_ema=True, task=self.task
+        )
+        logger.info(f"MODEL AVG: {model_avg}")
+        return model_avg
 
     def set_num_updates(self, num_updates):
         super().set_num_updates(num_updates)

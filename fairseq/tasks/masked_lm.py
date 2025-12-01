@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 import numpy as np
 from omegaconf import II, MISSING
 
+import torch
+
 from fairseq import utils
 from fairseq.data import (
     Dictionary,
@@ -420,6 +422,19 @@ class MaskedLMTask(FairseqTask):
         if sort:
             src_dataset = SortDataset(src_dataset, sort_order=[src_lengths])
         return src_dataset
+
+    # def valid_step(self, sample, model, criterion, model_avg=None):
+    #     model.eval()
+    #     if model_avg is not None:
+    #         model_avg.eval()
+    #     with torch.no_grad():
+    #         loss, sample_size, logging_output = criterion(model, sample)
+    #         if model_avg is not None:
+    #             _, _, _logging_output = criterion(model_avg, sample)
+    #             for k, v in _logging_output.items():
+    #                 if k.startswith("loss"):
+    #                     logging_output[f"{k}_avg"] = v
+    #     return loss, sample_size, logging_output
 
     @property
     def source_dictionary(self):

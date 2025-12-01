@@ -152,11 +152,23 @@ def main(cfg: FairseqConfig) -> None:
     else:
         quantizer = None
 
+    # do model averaging
+    model_avg = None
+    if getattr(cfg.checkpoint, "do_model_avg", False):
+        from fairseq.optim.weight_averaging import AveragedModel
+        model_avg = AveragedModel(
+            model, 
+            method=getattr(cfg.checkpoint, "model_avg_method", "avg"),
+            last_n=getattr(cfg.checkpoint, "model_avg_last_n", 10)
+        )
+
     # Build trainer
     if cfg.common.model_parallel_size == 1:
-        trainer = Trainer(cfg, task, model, criterion, quantizer)
+        trainer = Trainer(
+            cfg, task, model, criterion, quantizer, model_avg=model_avg
+        )
     else:
-        trainer = MegatronTrainer(cfg, task, model, criterion)
+        trainer = MegatronTrainer(cfg, task, model, criterion, model_avg=model_avg)
     logger.info(
         "training on {} devices (GPUs/TPUs)".format(
             cfg.distributed_training.distributed_world_size
@@ -526,6 +538,8 @@ def validate_and_save(
     valid_losses = [None]
     if do_validate:
         valid_losses = validate(cfg, trainer, task, epoch_itr, valid_subsets)
+        if getattr(trainer, "_model_avg", None) is not None:
+            trainer._model_avg.update()
 
     should_stop |= should_stop_early(cfg, valid_losses[0])
 

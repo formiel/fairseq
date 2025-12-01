@@ -439,6 +439,7 @@ class Wav2VecEncoder(FairseqEncoder):
         self.is_pantagruel_multi = (
             "pantagruel_multi" in w2v_args.model.get("_name", None)
         )
+        logger.info(f"is_d2v_multi: {self.is_d2v_multi}, is_pantagruel_multi: {self.is_pantagruel_multi}")
 
         if not self.is_d2v_multi:
             model_normalized = w2v_args.task.get(
@@ -665,9 +666,8 @@ class Wav2VecEncoder(FairseqEncoder):
             res = self.w2v_model.extract_features(**w2v_args)
 
             x = res["x"]
-            if self.is_d2v_multi:
-                if ft and self.feature_grad_mult != 1:
-                    x = GradMultiply.apply(x, self.feature_grad_mult)
+            if self.is_d2v_multi and ft and self.feature_grad_mult != 1:
+                x = GradMultiply.apply(x, self.feature_grad_mult)
             padding_mask = (
                 res["padding_mask"] if isinstance(x, torch.Tensor) 
                 else res["padding_mask"]["audio"]

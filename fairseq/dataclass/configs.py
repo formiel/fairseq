@@ -790,6 +790,21 @@ class CheckpointConfig(FairseqDataclass):
         },
     )
     model_parallel_size: int = II("common.model_parallel_size")
+    do_model_avg: bool = field(
+        default=False,
+        metadata={
+            "help": "do model averaging during training"
+        }
+    )
+    model_avg_method: str = field(
+        default="avg", metadata={"help": 'model averaging methods, choose ["ema", "avg"]'}
+    )
+    model_avg_last_n: int = field(
+        default=1,
+        metadata= {
+            "help": "get the averaging of this last N checkpoints"
+        }
+    )
 
 
 @dataclass

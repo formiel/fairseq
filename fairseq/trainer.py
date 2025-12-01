@@ -43,7 +43,7 @@ class Trainer(object):
     communication of the gradients across workers.
     """
 
-    def __init__(self, cfg: FairseqConfig, task, model, criterion, quantizer=None):
+    def __init__(self, cfg: FairseqConfig, task, model, criterion, quantizer=None, model_avg=None):
 
         if isinstance(cfg, Namespace):
             logger.warning(
@@ -96,14 +96,19 @@ class Trainer(object):
         # copy model and criterion to current device/dtype
         self._criterion = criterion
         self._model = model
+        self._model_avg = model_avg
         if not self.is_fsdp:
             if cfg.common.fp16:
                 assert not cfg.common.amp, "Cannot use fp16 and AMP together"
                 self._criterion = self._criterion.half()
                 self._model = self._model.half()
+                self._model_avg = self._model_avg.half() if self._model_avg is not None else None
             elif cfg.common.bf16:
                 self._criterion = self._criterion.to(dtype=torch.bfloat16)
                 self._model = self._model.to(dtype=torch.bfloat16)
+                self._model_avg = (
+                    self._model_avg.to(dtype=torch.bfloat16) if self._model_avg is not None else None
+                )
             elif cfg.common.amp:
                 self._amp_retries = 0
         if (
@@ -114,6 +119,7 @@ class Trainer(object):
         ):
             self._criterion = self._criterion.to(device=self.device)
             self._model = self._model.to(device=self.device)
+            self._model_avg = self._model_avg.to(device=self.device) if self._model_avg is not None else None
         self.pipeline_model_parallel = cfg.distributed_training.pipeline_model_parallel
         self.last_device = None
         if self.cuda and self.pipeline_model_parallel:
@@ -408,6 +414,7 @@ class Trainer(object):
                 else self.cfg
             ),
             "model": self.model.state_dict(),
+            "model_avg": self._model_avg.state_dict() if self._model_avg is not None else None,
             "criterion": (
                 self.criterion.state_dict()
                 if utils.has_parameters(self.criterion)
@@ -586,6 +593,11 @@ class Trainer(object):
                 self.model.load_state_dict(
                     state["model"], strict=True, model_cfg=self.cfg.model
                 )
+                if self._model_avg is not None:
+                    self._model_avg.load_state_dict(
+                        state["model_avg"], strict=True, model_cfg=self.cfg.model
+                    )
+                    del state["model_avg"]
                 # save memory for later steps
                 del state["model"]
                 if utils.has_parameters(self.get_criterion()):
@@ -1143,6 +1155,8 @@ class Trainer(object):
         extra_kwargs = {}
         if self.cfg.ema.store_ema and getattr(self.task, "uses_ema", False):
             extra_kwargs["ema_model"] = self.ema.get_model()
+        if self._model_avg is not None:
+            extra_kwargs["model_avg"] = self._model_avg
 
         with torch.no_grad():
             self.model.eval()
