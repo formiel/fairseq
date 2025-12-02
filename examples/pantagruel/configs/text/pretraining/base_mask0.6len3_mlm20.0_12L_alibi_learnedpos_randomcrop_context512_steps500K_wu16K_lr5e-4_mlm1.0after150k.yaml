@@ -34,7 +34,7 @@ task:
   data: ???
   shorten_method: random_crop
   sample_break_mode: complete
-  tokens_per_sample: 1024
+  tokens_per_sample: 512
   include_target_tokens: true
   random_token_prob: 0
   leave_unmasked_prob: 0
@@ -57,7 +57,7 @@ criterion:
 
 dataset:
   num_workers: 3
-  max_tokens: 12288
+  max_tokens: 16384
   # batch_size: 32
   # batch_size_valid: 6
   # ignore_unused_valid_subsets: true
@@ -66,7 +66,7 @@ dataset:
 
 optimization:
   clip_norm: 1
-  lr: [0.00025]
+  lr: [0.0007]
   max_update: 500000
   update_freq: [1]
   # max_epoch: 5
@@ -76,7 +76,7 @@ optimizer:
   dynamic_groups: true
   groups:
     default:
-      lr_float: 0.00025
+      lr_float: 0.0007
       optimizer:
         _name: adam
         adam_betas: [0.9,0.98]
@@ -95,9 +95,9 @@ model:
   loss_scale: 1
 
   d2v_loss: 1.0
-  mlm_loss: 2.0
+  mlm_loss: 1.0
   mlm_num_layers: 12
-  mlm_decay_steps: 200000
+  mlm_decay_steps: 150000
   mlm_start_ratio: 20.0
 
   # std_coeff: 0.1
@@ -124,8 +124,6 @@ model:
 
   supported_modality: TEXT
 
-  pretrained_model_path: /linkhome/rech/genlig01/ucy22cr/pantagruel/experiments/fairseq_checkpoints/text/pretraining/base_mask0.6len3_mlm20.0_12L_alibi_learnedpos_randomcrop_context512_steps250K_wu8K_gpu_p6_gpus16_tok-improved_wiki19_with_be/checkpoint_last_extrapolate_embed_pos.pt
-
   modalities:
     text:
       mask_prob: 0.6
@@ -137,7 +135,7 @@ model:
       use_alibi_encoder: true
       learned_alibi_scale: true
       learned_alibi_scale_per_head: true
-      max_source_positions: 1024
+      max_source_positions: 512
       decoder:
         input_dropout: 0.1
         decoder_dim: 768
