@@ -34,7 +34,7 @@ task:
   data: ???
   shorten_method: random_crop
   sample_break_mode: complete
-  tokens_per_sample: 512
+  tokens_per_sample: 1024
   include_target_tokens: true
   random_token_prob: 0
   leave_unmasked_prob: 0
@@ -57,7 +57,7 @@ criterion:
 
 dataset:
   num_workers: 3
-  max_tokens: 16384
+  max_tokens: 12288
   # batch_size: 32
   # batch_size_valid: 6
   # ignore_unused_valid_subsets: true
@@ -137,7 +137,7 @@ model:
       use_alibi_encoder: true
       learned_alibi_scale: true
       learned_alibi_scale_per_head: true
-      max_source_positions: 512
+      max_source_positions: 1024
       decoder:
         input_dropout: 0.1
         decoder_dim: 768
