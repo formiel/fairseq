@@ -63,6 +63,7 @@ class AudioTypeEncoder(PantagruelModalitySpecificEncoder):
             layer_norm_first=layer_norm_first,
             alibi_biases=alibi_biases,
             task=task,
+            rotary_emb=None,
         )
         self.feature_enc_layers = eval(modality_cfg.feature_encoder_spec)
 
@@ -77,6 +78,7 @@ class AudioTypeEncoder(PantagruelModalitySpecificEncoder):
             decoder=audio_encoder.decoder,
             get_alibi_bias=audio_encoder.get_alibi_bias,
             token_type_embeddings=token_type_embeddings,
+            rotary_emb=None,
         )
 
     def convert_padding_mask(self, x, padding_mask):

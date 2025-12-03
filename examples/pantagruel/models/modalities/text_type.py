@@ -76,6 +76,7 @@ class TextTypeEncoder(PantagruelModalitySpecificEncoder):
             layer_norm_first=layer_norm_first,
             alibi_biases=alibi_biases,
             task=task,
+            rotary_emb=None,
         )
         project_features = nn.Identity()
         if getattr(modality_cfg, "use_project_features", False):
@@ -125,6 +126,7 @@ class TextTypeEncoder(PantagruelModalitySpecificEncoder):
             decoder=text_encoder.decoder,
             get_alibi_bias=text_encoder.get_alibi_bias,
             token_type_embeddings=token_type_embeddings,
+            rotary_emb=None,
         )
 
     def _build_mlp(self, num_layers, input_dim, mlp_dim, output_dim):
