@@ -20,8 +20,8 @@ common:
   user_dir: ???
 
 checkpoint:
-  save_interval: 5
-  # save_interval_updates: 40000
+  save_interval: 1
+  save_interval_updates: 50000
   # keep_interval_updates: 1
   # no_epoch_checkpoints: true
   # keep_best_checkpoints: 10
