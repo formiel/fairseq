@@ -32,7 +32,7 @@ distributed_training:
 task:
   _name: masked_lm
   data: ???
-  sample_break_mode: complete_doc
+  sample_break_mode: complete
   shorten_method: random_crop
   tokens_per_sample: 512
   include_target_tokens: true
@@ -67,7 +67,7 @@ dataset:
 optimization:
   clip_norm: 1
   lr: [0.0005]
-  max_update: 750000
+  max_update: 500000
   update_freq: [1]
   # max_epoch: 5
 
@@ -84,7 +84,7 @@ optimizer:
         weight_decay: 0.01
       lr_scheduler:
         _name: cosine
-        warmup_updates: 24000
+        warmup_updates: 16000
 
 lr_scheduler: pass_through
 
@@ -96,7 +96,7 @@ model:
 
   d2v_loss: 1.0
   mlm_loss: 1.0
-  mlm_decay_steps: 300000
+  mlm_decay_steps: 150000
   mlm_start_ratio: 20.0
   mlm_num_layers: 12
 
@@ -107,9 +107,9 @@ model:
   embed_dim: 768
   clone_batch: 8
 
-  ema_decay: 0.9995
-  ema_end_decay: 0.99995
-  ema_anneal_end_step: 300000
+  ema_decay: 0.9999
+  ema_end_decay: 0.99999
+  ema_anneal_end_step: 150000
   ema_encoder_only: true
 
   average_top_k_layers: 12
