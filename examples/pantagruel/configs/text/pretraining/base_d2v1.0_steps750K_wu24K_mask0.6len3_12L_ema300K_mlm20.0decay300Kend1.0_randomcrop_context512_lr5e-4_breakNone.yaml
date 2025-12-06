@@ -32,7 +32,7 @@ distributed_training:
 task:
   _name: masked_lm
   data: ???
-  sample_break_mode: complete
+  sample_break_mode: none
   # shorten_method: random_crop
   tokens_per_sample: 512
   include_target_tokens: true
