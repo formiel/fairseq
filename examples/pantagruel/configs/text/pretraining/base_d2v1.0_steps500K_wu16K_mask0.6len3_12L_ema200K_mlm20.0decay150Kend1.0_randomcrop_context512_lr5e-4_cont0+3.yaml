@@ -13,6 +13,7 @@ common:
   fp16_no_flatten_grads: true
   # user_dir: ${env:PWD}/examples/data2vec
   time_limit: ???
+  min_loss_scale: 1e-6
 
 checkpoint:
   # save_interval: 1
