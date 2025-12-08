@@ -56,7 +56,7 @@ criterion:
     - masked_pct
 
 dataset:
-  num_workers: 3
+  num_workers: 1
   max_tokens: 16384
   # batch_size: 32
   # batch_size_valid: 6
