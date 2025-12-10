@@ -69,7 +69,7 @@ model:
   activation_dropout: 0.1
   # feature_grad_mult: 0.1
   local_grad_mult: 1.0
-  encoder_grad_multi: 1.0
+  encoder_grad_multi: 0.1
   freeze_finetune_updates: 0
   decoder_embed_dim: 512
   decoder_ffn_embed_dim: 2048
