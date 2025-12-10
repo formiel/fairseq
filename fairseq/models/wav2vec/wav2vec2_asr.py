@@ -402,7 +402,7 @@ class Wav2VecEncoder(FairseqEncoder):
             "drop_path": getattr(cfg, "drop_path", 0),
             "mask_dropout": getattr(cfg, "mask_dropout", 0),
             "zero_mask": getattr(cfg, "zero_mask", False),
-            "local_grad_mult": getattr(cfg, "local_grad_mult", 1.0),
+            "local_grad_mult": cfg.feature_grad_mult,
             "layerdrop": getattr(cfg, "layerdrop", 0.0),
             "prenet_layerdrop": getattr(cfg, "layerdrop", 0.0),
             "prenet_dropout": getattr(cfg, "dropout", 0.0),
@@ -411,7 +411,6 @@ class Wav2VecEncoder(FairseqEncoder):
             "inverse_mask": False,
             "learned_alibi_scale": getattr(cfg, "update_alibi", True),
         }
-        self.feature_grad_mult = cfg.feature_grad_mult
         self.use_mimi_for_audio = False
 
         if cfg.w2v_args is None:
@@ -666,8 +665,6 @@ class Wav2VecEncoder(FairseqEncoder):
             res = self.w2v_model.extract_features(**w2v_args)
 
             x = res["x"]
-            if self.is_d2v_multi and ft and self.feature_grad_mult != 1:
-                x = GradMultiply.apply(x, self.feature_grad_mult)
             padding_mask = (
                 res["padding_mask"] if isinstance(x, torch.Tensor) 
                 else res["padding_mask"]["audio"]

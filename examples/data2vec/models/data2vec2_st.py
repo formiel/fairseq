@@ -16,6 +16,7 @@ from fairseq.dataclass import FairseqDataclass
 from fairseq.models import (
     BaseFairseqModel, register_model, FairseqEncoderDecoderModel
 )
+from fairseq.modules import GradMultiply
 from fairseq.models.wav2vec.wav2vec2_asr import (
     Wav2Vec2Seq2SeqConfig, Wav2VecEncoder
 )
@@ -32,12 +33,14 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Data2vec2STConfig(Wav2Vec2Seq2SeqConfig):
     seed: int = 1
+    encoder_grad_multi: float = 1.0
 
 
 @register_model("data2vec2_st", dataclass=Data2vec2STConfig)
 class Data2vec2STModel(FairseqEncoderDecoderModel):
-    def __init__(self, encoder, decoder):
+    def __init__(self, encoder, decoder, cfg=None):
         super().__init__(encoder, decoder)
+        self.encoder_grad_multi = cfg.encoder_grad_multi
 
     @classmethod
     def build_model(cls, cfg: Data2vec2STConfig, task: FairseqTask):
@@ -55,7 +58,7 @@ class Data2vec2STModel(FairseqEncoderDecoderModel):
         )
         encoder = cls.build_encoder(cfg)
         decoder = cls.build_decoder(cfg, tgt_dict, decoder_embed_tokens)
-        return cls(encoder, decoder)
+        return cls(encoder, decoder, cfg)
 
     @classmethod
     def build_encoder(cls, cfg: Data2vec2STConfig):
@@ -88,9 +91,20 @@ class Data2vec2STModel(FairseqEncoderDecoderModel):
         argument in its input, which is not supported in torchscript. This
         method overwrites the forward method definition without **kwargs.
         """
-        encoder_out = self.encoder(
-            source=src_tokens, padding_mask=padding_mask, features_only=True
-        )
+        if self.encoder_grad_multi > 0.0:
+            encoder_out = self.encoder(
+                source=src_tokens, padding_mask=padding_mask, features_only=True
+            )
+            if self.encoder_grad_multi != 1.0:
+                encoder_out["encoder_out"] = GradMultiply.apply(
+                    encoder_out["encoder_out"], self.encoder_grad_multi
+                )
+        else:
+            with torch.no_grad():
+                encoder_out = self.encoder(
+                source=src_tokens, padding_mask=padding_mask, features_only=True
+            )
+
         decoder_out = self.decoder(
             prev_output_tokens=prev_output_tokens, encoder_out=encoder_out
         )
