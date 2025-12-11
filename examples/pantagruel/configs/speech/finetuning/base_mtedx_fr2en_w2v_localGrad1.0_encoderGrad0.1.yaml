@@ -23,9 +23,9 @@ task:
   _name: data2vec2_st_finetuning
   data: ???
   config_yaml: ???
-  normalize: true
-  max_sample_size: 1000000
-  min_sample_size: 3200
+  normalize: false
+  # max_sample_size: 1000000
+  # min_sample_size: 3200
 
 dataset:
   num_workers: 6
@@ -60,14 +60,14 @@ model:
   _name: data2vec2_st
   w2v_path: ???
   autoregressive: true
-  apply_mask: true
+  apply_mask: false
   mask_prob: 0.0
   mask_channel_prob: 0.0
-  mask_channel_length: 64
-  mask_length: 1
+  mask_channel_length: 0
+  mask_length: 0
   layerdrop: 0.05
   activation_dropout: 0.1
-  # feature_grad_mult: 0.1
+  feature_grad_mult: 1.0
   local_grad_mult: 1.0
   encoder_grad_multi: 0.1
   freeze_finetune_updates: 0
