@@ -57,7 +57,7 @@ criterion:
 
 dataset:
   num_workers: 1
-  max_tokens: 16384
+  max_tokens: 14336 # 16384
   # batch_size: 32
   # batch_size_valid: 6
   # ignore_unused_valid_subsets: true
