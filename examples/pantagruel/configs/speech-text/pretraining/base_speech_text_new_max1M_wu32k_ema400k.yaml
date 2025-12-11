@@ -58,9 +58,9 @@ task:
 
 dataset:
   num_workers: 6
-  max_tokens: 655360
+  max_tokens: 1310720
   # batch_size: 16
-  batch_size: 4
+  batch_size: 8
   # ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
   # validate_interval: 1
