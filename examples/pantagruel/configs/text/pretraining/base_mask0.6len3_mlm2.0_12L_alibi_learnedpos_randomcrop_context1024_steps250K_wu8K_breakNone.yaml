@@ -123,6 +123,8 @@ model:
   norm_eps: 1e-5
 
   supported_modality: TEXT
+  
+  pretrained_model_path: /linkhome/rech/genlig01/ucy22cr/pantagruel/experiments/fairseq_checkpoints/text/pretraining/base_mask0.6len3_mlm20.0_12L_alibi_learnedpos_randomcrop_context512_steps250K_wu8K_breakNone_gpu_p6_gpus32_tok-improved_oscar_with_be_no_wiki/checkpoint_last_extrapolate_embed_pos.pt
 
   modalities:
     text:
