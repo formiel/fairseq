@@ -33,7 +33,7 @@ task:
   _name: masked_lm
   data: ???
   shorten_method: random_crop
-  sample_break_mode: complete
+  sample_break_mode: none
   tokens_per_sample: 1024
   include_target_tokens: true
   random_token_prob: 0
