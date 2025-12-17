@@ -855,7 +855,7 @@ class Data2VecMultiModel(BaseFairseqModel):
                 ignore_index=self.padding_idx,
             )
             mlm_weight = self.mlm_weight
-            if self.mlm_warmup_steps > 0 or mlm_hold_steps > 0 or mlm_decay_steps > 0:
+            if self.mlm_warmup_steps > 0 or self.mlm_hold_steps > 0 or self.mlm_decay_steps > 0:
                 # mlm_weight = max(
                 #     self.mlm_weight, # lambda_min
                 #     self.mlm_start_loss - (self.mlm_start_loss - self.mlm_weight) * (
