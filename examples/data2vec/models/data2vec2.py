@@ -152,10 +152,6 @@ class Data2VecMultiConfig(FairseqDataclass):
     recon_loss: float = 0
     d2v_loss: float = 1
 
-    mlm_loss: float = 0
-    mlm_num_layers: int = 12
-    mlm_impl: Optional[str] = None
-
     contrastive_loss: float = 0
     num_freeze_contrastive_updates: int = 0
     use_map_head_for_speech: Optional[bool] = False
@@ -170,8 +166,15 @@ class Data2VecMultiConfig(FairseqDataclass):
 
     pretrained_model_path: Optional[str] = None
 
+    mlm_loss: float = 0
+    mlm_num_layers: int = 12
+    mlm_impl: Optional[str] = None
+
+    mlm_warmup_steps: int = 0
+    mlm_hold_steps: int = 0
     mlm_decay_steps: int = 0
-    mlm_start_ratio: float = 0
+    mlm_init_loss_scale: float = 0
+    mlm_final_loss_scale: float = 0
 
     rope_theta: float = 10000.0
     partial_rotary_factor: float = 1.0
@@ -288,6 +291,19 @@ class Data2VecMultiModel(BaseFairseqModel):
         for mod_enc in self.modality_encoders.values():
             mod_enc.reset_parameters()
 
+        self.mlm_weight = getattr(cfg, "mlm_loss", 0.0)
+        self.mlm_warmup_steps = getattr(cfg, "mlm_warmup_steps", 0)
+        self.mlm_hold_steps = getattr(cfg, "mlm_hold_steps", 0)
+        self.mlm_decay_steps = getattr(cfg, "mlm_decay_steps", 0)
+        self.mlm_init_loss = self.mlm_weight * getattr(cfg, "mlm_init_loss_scale", 0.0)
+        self.mlm_final_loss = self.mlm_weight * getattr(cfg, "mlm_final_loss_scale", 0.0)
+        logger.info(f"mlm_warmup_steps={self.mlm_warmup_steps}, \
+                      mlm_hold_steps={self.mlm_hold_steps}, \
+                      mlm_decay_steps={self.mlm_decay_steps}, \
+                      mlm_init_loss={self.mlm_init_loss}, \
+                      mlm_final_loss={self.mlm_final_loss}, \
+                      mlm_loss={self.mlm_weight}")
+
         if not skip_ema:
             self.ema = self.make_ema_teacher(cfg.ema_decay)
             self.shared_decoder = (
@@ -306,7 +322,7 @@ class Data2VecMultiModel(BaseFairseqModel):
             self.mlm_num_layers = 0
             self.mlm_impl = "use_decoder_output" if not getattr(cfg, "mlm_impl", None) else "original_bert" # use forward to decoder as default implementation for backward compatibility
             logger.info(f"self.mlm_impl: {self.mlm_impl}")
-            if cfg.mlm_loss > 0:
+            if self.mlm_weight > 0:
                 self.mlm_num_layers = getattr(cfg, "mlm_num_layers", 12)
                 # text modality
                 self.padding_idx = task.dictionary.index("<pad>")
@@ -324,10 +340,6 @@ class Data2VecMultiModel(BaseFairseqModel):
                 p.optim_overrides = {"optimizer": {"weight_decay_scale": 0}}
             if cfg.decoder_group and "decoder" in pn:
                 p.param_group = "decoder"
-
-        self.mlm_decay_steps = getattr(cfg, "mlm_decay_steps", 0)
-        self.mlm_start_ratio = getattr(cfg, "mlm_start_ratio", 0.0)
-        logger.info(f"mlm_decay_steps={self.mlm_decay_steps}, mlm_start_ratio={self.mlm_start_ratio}")
 
         self.contr_loss_weight = getattr(cfg, "contrastive_loss", 0.0)
         self.contr_logit_scale, self.contr_logit_bias = 1.0, 1.0
@@ -628,7 +640,7 @@ class Data2VecMultiModel(BaseFairseqModel):
             orig_x = x
 
         x_masked_for_mlm = None
-        if self.cfg.mlm_loss > 0 and self.mlm_impl == "use_decoder_output":
+        if self.mlm_weight > 0 and self.mlm_impl == "use_decoder_output":
             if self.mlm_num_layers < self.cfg.depth:
                 x_masked_for_mlm = self.forward_decoder(
                     x_mlm,
@@ -784,7 +796,7 @@ class Data2VecMultiModel(BaseFairseqModel):
                 self.d2v_loss(recon, target.float()) * self.cfg.recon_loss
             )
 
-        if self.cfg.mlm_loss > 0 and not features_only:
+        if self.mlm_weight > 0 and not features_only:
             # target_mlm is different for different implementation (depend on the skip_masking param in masked_lm task)
             # For use_decoder_output -> target_mlm is the original target sequence, 
             # used to eliminate the padded positions only. Masking is based on data2vec masking configuration
@@ -842,15 +854,19 @@ class Data2VecMultiModel(BaseFairseqModel):
                 reduction="sum",
                 ignore_index=self.padding_idx,
             )
-            if self.mlm_decay_steps > 0:
-                mlm_weight = max(
-                    self.cfg.mlm_loss, # lambda_min
-                    self.mlm_start_ratio - (self.mlm_start_ratio - self.cfg.mlm_loss) * (
-                        self.num_updates / self.mlm_decay_steps
-                    )
+            mlm_weight = self.mlm_weight
+            if self.mlm_warmup_steps > 0 or mlm_hold_steps > 0 or mlm_decay_steps > 0:
+                # mlm_weight = max(
+                #     self.mlm_weight, # lambda_min
+                #     self.mlm_start_loss - (self.mlm_start_loss - self.mlm_weight) * (
+                #         self.num_updates / self.mlm_decay_steps
+                #     )
+                # ) 
+                mlm_weight = self.compute_piecewise_schedule(
+                    self.num_updates, 
+                    self.mlm_warmup_steps, self.mlm_hold_steps, self.mlm_decay_steps,
+                    self.mlm_init_loss, self.mlm_final_loss, self.mlm_weight
                 )
-            else:
-                mlm_weight = self.cfg.mlm_loss
 
             result["losses"]["mlm"] = mlm_loss * mlm_weight
 
@@ -924,6 +940,49 @@ class Data2VecMultiModel(BaseFairseqModel):
         x = decoder(*x)
 
         return x
+
+    def compute_piecewise_schedule(
+        self,
+        num_updates: int,
+        warmup_steps: int,
+        hold_steps: int,
+        decay_steps: int,
+        init_value: float,
+        final_value: float,
+        peak_value: Optional[float] = None,
+    ) -> float:
+        """
+        Piecewise schedule: warmup -> hold -> decay -> final.
+
+        - warmup: linear interpolate from `init_value` to `peak_value` (or to max(init, final) if None)
+        - hold: keep `peak_value`
+        - decay: linear interpolate from `peak_value` to `final_value` over `decay_steps`
+        - after decay: return `final_value`.
+        """
+        if peak_value is None:
+            peak_value = max(init_value, final_value)
+
+        # handle degenerate cases
+        if warmup_steps <= 0 and hold_steps <= 0 and decay_steps <= 0:
+            return final_value
+
+        # stage decision
+        if num_updates < warmup_steps and warmup_steps > 0:
+            frac = num_updates / warmup_steps
+            return init_value + (peak_value - init_value) * frac
+
+        offset = warmup_steps
+        if num_updates < offset + hold_steps:
+            return peak_value
+
+        offset += hold_steps
+        if decay_steps > 0 and num_updates <= offset + decay_steps:
+            steps_in_decay = num_updates - offset
+            frac = steps_in_decay / decay_steps
+            return peak_value + (final_value - peak_value) * frac
+
+        # past all stages
+        return final_value
 
     def get_sentence_level_pred(self, x, mode, padding_mask=None):
         if mode == "TEXT":
