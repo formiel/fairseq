@@ -95,14 +95,14 @@ model:
   loss_scale: 1
 
   d2v_loss: 1.0
-  mlm_loss: 2.0
+  mlm_loss: 20.0
   mlm_num_layers: 12
-  # mlm_warmup_steps: 0
-  # mlm_hold_steps: 0
-  # mlm_init_loss_scale: 1
-  # mlm_final_loss_scale: 0.1
+  mlm_warmup_steps: 0
+  mlm_hold_steps: 0
+  mlm_init_loss_scale: 1
+  mlm_final_loss_scale: 0.1
   mlm_decay_steps: 400000
-  mlm_start_ratio: 20.0
+  # mlm_start_ratio: 20.0
 
   # std_coeff: 0.1
   # cov_coeff: 0.1
