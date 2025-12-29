@@ -13,6 +13,7 @@ common:
   fp16_no_flatten_grads: true
   # user_dir: ${env:PWD}/examples/data2vec
   time_limit: ???
+  min_loss_scale: 1e-6
 
 checkpoint:
   # save_interval: 1
@@ -123,7 +124,7 @@ model:
   instance_norm_targets: false
   layer_norm_targets: false
 
-  layerdrop: 0
+  layerdrop: 0.05
   norm_eps: 1e-5
 
   supported_modality: TEXT
