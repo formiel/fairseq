@@ -35,6 +35,10 @@ dataset:
   valid_subset: dev_st_fr_en
   train_subset: train_st_fr_en
 
+distributed_training:
+  ddp_backend: legacy_ddp
+  distributed_world_size: 2
+
 criterion:
   _name: label_smoothed_cross_entropy
   label_smoothing: 0.1
