@@ -63,6 +63,7 @@ dataset:
   # ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
   # disable_validation: true
+  valid_subset: valid,valid1
 
 optimization:
   clip_norm: 1

@@ -447,6 +447,7 @@ def compute_mask_indices(
 
     bsz, all_sz = shape
     mask = np.full((bsz, all_sz), False)
+    org_mask_length = mask_length
 
     if num_mask_ver == 1:
         all_num_mask = int(
@@ -471,6 +472,7 @@ def compute_mask_indices(
         else:
             sz = all_sz
 
+        mask_length = min_masks if org_mask_length >= sz else org_mask_length
         if num_mask_ver == 1:
             if padding_mask is not None:
                 num_mask = int(
