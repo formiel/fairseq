@@ -60,14 +60,14 @@ dataset:
   max_tokens: 10240 # 16384
   # batch_size: 32
   # batch_size_valid: 6
-  # ignore_unused_valid_subsets: true
+  ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
   # disable_validation: true
 
 optimization:
   clip_norm: 1
   lr: [0.0006]
-  max_update: 400000
+  max_update: 900000
   update_freq: [1]
   # max_epoch: 5
 
@@ -84,7 +84,7 @@ optimizer:
         weight_decay: 0.01
       lr_scheduler:
         _name: cosine
-        warmup_updates: 16000
+        warmup_updates: 36000
 
 lr_scheduler: pass_through
 
@@ -101,7 +101,7 @@ model:
   mlm_hold_steps: 0
   mlm_init_loss_scale: 1
   mlm_final_loss_scale: 0.05
-  mlm_decay_steps: 400000
+  mlm_decay_steps: 900000
   # mlm_start_ratio: 20.0
 
   # std_coeff: 0.1
@@ -113,7 +113,7 @@ model:
 
   ema_decay: 0.9995
   ema_end_decay: 0.99995
-  ema_anneal_end_step: 200000
+  ema_anneal_end_step: 450000
   ema_encoder_only: true
 
   average_top_k_layers: 12
