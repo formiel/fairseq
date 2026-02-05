@@ -141,7 +141,7 @@ model:
   pretrained_path: /lustre/fsn1/projects/rech/oou/ucy22cr/pantagruel/experiments/fairseq_checkpoints/speech/pretraining/Speech_Base_fr_1K_prenet6L/checkpoint_last.pt
   skip_pretrained_modules: "{'modality_encoders': ['none'], 'backbone': ['all']}"
 
-  pretrained_path_overlay: /linkhome/rech/genlig01/ucy22cr/pantagruel/experiments/fairseq_checkpoints/text/pretraining/base_mlm20.0decay250K0.1_12L_alibi_learnedpos_randomcrop_context512_steps250K_wu10K_learned_alibi_per_layer_gpu_p6_gpus32_tok-improved_wiki19_with_be/checkpoint_last.pt
+  pretrained_path_overlay: /linkhome/rech/genlig01/ucy22cr/pantagruel/experiments/fairseq_checkpoints/text/pretraining/base_mlm20.0decay250K0.1_12L_alibi_learnedpos_randomcrop_context512_steps250K_wu10K_breakComplete_valid_gpu_p6_gpus32_tok-improved_wiki19_with_be_no_wiki/checkpoint_last.pt
   skip_pretrained_modules_overlay: "{'modality_encoders': ['none'], 'backbone': ['all']}"
 
   # shared_decoder:
