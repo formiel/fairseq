@@ -60,7 +60,7 @@ dataset:
   max_tokens: 14336 # 16384
   # batch_size: 32
   # batch_size_valid: 6
-  # ignore_unused_valid_subsets: true
+  ignore_unused_valid_subsets: true
   skip_invalid_size_inputs_valid_test: true
   # disable_validation: true
 
