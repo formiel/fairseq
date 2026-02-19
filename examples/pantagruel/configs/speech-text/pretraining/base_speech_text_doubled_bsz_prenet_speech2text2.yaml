@@ -178,11 +178,10 @@ model:
         decoder_kernel: 7
         decoder_layers: 4
     text:
-      prenet_depth: 2
       mask_prob: 0.6
       mask_length: 3
       mask_noise_std: 0.01
-      prenet_depth: 0
+      prenet_depth: 2
       learned_pos: true
       local_grad_mult: 2.5
       use_alibi_encoder: true
