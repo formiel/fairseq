@@ -35,6 +35,11 @@ dataset:
   valid_subset: valid_st
   train_subset: train_st
 
+distributed_training:
+  distributed_world_size: ???
+  distributed_port: ???
+  ddp_backend: c10d
+
 criterion:
   _name: label_smoothed_cross_entropy
   label_smoothing: 0.1
