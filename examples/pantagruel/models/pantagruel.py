@@ -12,7 +12,7 @@ from functools import partial
 import logging
 import math
 import numpy as np
-from omegaconf import II, MISSING
+from omegaconf import II
 
 from typing import Optional, Callable
 
@@ -22,11 +22,11 @@ import torch.nn.functional as F
 import torch.distributed as dist
 
 from fairseq.modules import EMAModule, EMAModuleConfig
-from fairseq.file_io import PathManager
 
 from fairseq.dataclass import FairseqDataclass
 from fairseq.data.data_utils import compute_mask_indices
-from fairseq.models import BaseFairseqModel, register_model, FairseqDecoder
+from fairseq.models import BaseFairseqModel, register_model
+from fairseq.modules import GradMultiply
 
 from examples.pantagruel.data.modality import Modality
 from examples.data2vec.data.modality import Modality as Data2vecModality
@@ -227,6 +227,11 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
     mlm_multimodal_encoder_config: Optional[MLMMultimodalEncoderConfig] = None
     random_projection_quantizer_config: Optional[RPQConfig] = None
 
+    grad_multi_backbone: str = field(
+        default="{'audio': 1.0, 'text': 1.0}",
+        metadata={"help": "grad multiplier for shared Transformer backbone"},
+    )
+
 
 class CTCDecoder(nn.Module):
     def __init__(self, dictionary, embed_dim, dropout_rate=0.0, bias=True):
@@ -403,6 +408,8 @@ class PantagruelMultiModel(BaseFairseqModel):
         self.average_top_k_layers = eval(cfg.average_top_k_layers)
         self.loss_beta = cfg.loss_beta
         self.loss_scale = cfg.loss_scale
+
+        self.grad_multi_backbone = eval(cfg.grad_multi_backbone)
 
         self.dropout_input = nn.Dropout(cfg.dropout_input)
 
@@ -1040,6 +1047,11 @@ class PantagruelMultiModel(BaseFairseqModel):
                         )
                         if features_only:
                             layer_results[_mod].append(lr)
+
+            # Apply grad multiplier
+            if self.grad_multi_backbone[_mod] != 1.0:
+                _x = GradMultiply.apply(_x, self.grad_multi_backbone[_mod]).clone()
+
             x[_mod] = _x
 
         if self.norm:
