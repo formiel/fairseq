@@ -402,7 +402,7 @@ class Wav2VecEncoder(FairseqEncoder):
             "drop_path": getattr(cfg, "drop_path", 0),
             "mask_dropout": getattr(cfg, "mask_dropout", 0),
             "zero_mask": getattr(cfg, "zero_mask", False),
-            "local_grad_mult": cfg.feature_grad_mult,
+            "local_grad_mult": getattr(cfg, "local_grad_mult", cfg.feature_grad_mult),
             "layerdrop": getattr(cfg, "layerdrop", 0.0),
             "prenet_layerdrop": getattr(cfg, "layerdrop", 0.0),
             "prenet_dropout": getattr(cfg, "dropout", 0.0),
