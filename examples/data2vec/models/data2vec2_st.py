@@ -1,20 +1,12 @@
 import logging
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Any
-
-from omegaconf import II, MISSING
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from torch import Tensor
-
-from fairseq import checkpoint_utils, tasks
-
-from fairseq.dataclass import FairseqDataclass
 from fairseq.models import (
-    BaseFairseqModel, register_model, FairseqEncoderDecoderModel
+    register_model, FairseqEncoderDecoderModel
 )
 from fairseq.modules import GradMultiply
 from fairseq.models.wav2vec.wav2vec2_asr import (
@@ -23,8 +15,6 @@ from fairseq.models.wav2vec.wav2vec2_asr import (
 from fairseq.models.transformer import Embedding
 from fairseq.tasks import FairseqTask
 from fairseq.models.speech_to_text.s2t_transformer import TransformerDecoderScriptable
-
-from examples.data2vec.data.modality import Modality
 
 
 logger = logging.getLogger(__name__)
