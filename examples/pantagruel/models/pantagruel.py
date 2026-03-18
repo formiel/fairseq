@@ -305,7 +305,7 @@ class PantagruelMultiModel(BaseFairseqModel):
         self.cfg = cfg
         self.modalities = modalities
         self.task = task
-        self.mask_idx = self.task.mask_idx # not used yet
+        self.mask_idx = self.task.mask_idx
 
         self.dummy_factor = getattr(cfg, "dummy_factor", 0.0)
         self.skip_mode = getattr(cfg, "skip_mode", None)
