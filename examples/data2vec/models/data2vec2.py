@@ -20,7 +20,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributed as dist
 
-from fairseq import checkpoint_utils
 from fairseq import modules
 from fairseq.modules import EMAModule, EMAModuleConfig
 
@@ -637,7 +636,7 @@ class Data2VecMultiModel(BaseFairseqModel):
                 encoder_mask,
             )
             xs.append(dx)
-            orig_x = x
+            # orig_x = x
 
         x_masked_for_mlm = None
         if self.mlm_weight > 0 and self.mlm_impl == "use_decoder_output":
@@ -814,7 +813,7 @@ class Data2VecMultiModel(BaseFairseqModel):
                     source_mlm, None, False, False, 1, None, None
                 )
                 x_mlm = mlm_extractor_out["x"]
-                encoder_mask_mlm = mlm_extractor_out["encoder_mask"]
+                # encoder_mask_mlm = mlm_extractor_out["encoder_mask"]
                 masked_padding_mask_mlm = mlm_extractor_out["padding_mask"]
                 masked_alibi_bias_mlm = mlm_extractor_out.get("alibi_bias", None)
                 alibi_scale_mlm = mlm_extractor_out.get("alibi_scale", None)

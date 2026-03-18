@@ -21,12 +21,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributed as dist
 
+from fairseq import modules
 from fairseq.modules import EMAModule, EMAModuleConfig
 
 from fairseq.dataclass import FairseqDataclass
 from fairseq.data.data_utils import compute_mask_indices
 from fairseq.models import BaseFairseqModel, register_model
 from fairseq.modules import GradMultiply
+from fairseq.models.roberta.model import RobertaLMHead
 
 from examples.pantagruel.data.modality import Modality
 from examples.data2vec.data.modality import Modality as Data2vecModality
@@ -38,7 +40,6 @@ from examples.data2vec.models.modalities.base import (
 )
 from examples.pantagruel.models.modalities.base_encoder import (
     PantagruelModalitySpecificEncoder,
-    PantagruelFusionEncoder,
     PantagruelDualModalityConfig,
 )
 from examples.data2vec.models.modalities.modules import (
@@ -59,7 +60,7 @@ from examples.pantagruel.models.modalities.text_type import (
     PantagruelD2vTextConfig,
 )
 from examples.pantagruel.models.modalities.random_projection_quantizer import (
-    RPQConfig, RandomProjectionQuantizer
+    RPQConfig
 )
 from examples.pantagruel.models.mlm_multimodal_encoder import (
     MLMMultimodalEncoder, MLMMultimodalEncoderConfig
@@ -232,6 +233,15 @@ class PantagruelData2VecMultiConfig(FairseqDataclass):
         metadata={"help": "grad multiplier for shared Transformer backbone"},
     )
 
+    mlm_loss: float = 0
+    mlm_num_layers: int = 12
+
+    mlm_warmup_steps: int = 0
+    mlm_hold_steps: int = 0
+    mlm_decay_steps: int = 0
+    mlm_init_loss_scale: float = 0
+    mlm_final_loss_scale: float = 0
+
 
 class CTCDecoder(nn.Module):
     def __init__(self, dictionary, embed_dim, dropout_rate=0.0, bias=True):
@@ -392,18 +402,18 @@ class PantagruelMultiModel(BaseFairseqModel):
                     logger.info("freezing freeze_decoder in modality encoders...")
                     for param in enc.decoder.parameters():
                         param.requires_grad = False
-            else:
-                if not self.do_shallow_fusion:
-                    self.modality_encoders[mod.name] = PantagruelFusionEncoder.build_dual_encoders_from_unimodal(
-                        getattr(cfg.modalities, mod.name.lower()),
-                        cfg.embed_dim,
-                        self.modality_encoders,
-                        make_block,
-                        make_layer_norm,
-                        cfg.layer_norm_first,
-                        self.alibi_biases,
-                        token_type_embeddings,
-                    )
+            # else:
+            #     if not self.do_shallow_fusion:
+            #         self.modality_encoders[mod.name] = PantagruelFusionEncoder.build_dual_encoders_from_unimodal(
+            #             getattr(cfg.modalities, mod.name.lower()),
+            #             cfg.embed_dim,
+            #             self.modality_encoders,
+            #             make_block,
+            #             make_layer_norm,
+            #             cfg.layer_norm_first,
+            #             self.alibi_biases,
+            #             token_type_embeddings,
+            #         )
 
         self.average_top_k_layers = eval(cfg.average_top_k_layers)
         self.loss_beta = cfg.loss_beta
@@ -430,6 +440,20 @@ class PantagruelMultiModel(BaseFairseqModel):
 
         for mod_enc in self.modality_encoders.values():
             mod_enc.reset_parameters()
+
+        # MLM loss for text branch
+        self.mlm_weight = getattr(cfg, "mlm_loss", 0.0)
+        self.mlm_warmup_steps = getattr(cfg, "mlm_warmup_steps", 0)
+        self.mlm_hold_steps = getattr(cfg, "mlm_hold_steps", 0)
+        self.mlm_decay_steps = getattr(cfg, "mlm_decay_steps", 0)
+        self.mlm_init_loss = self.mlm_weight * getattr(cfg, "mlm_init_loss_scale", 0.0)
+        self.mlm_final_loss = self.mlm_weight * getattr(cfg, "mlm_final_loss_scale", 0.0)
+        logger.info(f"mlm_warmup_steps={self.mlm_warmup_steps}, \
+                      mlm_hold_steps={self.mlm_hold_steps}, \
+                      mlm_decay_steps={self.mlm_decay_steps}, \
+                      mlm_init_loss={self.mlm_init_loss}, \
+                      mlm_final_loss={self.mlm_final_loss}, \
+                      mlm_loss={self.mlm_weight}")
 
         # build auxiliary components used for the supervised losses during pre-training
         self.aux_heads = None
@@ -556,6 +580,22 @@ class PantagruelMultiModel(BaseFairseqModel):
             )
             if self.shared_decoder is not None:
                 self.shared_decoder.apply(self._init_weights)
+
+            # MLM head
+            self.mlm_head = None
+            self.mlm_num_layers = 0
+            if self.mlm_weight > 0:
+                self.mlm_num_layers = getattr(cfg, "mlm_num_layers", 12)
+                # text modality
+                self.padding_idx = task.text_task.dictionary.index("<pad>")
+                assert self.padding_idx != task.text_task.dictionary.unk()
+                logger.info(f"padding idx: {self.padding_idx}, vocab size: {len(task.text_task.dictionary)}")
+                self.mlm_head = RobertaLMHead(
+                    cfg.embed_dim, len(task.text_task.dictionary), "gelu"
+                )
+                if getattr(cfg, "mlm_group", False):
+                    for p in self.mlm_head.parameters():
+                        p.param_group = "mlm_head"
 
         for pn, p in self.named_parameters():
             if len(p.shape) == 1 or pn.endswith(".bias") or "alibi_scale" in pn:
@@ -920,6 +960,8 @@ class PantagruelMultiModel(BaseFairseqModel):
         remove_extra_tokens=True,
         precomputed_mask=None, 
         source_aug=None,
+        source_mlm=None,
+        target_mlm=None,
     ):
         if mode is None:
             assert self.cfg.supported_modality is not None
@@ -1022,6 +1064,7 @@ class PantagruelMultiModel(BaseFairseqModel):
                 x[_mod] = self.dropout_input(_x)
         
         layer_results = {_mod: [] for _mod in current_modes}
+        x_aux = {"text": {"mlm": None}}
         for _mod in current_modes:
             _x = x[_mod]
             for i, blk in enumerate(self.blocks):
@@ -1045,6 +1088,8 @@ class PantagruelMultiModel(BaseFairseqModel):
                             alibi_bias=ab,
                             mode=_mod.upper(),
                         )
+                        if i <= self.mlm_num_layers - 1:
+                            x_aux["text"]["mlm"] = _x.clone()
                         if features_only:
                             layer_results[_mod].append(lr)
 
@@ -1085,56 +1130,56 @@ class PantagruelMultiModel(BaseFairseqModel):
         x_features = {k: v.clone() for k, v in x.items()}
         mlm_encoder_maskinfo = {}
         padding_mask_mods = {}
-        if not features_only:
-            for _mod in current_modes:
-                if _mod.upper() == "TEXT":
-                    # mask source
-                    _source_masked, _mask_info = self.do_masking(
-                        (source if isinstance(source, torch.Tensor) 
-                        else source[_mod]["source"]),
-                        (padding_mask if isinstance(source, torch.Tensor) 
-                        else source[_mod]["padding_mask"]),
-                        _mod.lower(),
-                    )
-                    # forward all (masked+unmasked) tokens
-                    _extractor_out_mod = self.modality_encoders[_mod.upper()](
-                        _source_masked,
-                        (
+        if self.mlm_multimodal_encoder is not None:
+            if not features_only:
+                for _mod in current_modes:
+                    if _mod.upper() == "TEXT":
+                        # mask source
+                        _source_masked, _mask_info = self.do_masking(
+                            (source if isinstance(source, torch.Tensor) 
+                            else source[_mod]["source"]),
+                            (padding_mask if isinstance(source, torch.Tensor) 
+                            else source[_mod]["padding_mask"]),
+                            _mod.lower(),
+                        )
+                        # forward all (masked+unmasked) tokens
+                        _extractor_out_mod = self.modality_encoders[_mod.upper()](
+                            _source_masked,
+                            (
+                                padding_mask if isinstance(source, torch.Tensor) 
+                                else source[_mod]["padding_mask"]
+                            ),
+                            False,
+                            False,
+                        )
+                        mlm_encoder_maskinfo[_mod] = _mask_info.mask
+                        padding_mask_mods[_mod] = (
                             padding_mask if isinstance(source, torch.Tensor) 
                             else source[_mod]["padding_mask"]
-                        ),
-                        False,
-                        False,
-                    )
-                    mlm_encoder_maskinfo[_mod] = _mask_info.mask
-                    padding_mask_mods[_mod] = (
-                        padding_mask if isinstance(source, torch.Tensor) 
-                        else source[_mod]["padding_mask"]
-                    )
-                elif _mod.upper() == "AUDIO":
-                    _extractor = self.modality_encoders[_mod.upper()]
-                    _extractor_out_mod = _extractor.contextualized_features(
-                        extractor_out["local_features"][_mod],
-                        (padding_mask if isinstance(source, torch.Tensor) 
-                        else source[_mod]["padding_mask"]),
-                        mask,
-                        remove_masked=False,
-                    )
-                    mlm_encoder_maskinfo[_mod] = _extractor_out_mod["encoder_mask"].mask
-                    padding_mask_mods[_mod] = _extractor_out_mod["padding_mask"]
+                        )
+                    elif _mod.upper() == "AUDIO":
+                        _extractor = self.modality_encoders[_mod.upper()]
+                        _extractor_out_mod = _extractor.contextualized_features(
+                            extractor_out["local_features"][_mod],
+                            (padding_mask if isinstance(source, torch.Tensor) 
+                            else source[_mod]["padding_mask"]),
+                            mask,
+                            remove_masked=False,
+                        )
+                        mlm_encoder_maskinfo[_mod] = _extractor_out_mod["encoder_mask"].mask
+                        padding_mask_mods[_mod] = _extractor_out_mod["padding_mask"]
 
-                x_features[_mod] = _extractor_out_mod["x"]
-        else:
-            for _mod in current_modes:
-                if _mod.upper() == "TEXT":
-                    padding_mask_mods[_mod] = (
-                        padding_mask if isinstance(source, torch.Tensor) 
-                        else source[_mod]["padding_mask"]
-                    )
-                elif _mod.upper() == "AUDIO":
-                    padding_mask_mods[_mod] = extractor_out["padding_mask"][_mod]
+                    x_features[_mod] = _extractor_out_mod["x"]
+            else:
+                for _mod in current_modes:
+                    if _mod.upper() == "TEXT":
+                        padding_mask_mods[_mod] = (
+                            padding_mask if isinstance(source, torch.Tensor) 
+                            else source[_mod]["padding_mask"]
+                        )
+                    elif _mod.upper() == "AUDIO":
+                        padding_mask_mods[_mod] = extractor_out["padding_mask"][_mod]
 
-        if self.mlm_multimodal_encoder is not None:
             mlm_enc_outs = self.mlm_multimodal_encoder(
                 x_features, 
                 source, 
@@ -1166,6 +1211,7 @@ class PantagruelMultiModel(BaseFairseqModel):
             }
 
         xs = {_mod: [] for _mod in current_modes}
+        x_masked_for_mlm = None
         for _mod in current_modes:
             _extractor = self.modality_encoders[_mod.upper()]
             if self.shared_decoder is not None:
@@ -1184,6 +1230,18 @@ class PantagruelMultiModel(BaseFairseqModel):
                     encoder_mask[_mod]
                 )
                 xs[_mod].append(dx)
+
+                if self.mlm_weight > 0 and _mod == "text":
+                    _extractor = self.modality_encoders["TEXT"]
+                    if self.mlm_num_layers < self.cfg.depth:
+                        x_masked_for_mlm = self.forward_decoder(
+                            x_aux["text"]["mlm"],
+                            _extractor,
+                            _extractor.decoder,
+                            encoder_mask["text"],
+                        )
+                    else:
+                        x_masked_for_mlm = xs["text"][-1].clone()
 
         if len(remaining_extractor_names) > 0:
             for name, x_dummy, encoder_mask_dummy in zip(
@@ -1380,6 +1438,29 @@ class PantagruelMultiModel(BaseFairseqModel):
                         var_cov_loss = self.var_cov_loss(x, y[_mod])
                         result["losses"][n] += var_cov_loss
 
+        if self.mlm_weight > 0 and not features_only and "text" in current_modes:
+            target_mlm = target_mlm.repeat_interleave(self.cfg.clone_batch, 0)
+            valid_mask = masked_b["text"] & (target_mlm.ne(self.padding_idx))
+            x_masked_for_mlm = x_masked_for_mlm[valid_mask]
+            # mlm_logits = self.mlm_head(x_full, masked_tokens=valid_mask)
+            mlm_logits = self.mlm_head(x_masked_for_mlm, masked_tokens=None)
+            mlm_targets = target_mlm[valid_mask]
+
+            mlm_loss = modules.cross_entropy(
+                mlm_logits.view(-1, mlm_logits.size(-1)),
+                mlm_targets.view(-1),
+                reduction="sum",
+                ignore_index=self.padding_idx,
+            )
+            mlm_weight = self.mlm_weight
+            if self.mlm_warmup_steps > 0 or self.mlm_hold_steps > 0 or self.mlm_decay_steps > 0:
+                mlm_weight = self.compute_piecewise_schedule(
+                    self.num_updates, 
+                    self.mlm_warmup_steps, self.mlm_hold_steps, self.mlm_decay_steps,
+                    self.mlm_init_loss, self.mlm_final_loss, self.mlm_weight
+                )
+            result["losses"]["mlm"] = mlm_loss * mlm_weight
+
         with torch.no_grad():
             for _mod in current_modes:
                 if encoder_mask[_mod] is not None:
@@ -1471,6 +1552,49 @@ class PantagruelMultiModel(BaseFairseqModel):
         x = decoder(*x)
 
         return x
+
+    def compute_piecewise_schedule(
+        self,
+        num_updates: int,
+        warmup_steps: int,
+        hold_steps: int,
+        decay_steps: int,
+        init_value: float,
+        final_value: float,
+        peak_value: Optional[float] = None,
+    ) -> float:
+        """
+        Piecewise schedule: warmup -> hold -> decay -> final.
+
+        - warmup: linear interpolate from `init_value` to `peak_value` (or to max(init, final) if None)
+        - hold: keep `peak_value`
+        - decay: linear interpolate from `peak_value` to `final_value` over `decay_steps`
+        - after decay: return `final_value`.
+        """
+        if peak_value is None:
+            peak_value = max(init_value, final_value)
+
+        # handle degenerate cases
+        if warmup_steps <= 0 and hold_steps <= 0 and decay_steps <= 0:
+            return final_value
+
+        # stage decision
+        if num_updates < warmup_steps and warmup_steps > 0:
+            frac = num_updates / warmup_steps
+            return init_value + (peak_value - init_value) * frac
+
+        offset = warmup_steps
+        if num_updates < offset + hold_steps:
+            return peak_value
+
+        offset += hold_steps
+        if decay_steps > 0 and num_updates <= offset + decay_steps:
+            steps_in_decay = num_updates - offset
+            frac = steps_in_decay / decay_steps
+            return peak_value + (final_value - peak_value) * frac
+
+        # past all stages
+        return final_value
 
     def d2v_loss(self, x, y):
         x = x.view(-1, x.size(-1)).float()
