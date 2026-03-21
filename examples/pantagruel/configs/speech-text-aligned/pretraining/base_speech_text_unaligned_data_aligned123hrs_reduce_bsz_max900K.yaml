@@ -68,7 +68,7 @@ task:
       mask_multiple_length: 1
 
 dataset:
-  num_workers: 6
+  num_workers: 3
   max_tokens: 983040
   # batch_size: 16
   batch_size: 6
