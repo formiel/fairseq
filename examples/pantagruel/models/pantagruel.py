@@ -1741,6 +1741,9 @@ class PantagruelMultiModel(BaseFairseqModel):
                 logger.info(f"name: {name}, module: {module}")
                 if modality.upper() not in name:
                     self.mlm_multimodal_encoder.input_projs.AUDIO = None
+        if self.mlm_head is not None:
+            logger.info("removing MLM head")
+            self.mlm_head = None
 
         modality = modality.upper() if modality is not None else None
         for k in list(self.modality_encoders.keys()):
