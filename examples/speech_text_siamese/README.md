@@ -16,6 +16,12 @@ Our main idea is to train the speech encoder to generate representations that ar
 
 ![speech_text_alignment](figures/speech_text_alignment.png)
 
+Below is the visualization of the outputs from three speech encoders pre-trained with different losses (cross-entropy, CTC, and CTC + OT), alongside the outputs of the text encoder (shown in red) for the corresponding transcripts. 
+
+The results show that the speech encoder trained with cross-entropy produces embedding clusters that are more distant from those of the text encoder than those produced by the CTC-trained encoder. In the meantime, the encoder trained with CTC + OT generates embeddings that nearly overlap with those of the text encoder, showing that OT is very effective to reduce the speech-text alignment gap.
+
+![speech_text_alignment](figures/enc_outputs.png)
+
 ## 1.2. Main results
 ![results_in_figures](figures/all_results_in_figure.png)
 
