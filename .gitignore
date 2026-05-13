@@ -154,3 +154,8 @@ fairseq_cli/train_profile.py
 examples/pantagruel/configs/speech-text*/
 examples/pantagruel/configs/speech/pretraining/
 examples/pantagruel/configs/text/
+examples/pantagruel/criterions/
+examples/pantagruel/data/
+examples/pantagruel/models/
+examples/pantagruel/scripts/
+examples/pantagruel/tasks/

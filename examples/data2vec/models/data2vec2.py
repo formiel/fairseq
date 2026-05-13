@@ -151,6 +151,8 @@ class Data2VecMultiConfig(FairseqDataclass):
     recon_loss: float = 0
     d2v_loss: float = 1
 
+    # Pantagruel unimodal
+
     contrastive_loss: float = 0
     num_freeze_contrastive_updates: int = 0
     use_map_head_for_speech: Optional[bool] = False
