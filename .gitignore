@@ -150,3 +150,7 @@ _tools*/*
 fairseq_cli/train_profile.py
 *old*
 *_bak*
+
+examples/pantagruel/configs/speech-text*/
+examples/pantagruel/configs/speech/pretraining/
+examples/pantagruel/configs/text/
